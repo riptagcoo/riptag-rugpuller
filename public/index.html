@@ -128,6 +128,10 @@ code{font-family:var(--mono);font-size:11px;background:var(--s3);padding:2px 6px
     <div class="sb-btn" onclick="openNewSetModal()" style="color:var(--green);margin-top:8px;"><span class="icon">＋</span>New Set</div>
   </div>
   <div class="sb-bottom">
+    <div id="daemon-status" style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:8px;background:var(--s2);border:1px solid var(--border);margin-bottom:8px;font-size:12px;color:var(--muted);">
+      <span id="daemon-dot" style="width:7px;height:7px;border-radius:50%;background:var(--faint);flex-shrink:0;"></span>
+      <span id="daemon-label">Daemon offline</span>
+    </div>
     <button class="drive-btn" id="drive-btn" onclick="connectDrive()"><span>📁</span><span id="drive-label">Connect Google Drive</span></button>
   </div>
 </div>
@@ -299,7 +303,31 @@ code{font-family:var(--mono);font-size:11px;background:var(--s3);padding:2px 6px
 <script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script>
 let sets=[],accounts=[],currentSetId=null,currentPage='overview',folders=[],selectedFolder=null,editingSetId=null,schedEnabled=false,currentTab='rugpull';
 
-async function init(){await Promise.all([loadSets(),loadAccounts(),checkDrive()]);connectSSE();renderOverview();}
+async function checkDaemon(){
+  try{
+    const r=await fetch('/api/daemon/status');
+    const d=await r.json();
+    updateDaemonStatus(d.alive,d.lastSeen);
+  }catch{}
+}
+
+function updateDaemonStatus(alive,lastSeen){
+  const dot=document.getElementById('daemon-dot');
+  const lbl=document.getElementById('daemon-label');
+  if(alive){
+    dot.style.background='var(--green)';
+    dot.style.boxShadow='0 0 6px var(--green)';
+    lbl.style.color='var(--green)';
+    lbl.textContent='Daemon active';
+  }else{
+    dot.style.background='var(--faint)';
+    dot.style.boxShadow='none';
+    lbl.style.color='var(--muted)';
+    lbl.textContent='Daemon offline';
+  }
+}
+
+async function init(){await Promise.all([loadSets(),loadAccounts(),checkDrive(),checkDaemon()]);connectSSE();renderOverview();setInterval(checkDaemon,30000);}
 
 function connectSSE(){
   const es=new EventSource('/api/stream');
@@ -307,6 +335,7 @@ function connectSSE(){
   es.onmessage=(e)=>{
     const d=JSON.parse(e.data);
     if(d.type==='account')loadAccounts();
+    if(d.type==='daemon'){updateDaemonStatus(d.status==='alive',d.lastSeen);}
     if(d.type==='deploy'&&d.message){
       glog(d.message,d.status==='error'?'err':d.status==='done'||d.status==='posted'?'ok':'');
       if(d.progress!==undefined){
@@ -344,11 +373,17 @@ function showPage(page,setId){
 
 function switchTab(tab){
   currentTab=tab;
-  ['rugpull','riptag','all'].forEach(t=>{
-    const el=document.getElementById('tab-'+t);
-    if(!el)return;
-    el.className='cat-tab'+(t===tab?' active '+t:'');
-  });
+  var tabs=['rugpull','riptag','all'];
+  for(var i=0;i<tabs.length;i++){
+    var t=tabs[i];
+    var el=document.getElementById('tab-'+t);
+    if(!el)continue;
+    if(t===tab){
+      el.className='cat-tab active '+t;
+    }else{
+      el.className='cat-tab';
+    }
+  }
   renderOverviewSets();
 }
 
@@ -361,8 +396,16 @@ function renderOverview(){
 }
 
 function renderOverviewSets(){
-  const filtered=currentTab==='all'?[...sets]:sets.filter(s=>s.category===currentTab);
+  let filtered=[];
+  if(currentTab==='all'){
+    filtered=[...sets];
+  }else if(currentTab==='riptag'){
+    filtered=sets.filter(function(s){return s.category==='riptag';});
+  }else{
+    filtered=sets.filter(function(s){return s.category==='rugpull'||!s.category;});
+  }
   const el=document.getElementById('sets-list-overview');
+  if(!el)return;
   if(!filtered.length){el.innerHTML='<div class="empty"><div class="empty-icon">📦</div>No sets in this category yet.</div>';return;}
   el.innerHTML=filtered.map(s=>{
     const icon=s.category==='riptag'?'🌐':'🎯';

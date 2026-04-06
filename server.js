@@ -321,6 +321,19 @@ app.post('/api/deploy/progress', async (req, res) => {
 
 app.get('/api/ping', (req, res) => res.json({ ok: true, version: '2.2.0' }));
 
+// Daemon heartbeat
+let lastHeartbeat = null;
+app.post('/api/daemon/heartbeat', (req, res) => {
+  lastHeartbeat = new Date().toISOString();
+  broadcast({ type: 'daemon', status: 'alive', lastSeen: lastHeartbeat });
+  res.json({ ok: true });
+});
+
+app.get('/api/daemon/status', (req, res) => {
+  const alive = lastHeartbeat && (Date.now() - new Date(lastHeartbeat).getTime()) < 60000;
+  res.json({ alive, lastSeen: lastHeartbeat });
+});
+
 initDB().then(() => {
   app.listen(PORT, () => console.log(`\n🏄  Riptag Set Manager v2.2\n    http://localhost:${PORT}\n`));
 }).catch(err => { console.error('DB init failed:', err); process.exit(1); });
