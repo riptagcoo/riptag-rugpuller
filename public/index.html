@@ -107,6 +107,16 @@ tr:last-child td{border-bottom:none;}tr:hover td{background:rgba(255,255,255,0.0
 .empty{text-align:center;padding:40px;color:var(--muted);font-size:13px;}
 .empty-icon{font-size:40px;margin-bottom:12px;}
 .hidden{display:none!important;}
+.status-live{color:var(--green);background:var(--green-bg);border:1px solid var(--green-bd);}
+.status-banned{color:var(--red);background:var(--red-bg);border:1px solid rgba(255,92,92,0.3);}
+.status-unknown{color:var(--muted);background:var(--s3);border:1px solid var(--border);}
+.active-card{background:var(--s2);border:1px solid var(--border);border-radius:var(--r);padding:20px 22px;margin-bottom:12px;}
+.active-card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;}
+.active-card-actions{display:flex;gap:8px;}
+.phase-launch{background:var(--amber-bg);color:var(--amber);border:1px solid rgba(245,166,35,0.3);padding:3px 10px;border-radius:5px;font-family:var(--mono);font-size:11px;}
+.phase-evergreen{background:var(--green-bg);color:var(--green);border:1px solid var(--green-bd);padding:3px 10px;border-radius:5px;font-family:var(--mono);font-size:11px;}
+.timer-bar{height:3px;background:var(--s3);border-radius:2px;margin-top:8px;overflow:hidden;}
+.timer-fill{height:100%;background:linear-gradient(90deg,var(--amber),var(--green));border-radius:2px;}
 code{font-family:var(--mono);font-size:11px;background:var(--s3);padding:2px 6px;border-radius:4px;color:var(--violet);}
 </style>
 </head>
@@ -121,6 +131,7 @@ code{font-family:var(--mono);font-size:11px;background:var(--s3);padding:2px 6px
     <div class="sb-btn active" id="nav-overview" onclick="showPage('overview')"><span class="icon">📊</span>Overview</div>
     <div class="sb-btn" id="nav-accounts" onclick="showPage('accounts')"><span class="icon">🔗</span>Accounts</div>
     <div class="sb-btn" id="nav-schedule" onclick="showPage('schedule')"><span class="icon">📅</span>Schedule</div>
+    <div class="sb-btn" id="nav-active" onclick="showPage('active')"><span class="icon">📡</span>Active This Week</div>
     <div class="sb-cat"><span class="sb-cat-dot" style="background:var(--green)"></span>Rugpull</div>
     <div id="sb-rugpull"></div>
     <div class="sb-cat"><span class="sb-cat-dot" style="background:var(--violet)"></span>Riptag.co</div>
@@ -220,6 +231,19 @@ code{font-family:var(--mono);font-size:11px;background:var(--s3);padding:2px 6px
   </div>
 </div>
 
+<!-- Active This Week Page -->
+<div id="page-active" class="hidden">
+  <div class="topbar">
+    <div class="page-title">Active This Week</div>
+    <div class="topbar-actions">
+      <button class="btn sm" onclick="checkAllStatuses()">🔍 Check All Statuses</button>
+    </div>
+  </div>
+  <div class="content">
+    <div id="active-list"></div>
+  </div>
+</div>
+
 </div>
 </div>
 
@@ -289,6 +313,47 @@ code{font-family:var(--mono);font-size:11px;background:var(--s3);padding:2px 6px
   </div>
 </div>
 
+<!-- Mass Edit Modal -->
+<div class="modal-overlay hidden" id="mass-edit-modal">
+  <div class="modal">
+    <div class="modal-title">Mass Edit Descriptions</div>
+    <input type="hidden" id="me-account-id"/>
+    <input type="hidden" id="me-set-id"/>
+    <div style="font-size:13px;color:var(--muted);margin-bottom:16px;" id="me-account-label"></div>
+    <div class="field">
+      <label>New Description (replaces ALL listings on this account)</label>
+      <textarea class="input" id="me-description" rows="6" placeholder="Enter new description..."></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal('mass-edit-modal')">Cancel</button>
+      <button class="btn primary" onclick="confirmMassEdit()">🚀 Update All Listings</button>
+    </div>
+  </div>
+</div>
+
+<!-- Description Scheduler Modal -->
+<div class="modal-overlay hidden" id="desc-sched-modal">
+  <div class="modal">
+    <div class="modal-title">Description Schedule</div>
+    <input type="hidden" id="ds-set-id"/>
+    <div class="field">
+      <label>🚀 Launch Description (first 24 hours)</label>
+      <textarea class="input" id="ds-launch" rows="5" placeholder="Hype description for launch day..."></textarea>
+    </div>
+    <div class="field">
+      <label>🌿 Evergreen Description (after 24 hours, stays until banned)</label>
+      <textarea class="input" id="ds-evergreen" rows="5" placeholder="Long-term description..."></textarea>
+    </div>
+    <p style="font-size:12px;color:var(--muted);line-height:1.7;margin-top:4px;">
+      The agent automatically switches from Launch to Evergreen at the 24-hour mark after deploy.
+    </p>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal('desc-sched-modal')">Cancel</button>
+      <button class="btn primary" onclick="saveDescSchedule()">Save</button>
+    </div>
+  </div>
+</div>
+
 <!-- Proxy Modal -->
 <div class="modal-overlay hidden" id="proxy-modal">
   <div class="modal">
@@ -302,6 +367,118 @@ code{font-family:var(--mono);font-size:11px;background:var(--s3);padding:2px 6px
 
 <script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script>
 let sets=[],accounts=[],currentSetId=null,currentPage='overview',folders=[],selectedFolder=null,editingSetId=null,schedEnabled=false,currentTab='rugpull';
+
+// ─── ACTIVE THIS WEEK ────────────────────────────────────────
+async function renderActiveThisWeek(){
+  const el=document.getElementById('active-list');
+  el.innerHTML='<div class="empty"><div class="empty-icon">⏳</div>Loading...</div>';
+  try{
+    const r=await fetch('/api/active-this-week');
+    const d=await r.json();
+    const active=d.active||[];
+    if(!active.length){el.innerHTML='<div class="empty"><div class="empty-icon">📡</div>No accounts deployed this week.</div>';return;}
+    el.innerHTML=active.map(a=>{
+      const pct=Math.min(100,Math.floor((a.hoursLive/24)*100));
+      const statusClass=a.accountStatus==='live'?'status-live':a.accountStatus==='banned'?'status-banned':'status-unknown';
+      const statusText=a.accountStatus==='live'?'● Live':a.accountStatus==='banned'?'✕ Banned':'? Unknown';
+      const phaseClass=a.descriptionPhase==='launch'?'phase-launch':'phase-evergreen';
+      const phaseText=a.descriptionPhase==='launch'?'🚀 Launch ('+a.hoursLive+'h)':'🌿 Evergreen';
+      const timeLeft=a.descriptionPhase==='launch'?'Switches to evergreen in '+(24-a.hoursLive)+'h':'Running evergreen description';
+      return '<div class="active-card">'
+        +'<div class="active-card-header">'
+          +'<div>'
+            +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">'
+              +'<div style="font-weight:700;font-size:16px;">@'+a.username+'</div>'
+              +'<span class="badge '+statusClass+'">'+statusText+'</span>'
+              +'<span class="'+phaseClass+'">'+phaseText+'</span>'
+            +'</div>'
+            +'<div style="font-size:12px;color:var(--muted);font-family:var(--mono);">'+a.setName+' · '+a.posted+'/'+a.listings+' posted · Live '+a.hoursLive+'h ago</div>'
+          +'</div>'
+          +'<div class="active-card-actions">'
+            +'<button class="btn sm" onclick="openDescSchedule(''+a.setId+'')">📝 Descriptions</button>'
+            +'<button class="btn sm" onclick="openMassEdit(''+a.accountId+'',''+a.setId+'',''+a.username+'')">✏️ Mass Edit</button>'
+            +'<button class="btn sm" onclick="checkStatus(''+a.accountId+'',''+a.username+'')">🔍 Check</button>'
+          +'</div>'
+        +'</div>'
+        +(a.descriptionPhase==='launch'?
+          '<div style="font-size:11px;color:var(--muted);font-family:var(--mono);margin-bottom:4px;">'+timeLeft+'</div>'
+          +'<div class="timer-bar"><div class="timer-fill" style="width:'+pct+'%"></div></div>'
+          :'<div style="font-size:11px;color:var(--green);font-family:var(--mono);">'+timeLeft+'</div>')
+        +'</div>';
+    }).join('');
+  }catch(err){el.innerHTML='<div class="empty">Error: '+err.message+'</div>';}
+}
+
+async function checkStatus(accountId, username){
+  const btn=event.target;
+  btn.textContent='Checking...';btn.disabled=true;
+  try{
+    // Ask agent to check via broadcast - for now just ping depop
+    const r=await fetch('https://www.depop.com/'+username+'/',{mode:'no-cors'});
+    // If we get here without CORS error, account might be live
+    await fetch('/api/accounts/'+accountId+'/status',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:'live'})});
+    await loadAccounts();
+    renderActiveThisWeek();
+  }catch{
+    btn.textContent='🔍 Check';btn.disabled=false;
+  }
+  btn.textContent='🔍 Check';btn.disabled=false;
+}
+
+async function checkAllStatuses(){
+  glog('Checking all account statuses...','hi');
+  const r=await fetch('/api/active-this-week');
+  const d=await r.json();
+  for(const a of d.active||[]){
+    await checkStatus(a.accountId,a.username);
+  }
+}
+
+function openMassEdit(accountId,setId,username){
+  document.getElementById('me-account-id').value=accountId;
+  document.getElementById('me-set-id').value=setId;
+  document.getElementById('me-account-label').textContent='Updating all listings for @'+username;
+  document.getElementById('me-description').value='';
+  document.getElementById('mass-edit-modal').classList.remove('hidden');
+}
+
+async function confirmMassEdit(){
+  const accountId=document.getElementById('me-account-id').value;
+  const setId=document.getElementById('me-set-id').value;
+  const description=document.getElementById('me-description').value.trim();
+  if(!description){alert('Enter a description first.');return;}
+  if(!confirm('This will update ALL listings on this account. Continue?'))return;
+  
+  await fetch('/api/accounts/'+accountId+'/mass-edit',{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({description,setId})
+  });
+  closeModal('mass-edit-modal');
+  glog('Mass edit queued — run agent.js and select Mass Edit to execute','hi');
+  alert('Mass edit queued! Run node agent.js and select "Mass Edit" option to execute.');
+}
+
+async function openDescSchedule(setId){
+  const set=sets.find(s=>s.id===setId);
+  if(!set)return;
+  document.getElementById('ds-set-id').value=setId;
+  document.getElementById('ds-launch').value=set.launchDescription||set.description||'';
+  document.getElementById('ds-evergreen').value=set.evergreenDescription||set.description||'';
+  document.getElementById('desc-sched-modal').classList.remove('hidden');
+}
+
+async function saveDescSchedule(){
+  const setId=document.getElementById('ds-set-id').value;
+  const launchDescription=document.getElementById('ds-launch').value.trim();
+  const evergreenDescription=document.getElementById('ds-evergreen').value.trim();
+  await fetch('/api/sets/'+setId+'/descriptions',{
+    method:'PUT',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({launchDescription,evergreenDescription})
+  });
+  closeModal('desc-sched-modal');
+  await loadSets();
+  glog('Description schedule saved','ok');
+}
 
 async function checkDaemon(){
   try{
@@ -362,12 +539,13 @@ async function loadAccounts(){const r=await fetch('/api/accounts').catch(()=>({j
 async function checkDrive(){const r=await fetch('/api/drive/status').catch(()=>({json:()=>({})}));const d=await r.json().catch(()=>({}));const btn=document.getElementById('drive-btn');const lbl=document.getElementById('drive-label');if(d.connected){btn.classList.add('connected');lbl.textContent='Drive Connected ✓';}else{btn.classList.remove('connected');lbl.textContent='Connect Google Drive';}}
 
 function showPage(page,setId){
-  ['overview','accounts','schedule','set'].forEach(p=>{document.getElementById('page-'+p).classList.toggle('hidden',p!==page);const nav=document.getElementById('nav-'+p);if(nav)nav.classList.toggle('active',p===page);});
+  ['overview','accounts','schedule','active','set'].forEach(p=>{document.getElementById('page-'+p).classList.toggle('hidden',p!==page);const nav=document.getElementById('nav-'+p);if(nav)nav.classList.toggle('active',p===page);});
   currentPage=page;
   if(page==='set'&&setId){currentSetId=setId;renderCurrentSet();}
   if(page==='overview')renderOverview();
   if(page==='accounts')renderAccounts();
   if(page==='schedule')renderSchedule();
+  if(page==='active')renderActiveThisWeek();
   document.querySelectorAll('.sb-set').forEach(el=>el.classList.toggle('active',el.dataset.id===setId));
 }
 

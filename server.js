@@ -319,6 +319,108 @@ app.post('/api/deploy/progress', async (req, res) => {
   res.json({ ok: true });
 });
 
+
+// ─── DESCRIPTION MANAGEMENT ───────────────────────────────────
+
+// Update set descriptions (launch + evergreen)
+app.put('/api/sets/:id/descriptions', async (req, res) => {
+  try {
+    const r = await pool.query('SELECT data FROM sets WHERE id=$1', [req.params.id]);
+    if (!r.rows.length) return res.status(404).json({ error: 'Not found' });
+    const set = r.rows[0].data;
+    const { launchDescription, evergreenDescription } = req.body;
+    if (launchDescription !== undefined) set.launchDescription = launchDescription;
+    if (evergreenDescription !== undefined) set.evergreenDescription = evergreenDescription;
+    await pool.query('UPDATE sets SET data=$1 WHERE id=$2', [JSON.stringify(set), set.id]);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Mass edit - trigger agent to update all descriptions on an account
+app.post('/api/accounts/:id/mass-edit', async (req, res) => {
+  const { description, setId } = req.body;
+  res.json({ ok: true, message: 'Mass edit queued' });
+  broadcast({ type: 'mass-edit', accountId: req.params.id, setId, description, status: 'queued', message: `Mass edit queued for account` });
+});
+
+// Update account status (live/banned/unknown)
+app.put('/api/accounts/:id/status', async (req, res) => {
+  try {
+    const r = await pool.query('SELECT data FROM accounts WHERE id=$1', [req.params.id]);
+    if (!r.rows.length) return res.status(404).json({ error: 'Not found' });
+    const account = r.rows[0].data;
+    account.status = req.body.status;
+    account.statusCheckedAt = new Date().toISOString();
+    await pool.query('UPDATE accounts SET data=$1 WHERE id=$2', [JSON.stringify(account), req.params.id]);
+    broadcast({ type: 'account-status', accountId: req.params.id, status: req.body.status });
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Get active deployments this week
+app.get('/api/active-this-week', async (req, res) => {
+  try {
+    const r = await pool.query('SELECT data FROM sets ORDER BY created_at DESC');
+    const sets = r.rows.map(row => row.data);
+    const acctR = await pool.query('SELECT data FROM accounts ORDER BY created_at DESC');
+    const accounts = acctR.rows.map(row => row.data);
+    
+    const now = new Date();
+    const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    
+    const active = sets
+      .filter(s => s.deployedAt && new Date(s.deployedAt) > weekAgo)
+      .map(s => {
+        const account = accounts.find(a => a.id === s.accountId);
+        const deployedAt = new Date(s.deployedAt);
+        const hoursLive = Math.floor((now - deployedAt) / (1000 * 60 * 60));
+        const descriptionPhase = hoursLive < 24 ? 'launch' : 'evergreen';
+        return {
+          setId: s.id, setName: s.name, category: s.category,
+          accountId: s.accountId, username: account?.username || 'unknown',
+          accountStatus: account?.status || 'unknown',
+          deployedAt: s.deployedAt, hoursLive,
+          descriptionPhase,
+          launchDescription: s.launchDescription || s.description,
+          evergreenDescription: s.evergreenDescription || s.description,
+          listings: s.listings?.length || 0,
+          posted: s.listings?.filter(l => l.posted).length || 0
+        };
+      });
+    
+    res.json({ active });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Check due description switches (launch -> evergreen at 24hrs)
+app.get('/api/description-switches/due', async (req, res) => {
+  try {
+    const r = await pool.query('SELECT data FROM sets ORDER BY created_at DESC');
+    const sets = r.rows.map(row => row.data);
+    const now = new Date();
+    const due = sets.filter(s => {
+      if (!s.deployedAt || !s.evergreenDescription) return false;
+      if (s.descriptionSwitched) return false;
+      const hoursLive = (now - new Date(s.deployedAt)) / (1000 * 60 * 60);
+      return hoursLive >= 24;
+    });
+    res.json({ due });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Mark description as switched
+app.post('/api/sets/:id/mark-switched', async (req, res) => {
+  try {
+    const r = await pool.query('SELECT data FROM sets WHERE id=$1', [req.params.id]);
+    if (!r.rows.length) return res.status(404).json({ error: 'Not found' });
+    const set = r.rows[0].data;
+    set.descriptionSwitched = true;
+    set.descriptionSwitchedAt = new Date().toISOString();
+    await pool.query('UPDATE sets SET data=$1 WHERE id=$2', [JSON.stringify(set), set.id]);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 app.get('/api/ping', (req, res) => res.json({ ok: true, version: '2.2.0' }));
 
 // Daemon heartbeat

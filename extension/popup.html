@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8"/>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{width:300px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0f0f14;color:#e8e8f0;}
+  .header{padding:16px 18px 14px;border-bottom:1px solid #1e1e2a;display:flex;align-items:center;gap:10px;}
+  .logo{font-size:20px;}
+  .logo-text{font-size:14px;font-weight:600;}
+  .logo-sub{font-size:11px;color:#6b6b80;margin-top:1px;}
+  .section{padding:14px 18px;border-bottom:1px solid #1e1e2a;}
+  .label{font-size:11px;color:#6b6b80;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;}
+  .input-field{width:100%;background:#16161f;border:1px solid #2a2a38;border-radius:7px;padding:8px 10px;color:#e8e8f0;font-size:13px;font-family:monospace;outline:none;margin-bottom:8px;}
+  .input-field:focus{border-color:#1ec8a0;}
+  .input-field::placeholder{color:#3a3a50;}
+  .btn-connect{width:100%;padding:10px;border-radius:7px;background:#1ec8a0;color:#0d2b24;font-size:13px;font-weight:700;cursor:pointer;border:none;margin-top:4px;}
+  .btn-connect:disabled{opacity:0.4;cursor:not-allowed;}
+  .status-bar{padding:12px 18px;display:flex;align-items:center;gap:8px;}
+  .status-dot{width:7px;height:7px;border-radius:50%;background:#3a3a50;flex-shrink:0;}
+  .status-dot.on{background:#1ec8a0;}
+  .status-dot.err{background:#ff5c5c;}
+  .status-text{font-size:12px;color:#6b6b80;flex:1;}
+  .status-text.on{color:#1ec8a0;}
+  .status-text.err{color:#ff5c5c;}
+  .open-btn{font-size:11px;color:#6b6b80;cursor:pointer;text-decoration:underline;background:none;border:none;padding:0;}
+  .footer{padding:10px 18px;display:flex;justify-content:space-between;align-items:center;}
+  .disconnect-btn{font-size:11px;color:#6b6b80;cursor:pointer;background:none;border:none;padding:0;}
+  .disconnect-btn:hover{color:#ff5c5c;}
+</style>
+</head>
+<body>
+<div class="header">
+  <div class="logo">🏄</div>
+  <div>
+    <div class="logo-text">Riptag Set Manager</div>
+    <div class="logo-sub">Depop account connector</div>
+  </div>
+</div>
+<div class="section">
+  <div class="label">Your Depop username</div>
+  <input class="input-field" id="detected-username" placeholder="e.g. driftn"/>
+</div>
+<div class="section">
+  <div class="label">Dashboard server</div>
+  <input class="input-field" id="server-url" placeholder="https://your-app.up.railway.app"/>
+  <button class="btn-connect" id="btn-connect">Connect Account</button>
+</div>
+<div class="status-bar">
+  <div class="status-dot" id="status-dot"></div>
+  <div class="status-text" id="status-text">Not connected</div>
+  <button class="open-btn" id="open-dashboard">Open dashboard ↗</button>
+</div>
+<div class="footer">
+  <button class="disconnect-btn" id="btn-disconnect">Disconnect</button>
+  <div style="font-size:11px;color:#2a2a38;">v2.0.0</div>
+</div>
+<script src="popup.js"></script>
+</body>
+</html>
