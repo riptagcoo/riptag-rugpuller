@@ -50,6 +50,70 @@ app.use((req, res, next) => {
   next();
 });
 
+// ─── AUTH ─────────────────────────────────────────────────────
+const DASHBOARD_PASSWORD = process.env.DASHBOARD_PASSWORD || '1010';
+
+function requireAuth(req, res, next) {
+  // Allow API calls from extension with correct API key
+  const apiKey = req.headers['x-api-key'];
+  if (apiKey && apiKey === DASHBOARD_PASSWORD) return next();
+  // Allow SSE and auth routes
+  if (req.path === '/auth/google' || req.path.startsWith('/auth/google/callback') || req.path === '/login' || req.path === '/api/ping') return next();
+  // Check session
+  if (req.session.authed) return next();
+  // Redirect to login for browser requests
+  if (req.headers.accept && req.headers.accept.includes('text/html')) return res.redirect('/login');
+  return res.status(401).json({ error: 'Unauthorized' });
+}
+
+app.get('/login', (req, res) => {
+  res.send(`<!DOCTYPE html>
+<html>
+<head><title>Riptag Login</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:#09090f;color:#eeeef5;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;}
+  .box{background:#141420;border:1px solid rgba(255,255,255,0.07);border-radius:14px;padding:40px;width:320px;text-align:center;}
+  .logo{font-size:40px;margin-bottom:12px;}
+  h2{font-size:18px;font-weight:700;margin-bottom:6px;}
+  p{font-size:13px;color:#7a7a92;margin-bottom:24px;}
+  input{width:100%;padding:10px 14px;background:#0f0f18;border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:#eeeef5;font-size:14px;outline:none;margin-bottom:12px;text-align:center;letter-spacing:4px;font-size:18px;}
+  button{width:100%;padding:11px;background:#1ec8a0;color:#082820;font-size:14px;font-weight:700;border:none;border-radius:8px;cursor:pointer;}
+  .err{color:#ff5c5c;font-size:12px;margin-top:10px;}
+</style>
+</head>
+<body>
+<div class="box">
+  <div class="logo">🏄</div>
+  <h2>Riptag Rugpuller</h2>
+  <p>Enter your access code</p>
+  <form method="POST" action="/login">
+    <input type="password" name="password" placeholder="••••" autofocus/>
+    <button type="submit">Access Dashboard</button>
+    ${req.query.err ? '<div class="err">Incorrect code</div>' : ''}
+  </form>
+</div>
+</body>
+</html>`);
+});
+
+app.post('/login', express.urlencoded({ extended: true }), (req, res) => {
+  if (req.body.password === DASHBOARD_PASSWORD) {
+    req.session.authed = true;
+    res.redirect('/');
+  } else {
+    res.redirect('/login?err=1');
+  }
+});
+
+app.get('/logout', (req, res) => {
+  req.session.destroy();
+  res.redirect('/login');
+});
+
+
+app.use(requireAuth);
+
 // SSE
 let sseClients = [];
 function broadcast(data) {
