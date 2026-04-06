@@ -54,16 +54,16 @@ app.use((req, res, next) => {
 const DASHBOARD_PASSWORD = process.env.DASHBOARD_PASSWORD || '1010';
 
 function requireAuth(req, res, next) {
-  // Allow API calls from extension with correct API key
-  const apiKey = req.headers['x-api-key'];
-  if (apiKey && apiKey === DASHBOARD_PASSWORD) return next();
-  // Allow SSE and auth routes
-  if (req.path === '/auth/google' || req.path.startsWith('/auth/google/callback') || req.path === '/login' || req.path === '/api/ping') return next();
-  // Check session
+  // Always allow API routes, static files, auth routes
+  if (req.path.startsWith('/api/') ||
+      req.path.startsWith('/auth/') ||
+      req.path.startsWith('/uploads/') ||
+      req.path === '/login' ||
+      req.path === '/logout' ||
+      req.path.includes('.')) return next();
+  // Only protect the main dashboard HTML
   if (req.session.authed) return next();
-  // Redirect to login for browser requests
-  if (req.headers.accept && req.headers.accept.includes('text/html')) return res.redirect('/login');
-  return res.status(401).json({ error: 'Unauthorized' });
+  return res.redirect('/login');
 }
 
 app.get('/login', (req, res) => {
