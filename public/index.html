@@ -1,0 +1,811 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Riptag Set Manager</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+<style>
+:root {
+  --bg: #09090f;
+  --s1: #0f0f18;
+  --s2: #141420;
+  --s3: #1a1a28;
+  --border: rgba(255,255,255,0.07);
+  --border2: rgba(255,255,255,0.13);
+  --ink: #eeeef5;
+  --muted: #7a7a92;
+  --faint: #3a3a52;
+  --green: #1ec8a0;
+  --green-bg: rgba(30,200,160,0.1);
+  --green-bd: rgba(30,200,160,0.3);
+  --violet: #8b7fff;
+  --violet-bg: rgba(139,127,255,0.1);
+  --violet-bd: rgba(139,127,255,0.3);
+  --amber: #f5a623;
+  --amber-bg: rgba(245,166,35,0.1);
+  --red: #ff5c5c;
+  --red-bg: rgba(255,92,92,0.1);
+  --mono: 'DM Mono', monospace;
+  --sans: 'Instrument Sans', sans-serif;
+  --r: 10px;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+html,body{height:100%;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:14px;}
+
+/* Layout */
+.shell{display:flex;height:100vh;overflow:hidden;}
+.sidebar{width:240px;background:var(--s1);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;}
+.main{flex:1;overflow-y:auto;display:flex;flex-direction:column;}
+
+/* Sidebar */
+.sb-brand{padding:20px 18px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;}
+.sb-icon{width:34px;height:34px;background:var(--green);border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;}
+.sb-name{font-size:14px;font-weight:700;}
+.sb-sub{font-size:11px;color:var(--muted);}
+.sb-nav{padding:12px 10px;flex:1;overflow-y:auto;}
+.sb-section{font-size:10px;color:var(--faint);text-transform:uppercase;letter-spacing:0.08em;padding:8px 8px 4px;margin-top:8px;}
+.sb-btn{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:7px;cursor:pointer;font-size:13px;color:var(--muted);transition:all 0.12s;border:none;background:transparent;width:100%;text-align:left;}
+.sb-btn:hover{background:var(--s2);color:var(--ink);}
+.sb-btn.active{background:var(--s3);color:var(--ink);}
+.sb-btn .icon{font-size:15px;width:20px;text-align:center;}
+.sb-set{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:7px;cursor:pointer;font-size:12px;color:var(--muted);transition:all 0.12s;}
+.sb-set:hover{background:var(--s2);color:var(--ink);}
+.sb-set.active{background:var(--s3);color:var(--ink);}
+.sb-set-dot{width:6px;height:6px;border-radius:50%;background:var(--faint);flex-shrink:0;}
+.sb-set-dot.deployed{background:var(--green);}
+.sb-set-dot.deploying{background:var(--amber);}
+.sb-set-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.sb-bottom{padding:12px;border-top:1px solid var(--border);}
+.drive-btn{display:flex;align-items:center;gap:8px;padding:9px 12px;border-radius:8px;background:var(--s2);border:1px solid var(--border2);cursor:pointer;font-size:12px;color:var(--muted);width:100%;transition:all 0.15s;}
+.drive-btn:hover{border-color:var(--green);color:var(--green);}
+.drive-btn.connected{border-color:var(--green-bd);color:var(--green);background:var(--green-bg);}
+
+/* Top bar */
+.topbar{padding:18px 28px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
+.page-title{font-size:18px;font-weight:700;}
+.topbar-actions{display:flex;gap:8px;align-items:center;}
+
+/* Content */
+.content{padding:24px 28px;flex:1;}
+
+/* Cards */
+.card{background:var(--s2);border:1px solid var(--border);border-radius:var(--r);padding:20px 22px;margin-bottom:14px;}
+.card-title{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted);margin-bottom:14px;}
+
+/* Buttons */
+.btn{display:inline-flex;align-items:center;gap:7px;padding:8px 16px;border-radius:8px;font-size:13px;font-weight:600;font-family:var(--sans);cursor:pointer;border:1px solid var(--border2);background:var(--s2);color:var(--ink);transition:all 0.13s;white-space:nowrap;}
+.btn:hover:not(:disabled){border-color:var(--green);color:var(--green);}
+.btn:disabled{opacity:0.35;cursor:not-allowed;}
+.btn.primary{background:var(--green);color:#082820;border-color:var(--green);}
+.btn.primary:hover:not(:disabled){background:#18b890;}
+.btn.danger{background:var(--red-bg);color:var(--red);border-color:rgba(255,92,92,0.3);}
+.btn.violet{background:var(--violet-bg);color:var(--violet);border-color:var(--violet-bd);}
+.btn.sm{padding:6px 12px;font-size:12px;}
+
+/* Forms */
+.field{margin-bottom:14px;}
+.field label{display:block;font-size:11px;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.05em;}
+.input{width:100%;background:var(--s1);border:1px solid var(--border2);border-radius:8px;padding:9px 12px;color:var(--ink);font-family:var(--sans);font-size:13px;outline:none;transition:border-color 0.15s;}
+.input:focus{border-color:var(--green);}
+.input::placeholder{color:var(--faint);}
+textarea.input{resize:vertical;min-height:100px;font-family:var(--mono);font-size:12px;line-height:1.6;}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+.row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;}
+
+/* Size toggles */
+.size-row{display:flex;gap:8px;flex-wrap:wrap;}
+.size-chip{padding:6px 14px;border-radius:6px;border:1px solid var(--border2);background:var(--s1);font-family:var(--mono);font-size:12px;cursor:pointer;color:var(--muted);transition:all 0.12s;}
+.size-chip.on{border-color:var(--green-bd);background:var(--green-bg);color:var(--green);}
+
+/* Stats grid */
+.stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px;}
+.stat{background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:14px 16px;}
+.stat-n{font-size:24px;font-weight:700;line-height:1;}
+.stat-n.green{color:var(--green);}
+.stat-n.violet{color:var(--violet);}
+.stat-n.amber{color:var(--amber);}
+.stat-lbl{font-size:11px;color:var(--muted);margin-top:4px;font-family:var(--mono);}
+
+/* Set cards on overview */
+.set-card{background:var(--s2);border:1px solid var(--border);border-radius:var(--r);padding:18px 20px;margin-bottom:10px;display:flex;align-items:center;gap:16px;cursor:pointer;transition:border-color 0.13s;}
+.set-card:hover{border-color:var(--border2);}
+.set-card-icon{width:44px;height:44px;border-radius:9px;background:var(--s3);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;}
+.set-card-info{flex:1;min-width:0;}
+.set-card-name{font-weight:600;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.set-card-sub{font-size:12px;color:var(--muted);margin-top:3px;font-family:var(--mono);}
+.set-card-actions{display:flex;gap:8px;flex-shrink:0;}
+
+/* Status badges */
+.badge{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:5px;font-family:var(--mono);font-size:11px;}
+.badge-draft{background:var(--s3);color:var(--muted);border:1px solid var(--border);}
+.badge-deployed{background:var(--green-bg);color:var(--green);border:1px solid var(--green-bd);}
+.badge-deploying{background:var(--amber-bg);color:var(--amber);border:1px solid rgba(245,166,35,0.3);}
+.badge-dot{width:5px;height:5px;border-radius:50%;background:currentColor;}
+
+/* Listings table */
+.listings-wrap{overflow-x:auto;}
+table{width:100%;border-collapse:collapse;}
+th{font-size:11px;color:var(--muted);font-weight:500;text-align:left;padding:8px 12px;border-bottom:1px solid var(--border);font-family:var(--mono);text-transform:uppercase;}
+td{padding:9px 12px;font-size:13px;border-bottom:1px solid var(--border);vertical-align:middle;}
+tr:last-child td{border-bottom:none;}
+tr:hover td{background:rgba(255,255,255,0.02);}
+.size-tag{display:inline-block;padding:2px 8px;border-radius:4px;font-family:var(--mono);font-size:11px;background:var(--s3);color:var(--muted);}
+.posted-tag{background:var(--green-bg);color:var(--green);}
+
+/* Photo thumbs */
+.thumb-row{display:flex;gap:4px;}
+.thumb{width:28px;height:28px;border-radius:4px;background:var(--s3);border:1px solid var(--border);object-fit:cover;}
+
+/* Log */
+.log-box{background:var(--s1);border:1px solid var(--border);border-radius:8px;padding:10px 14px;height:120px;overflow-y:auto;font-family:var(--mono);font-size:11.5px;display:flex;flex-direction:column;gap:3px;}
+.log-line{color:var(--muted);}
+.log-line.ok{color:var(--green);}
+.log-line.err{color:var(--red);}
+.log-line.hi{color:var(--ink);}
+
+/* Progress */
+.prog-wrap{margin-bottom:12px;}
+.prog-lbl{font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:6px;}
+.prog-track{height:3px;background:var(--s3);border-radius:2px;overflow:hidden;}
+.prog-fill{height:100%;background:linear-gradient(90deg,var(--green),var(--violet));border-radius:2px;width:0%;transition:width 0.3s;}
+
+/* Accounts panel */
+.account-card{background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:14px 16px;display:flex;align-items:center;gap:12px;margin-bottom:8px;}
+.acct-avatar{width:36px;height:36px;border-radius:50%;background:var(--green-bg);border:1px solid var(--green-bd);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:var(--green);flex-shrink:0;}
+.acct-name{font-weight:600;font-size:13px;}
+.acct-sub{font-size:11px;color:var(--muted);font-family:var(--mono);}
+
+/* Modal */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:100;display:flex;align-items:center;justify-content:center;padding:20px;}
+.modal{background:var(--s2);border:1px solid var(--border2);border-radius:14px;padding:28px;width:100%;max-width:520px;max-height:90vh;overflow-y:auto;}
+.modal-title{font-size:16px;font-weight:700;margin-bottom:20px;}
+.modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:20px;padding-top:16px;border-top:1px solid var(--border);}
+
+/* Drive folder picker */
+.folder-list{max-height:200px;overflow-y:auto;background:var(--s1);border:1px solid var(--border2);border-radius:8px;}
+.folder-item{padding:9px 14px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;}
+.folder-item:last-child{border-bottom:none;}
+.folder-item:hover{background:var(--s2);}
+.folder-item.selected{background:var(--green-bg);color:var(--green);}
+
+.empty{text-align:center;padding:48px 20px;color:var(--muted);font-size:13px;}
+.empty-icon{font-size:40px;margin-bottom:12px;}
+
+.hidden{display:none!important;}
+</style>
+</head>
+<body>
+<div class="shell">
+
+<!-- Sidebar -->
+<div class="sidebar">
+  <div class="sb-brand">
+    <div class="sb-icon">🏄</div>
+    <div><div class="sb-name">Riptag</div><div class="sb-sub">Set Manager v2</div></div>
+  </div>
+  <div class="sb-nav">
+    <div class="sb-btn active" id="nav-overview" onclick="showPage('overview')">
+      <span class="icon">📊</span> Overview
+    </div>
+    <div class="sb-btn" id="nav-accounts" onclick="showPage('accounts')">
+      <span class="icon">🔗</span> Accounts
+    </div>
+    <div class="sb-section">Sets</div>
+    <div id="sb-sets-list"></div>
+    <div class="sb-btn" onclick="openNewSetModal()" style="color:var(--green);margin-top:4px;">
+      <span class="icon">＋</span> New Set
+    </div>
+  </div>
+  <div class="sb-bottom">
+    <button class="drive-btn" id="drive-btn" onclick="connectDrive()">
+      <span>📁</span> <span id="drive-label">Connect Google Drive</span>
+    </button>
+  </div>
+</div>
+
+<!-- Main -->
+<div class="main">
+
+  <!-- Overview Page -->
+  <div id="page-overview">
+    <div class="topbar">
+      <div class="page-title">Overview</div>
+      <div class="topbar-actions">
+        <button class="btn primary" onclick="openNewSetModal()">＋ New Set</button>
+      </div>
+    </div>
+    <div class="content">
+      <div class="stats-grid">
+        <div class="stat"><div class="stat-n" id="ov-sets">0</div><div class="stat-lbl">total sets</div></div>
+        <div class="stat"><div class="stat-n green" id="ov-deployed">0</div><div class="stat-lbl">deployed</div></div>
+        <div class="stat"><div class="stat-n violet" id="ov-listings">0</div><div class="stat-lbl">total listings</div></div>
+        <div class="stat"><div class="stat-n amber" id="ov-accounts">0</div><div class="stat-lbl">accounts</div></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Live Log</div>
+        <div class="log-box" id="global-log"><div class="log-line hi">Ready.</div></div>
+      </div>
+      <div id="sets-list-overview"></div>
+    </div>
+  </div>
+
+  <!-- Accounts Page -->
+  <div id="page-accounts" class="hidden">
+    <div class="topbar">
+      <div class="page-title">Target Accounts</div>
+    </div>
+    <div class="content">
+      <div class="card">
+        <div class="card-title">Connect via Extension</div>
+        <p style="font-size:13px;color:var(--muted);line-height:1.7;margin-bottom:14px;">
+          Install the Chrome extension, log into a Depop account, open the extension and click Connect. It will appear here automatically.
+        </p>
+        <div id="accounts-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Set Detail Page -->
+  <div id="page-set" class="hidden">
+    <div class="topbar">
+      <div>
+        <div class="page-title" id="set-detail-title">Set Name</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:2px;" id="set-detail-sub"></div>
+      </div>
+      <div class="topbar-actions">
+        <button class="btn sm" onclick="openEditSetModal()">✏️ Edit</button>
+        <button class="btn sm violet" onclick="buildListings()">⚙️ Build Listings</button>
+        <button class="btn primary" id="btn-deploy" onclick="deploySet()">🚀 Deploy</button>
+      </div>
+    </div>
+    <div class="content">
+      <div class="row2" style="margin-bottom:14px;">
+        <div class="card" style="margin:0;">
+          <div class="card-title">Set Info</div>
+          <div id="set-info-panel"></div>
+        </div>
+        <div class="card" style="margin:0;">
+          <div class="card-title">Deploy Status</div>
+          <div class="prog-wrap" id="deploy-prog" style="display:none;">
+            <div class="prog-lbl" id="deploy-prog-lbl">—</div>
+            <div class="prog-track"><div class="prog-fill" id="deploy-prog-fill"></div></div>
+          </div>
+          <div class="log-box" id="set-log"><div class="log-line hi">Select a set and click Deploy.</div></div>
+        </div>
+      </div>
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+          <div class="card-title" style="margin:0;">Listings</div>
+          <div style="display:flex;gap:8px;">
+            <span id="listing-count" style="font-size:12px;color:var(--muted);font-family:var(--mono);"></span>
+          </div>
+        </div>
+        <div class="listings-wrap" id="listings-table-wrap">
+          <div class="empty"><div class="empty-icon">📋</div>No listings yet. Click Build Listings to generate from Drive folder.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<!-- New/Edit Set Modal -->
+<div class="modal-overlay hidden" id="set-modal">
+  <div class="modal">
+    <div class="modal-title" id="set-modal-title">New Set</div>
+    <div class="field">
+      <label>Set Name</label>
+      <input class="input" id="fm-name" placeholder="e.g. Set 4 — Vintage Bundle"/>
+    </div>
+    <div class="row2">
+      <div class="field">
+        <label>Default Price ($)</label>
+        <input class="input" id="fm-price" placeholder="20" type="number"/>
+      </div>
+      <div class="field">
+        <label>Photos per group</label>
+        <select class="input" id="fm-groupsize">
+          <option value="4">4 photos</option>
+          <option value="5">5 photos</option>
+        </select>
+      </div>
+    </div>
+    <div class="field">
+      <label>Sizes</label>
+      <div class="size-row" id="fm-sizes">
+        <div class="size-chip on" data-size="S">S</div>
+        <div class="size-chip on" data-size="M">M</div>
+        <div class="size-chip on" data-size="L">L</div>
+        <div class="size-chip on" data-size="XL">XL</div>
+        <div class="size-chip" data-size="XXL">XXL</div>
+      </div>
+    </div>
+    <div class="field">
+      <label>Description Template</label>
+      <textarea class="input" id="fm-desc" rows="6">🌴 New Y2K & Vintage Drops 🌴
+
+⦾ Curated Bundles & Sick Pieces
+⦾ Promotional Post
+⦾ DM me for Bundle Info
+
+#vintage #y2k #thrift #streetwear</textarea>
+    </div>
+    <div class="field">
+      <label>Google Drive Folder</label>
+      <div id="fm-folder-status" style="font-size:12px;color:var(--muted);margin-bottom:8px;">No folder selected</div>
+      <button class="btn sm" onclick="openFolderPicker()">📁 Pick Drive Folder</button>
+      <input type="hidden" id="fm-folder-id"/>
+      <input type="hidden" id="fm-folder-name"/>
+    </div>
+    <div class="field">
+      <label>Target Depop Account</label>
+      <select class="input" id="fm-account">
+        <option value="">— Select account —</option>
+      </select>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal('set-modal')">Cancel</button>
+      <button class="btn primary" onclick="saveSet()">Save Set</button>
+    </div>
+  </div>
+</div>
+
+<!-- Folder Picker Modal -->
+<div class="modal-overlay hidden" id="folder-modal">
+  <div class="modal">
+    <div class="modal-title">Pick Google Drive Folder</div>
+    <div class="field">
+      <input class="input" id="folder-search" placeholder="Search folders..." oninput="filterFolders()"/>
+    </div>
+    <div class="folder-list" id="folder-list-items"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal('folder-modal')">Cancel</button>
+      <button class="btn primary" onclick="confirmFolder()">Select Folder</button>
+    </div>
+  </div>
+</div>
+
+<!-- Listing Edit Modal -->
+<div class="modal-overlay hidden" id="listing-modal">
+  <div class="modal">
+    <div class="modal-title">Edit Listing</div>
+    <input type="hidden" id="lm-id"/>
+    <div class="field">
+      <label>Custom Price (leave blank to use set default)</label>
+      <input class="input" id="lm-price" placeholder="Leave blank for set default" type="number"/>
+    </div>
+    <div class="field">
+      <label>Custom Description (leave blank to use set default)</label>
+      <textarea class="input" id="lm-desc" rows="5" placeholder="Leave blank for set default"></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal('listing-modal')">Cancel</button>
+      <button class="btn primary" onclick="saveListing()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─── STATE ───────────────────────────────────────────────────────
+let sets = [], accounts = [], currentSetId = null, currentPage = 'overview';
+let folders = [], selectedFolder = null, editingSetId = null;
+
+// ─── INIT ────────────────────────────────────────────────────────
+async function init() {
+  await Promise.all([loadSets(), loadAccounts(), checkDrive()]);
+  connectSSE();
+  renderOverview();
+}
+
+// ─── SSE ─────────────────────────────────────────────────────────
+function connectSSE() {
+  const es = new EventSource('/api/stream');
+  es.onmessage = (e) => {
+    const d = JSON.parse(e.data);
+    if (d.type === 'account') { loadAccounts(); }
+    if (d.type === 'deploy') {
+      if (d.message) glog(d.message, d.status === 'error' ? 'err' : d.status === 'done' || d.status === 'posted' ? 'ok' : '');
+      if (d.progress !== undefined) setDeployProgress(d.progress, d.message);
+      if (d.setId === currentSetId) {
+        if (d.listingId && d.status === 'posted') markListingPosted(d.listingId);
+        if (d.status === 'done') { loadSets().then(renderCurrentSet); }
+      }
+    }
+  };
+  es.onerror = () => setTimeout(connectSSE, 3000);
+}
+
+// ─── DATA LOADING ────────────────────────────────────────────────
+async function loadSets() {
+  const r = await fetch('/api/sets').catch(() => ({ json: () => [] }));
+  sets = await r.json().catch(() => []);
+  renderSidebarSets();
+  return sets;
+}
+
+async function loadAccounts() {
+  const r = await fetch('/api/accounts').catch(() => ({ json: () => [] }));
+  accounts = await r.json().catch(() => []);
+  renderAccounts();
+  return accounts;
+}
+
+async function checkDrive() {
+  const r = await fetch('/api/drive/status').catch(() => ({ json: () => ({}) }));
+  const d = await r.json().catch(() => ({}));
+  const btn = document.getElementById('drive-btn');
+  const lbl = document.getElementById('drive-label');
+  if (d.connected) { btn.classList.add('connected'); lbl.textContent = 'Drive Connected ✓'; }
+  else { btn.classList.remove('connected'); lbl.textContent = 'Connect Google Drive'; }
+}
+
+// ─── NAVIGATION ──────────────────────────────────────────────────
+function showPage(page, setId) {
+  ['overview','accounts','set'].forEach(p => {
+    document.getElementById(`page-${p}`).classList.toggle('hidden', p !== page);
+    const nav = document.getElementById(`nav-${p}`);
+    if (nav) nav.classList.toggle('active', p === page);
+  });
+  currentPage = page;
+  if (page === 'set' && setId) { currentSetId = setId; renderCurrentSet(); }
+  if (page === 'overview') renderOverview();
+  if (page === 'accounts') renderAccounts();
+  // Update sidebar active
+  document.querySelectorAll('.sb-set').forEach(el => el.classList.toggle('active', el.dataset.id === setId));
+}
+
+// ─── OVERVIEW ────────────────────────────────────────────────────
+function renderOverview() {
+  document.getElementById('ov-sets').textContent = sets.length;
+  document.getElementById('ov-deployed').textContent = sets.filter(s => s.status === 'deployed').length;
+  document.getElementById('ov-listings').textContent = sets.reduce((a, s) => a + (s.listings?.length || 0), 0);
+  document.getElementById('ov-accounts').textContent = accounts.length;
+
+  const el = document.getElementById('sets-list-overview');
+  if (!sets.length) { el.innerHTML = `<div class="empty"><div class="empty-icon">📦</div>No sets yet. Click New Set to get started.</div>`; return; }
+  el.innerHTML = sets.map(s => `
+    <div class="set-card" onclick="showPage('set','${s.id}')">
+      <div class="set-card-icon">🗂️</div>
+      <div class="set-card-info">
+        <div class="set-card-name">${s.name}</div>
+        <div class="set-card-sub">${s.listings?.length || 0} listings · ${s.driveFolderName || 'No folder'} · ${getAccountName(s.accountId)}</div>
+      </div>
+      <div class="set-card-actions">
+        <span class="badge badge-${s.status}">${s.status}</span>
+        <button class="btn sm" onclick="event.stopPropagation();deleteSet('${s.id}')">🗑</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+// ─── SIDEBAR SETS ────────────────────────────────────────────────
+function renderSidebarSets() {
+  const el = document.getElementById('sb-sets-list');
+  el.innerHTML = sets.map(s => `
+    <div class="sb-set" data-id="${s.id}" onclick="showPage('set','${s.id}')">
+      <span class="sb-set-dot ${s.status}"></span>
+      <span class="sb-set-name">${s.name}</span>
+    </div>
+  `).join('');
+}
+
+// ─── ACCOUNTS ────────────────────────────────────────────────────
+function renderAccounts() {
+  const el = document.getElementById('accounts-list');
+  if (!accounts.length) { el.innerHTML = `<div class="empty" style="padding:20px;"><div>No accounts connected yet.</div><div style="margin-top:6px;font-size:12px;">Use the Chrome extension to connect a Depop account.</div></div>`; return; }
+  el.innerHTML = accounts.map(a => `
+    <div class="account-card">
+      <div class="acct-avatar">${a.username.substring(0,2).toUpperCase()}</div>
+      <div style="flex:1;">
+        <div class="acct-name">@${a.username}</div>
+        <div class="acct-sub">Connected ${new Date(a.connectedAt).toLocaleDateString()}</div>
+      </div>
+      <button class="btn sm danger" onclick="deleteAccount('${a.id}')">Remove</button>
+    </div>
+  `).join('');
+}
+
+function getAccountName(id) {
+  const a = accounts.find(x => x.id === id);
+  return a ? `@${a.username}` : 'No account';
+}
+
+// ─── SET DETAIL ──────────────────────────────────────────────────
+function renderCurrentSet() {
+  const set = sets.find(s => s.id === currentSetId);
+  if (!set) return;
+
+  document.getElementById('set-detail-title').textContent = set.name;
+  document.getElementById('set-detail-sub').textContent = `${set.listings?.length || 0} listings · ${set.status}`;
+
+  const info = document.getElementById('set-info-panel');
+  info.innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:8px;font-size:13px;">
+      <div style="display:flex;justify-content:space-between;"><span style="color:var(--muted);">Price</span><span>$${set.price}</span></div>
+      <div style="display:flex;justify-content:space-between;"><span style="color:var(--muted);">Sizes</span><span>${(set.sizes||[]).join(', ')}</span></div>
+      <div style="display:flex;justify-content:space-between;"><span style="color:var(--muted);">Group size</span><span>${set.groupSize} photos</span></div>
+      <div style="display:flex;justify-content:space-between;"><span style="color:var(--muted);">Drive folder</span><span>${set.driveFolderName || '—'}</span></div>
+      <div style="display:flex;justify-content:space-between;"><span style="color:var(--muted);">Account</span><span>${getAccountName(set.accountId)}</span></div>
+      <div style="display:flex;justify-content:space-between;"><span style="color:var(--muted);">Status</span><span class="badge badge-${set.status}">${set.status}</span></div>
+    </div>
+  `;
+
+  renderListingsTable(set);
+}
+
+function renderListingsTable(set) {
+  const el = document.getElementById('listings-table-wrap');
+  const listings = set.listings || [];
+  document.getElementById('listing-count').textContent = `${listings.length} listings (${listings.filter(l=>l.posted).length} posted)`;
+
+  if (!listings.length) {
+    el.innerHTML = `<div class="empty"><div class="empty-icon">📋</div>No listings yet. Click Build Listings to generate from your Drive folder.</div>`;
+    return;
+  }
+
+  // Group by groupId for display
+  const groups = {};
+  listings.forEach(l => { if (!groups[l.groupId]) groups[l.groupId] = []; groups[l.groupId].push(l); });
+
+  let rows = '';
+  Object.values(groups).forEach((group, gi) => {
+    const first = group[0];
+    rows += `
+      <tr style="background:rgba(255,255,255,0.01);">
+        <td colspan="6" style="padding:6px 12px;font-size:11px;color:var(--faint);font-family:var(--mono);">
+          GROUP ${gi + 1} — ${group[0].photos?.length || 0} photos
+        </td>
+      </tr>
+    `;
+    group.forEach(l => {
+      rows += `
+        <tr>
+          <td>
+            <div class="thumb-row">
+              ${(l.photos||[]).slice(0,3).map(p => p.thumb ? `<img class="thumb" src="${p.thumb}" alt=""/>` : `<div class="thumb"></div>`).join('')}
+            </div>
+          </td>
+          <td><span class="size-tag ${l.posted?'posted-tag':''}">${l.size}</span></td>
+          <td style="font-family:var(--mono);">$${l.customPrice || l.price}</td>
+          <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:12px;">${(l.customDescription || l.description || '').substring(0,60)}…</td>
+          <td><span class="badge ${l.posted?'badge-deployed':'badge-draft'}">${l.posted?'posted':'pending'}</span></td>
+          <td><button class="btn sm" onclick="openListingModal('${l.id}')">Edit</button></td>
+        </tr>
+      `;
+    });
+  });
+
+  el.innerHTML = `
+    <table>
+      <thead><tr><th>Photos</th><th>Size</th><th>Price</th><th>Description</th><th>Status</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
+function markListingPosted(listingId) {
+  const set = sets.find(s => s.id === currentSetId);
+  if (!set) return;
+  const l = set.listings?.find(x => x.id === listingId);
+  if (l) { l.posted = true; renderListingsTable(set); }
+}
+
+// ─── BUILD LISTINGS ──────────────────────────────────────────────
+async function buildListings() {
+  const set = sets.find(s => s.id === currentSetId);
+  if (!set?.driveFolder) { alert('Please set a Drive folder for this set first (Edit → Pick Drive Folder)'); return; }
+  glog(`Building listings for ${set.name}…`, 'hi');
+  const r = await fetch(`/api/sets/${currentSetId}/build-listings`, { method: 'POST' });
+  const d = await r.json();
+  if (d.error) { glog('Error: ' + d.error, 'err'); return; }
+  glog(`Built ${d.count} listings from ${d.groups} photo groups`, 'ok');
+  await loadSets();
+  renderCurrentSet();
+}
+
+// ─── DEPLOY ──────────────────────────────────────────────────────
+async function deploySet() {
+  const set = sets.find(s => s.id === currentSetId);
+  if (!set?.accountId) { alert('Please assign a Depop account to this set first.'); return; }
+  if (!set?.listings?.length) { alert('Build listings first before deploying.'); return; }
+  const pending = set.listings.filter(l => !l.posted).length;
+  if (!confirm(`Deploy ${pending} pending listings to @${getAccountName(set.accountId)}?`)) return;
+
+  document.getElementById('deploy-prog').style.display = 'block';
+  document.getElementById('btn-deploy').disabled = true;
+  glog(`Deploying ${set.name}…`, 'hi');
+
+  await fetch(`/api/sets/${currentSetId}/deploy`, { method: 'POST' });
+  setTimeout(() => { document.getElementById('btn-deploy').disabled = false; }, 3000);
+}
+
+function setDeployProgress(pct, label) {
+  document.getElementById('deploy-prog').style.display = 'block';
+  document.getElementById('deploy-prog-fill').style.width = pct + '%';
+  document.getElementById('deploy-prog-lbl').textContent = label;
+}
+
+// ─── NEW/EDIT SET MODAL ──────────────────────────────────────────
+async function openNewSetModal() {
+  editingSetId = null;
+  document.getElementById('set-modal-title').textContent = 'New Set';
+  document.getElementById('fm-name').value = '';
+  document.getElementById('fm-price').value = '20';
+  document.getElementById('fm-groupsize').value = '4';
+  document.getElementById('fm-desc').value = '🌴 New Y2K & Vintage Drops 🌴\n\n⦾ Curated Bundles & Sick Pieces\n⦾ Promotional Post\n⦾ DM me for Bundle Info\n\n#vintage #y2k #thrift #streetwear';
+  document.getElementById('fm-folder-id').value = '';
+  document.getElementById('fm-folder-name').value = '';
+  document.getElementById('fm-folder-status').textContent = 'No folder selected';
+  document.querySelectorAll('.size-chip').forEach(c => c.classList.toggle('on', ['S','M','L','XL'].includes(c.dataset.size)));
+  populateAccountDropdown();
+  document.getElementById('fm-account').value = '';
+  document.getElementById('set-modal').classList.remove('hidden');
+}
+
+async function openEditSetModal() {
+  const set = sets.find(s => s.id === currentSetId);
+  if (!set) return;
+  editingSetId = set.id;
+  document.getElementById('set-modal-title').textContent = 'Edit Set';
+  document.getElementById('fm-name').value = set.name;
+  document.getElementById('fm-price').value = set.price;
+  document.getElementById('fm-groupsize').value = set.groupSize || 4;
+  document.getElementById('fm-desc').value = set.description;
+  document.getElementById('fm-folder-id').value = set.driveFolder || '';
+  document.getElementById('fm-folder-name').value = set.driveFolderName || '';
+  document.getElementById('fm-folder-status').textContent = set.driveFolderName ? `📁 ${set.driveFolderName}` : 'No folder selected';
+  document.querySelectorAll('.size-chip').forEach(c => c.classList.toggle('on', (set.sizes||[]).includes(c.dataset.size)));
+  populateAccountDropdown();
+  document.getElementById('fm-account').value = set.accountId || '';
+  document.getElementById('set-modal').classList.remove('hidden');
+}
+
+function populateAccountDropdown() {
+  const sel = document.getElementById('fm-account');
+  sel.innerHTML = '<option value="">— Select account —</option>' + accounts.map(a => `<option value="${a.id}">@${a.username}</option>`).join('');
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('.size-chip').forEach(chip => {
+    chip.addEventListener('click', () => chip.classList.toggle('on'));
+  });
+});
+
+async function saveSet() {
+  const sizes = [...document.querySelectorAll('.size-chip.on')].map(c => c.dataset.size);
+  const body = {
+    name: document.getElementById('fm-name').value.trim() || 'Unnamed Set',
+    price: document.getElementById('fm-price').value || '20',
+    groupSize: parseInt(document.getElementById('fm-groupsize').value),
+    description: document.getElementById('fm-desc').value,
+    sizes,
+    driveFolder: document.getElementById('fm-folder-id').value || null,
+    driveFolderName: document.getElementById('fm-folder-name').value || null,
+    accountId: document.getElementById('fm-account').value || null
+  };
+
+  if (editingSetId) {
+    await fetch(`/api/sets/${editingSetId}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  } else {
+    await fetch('/api/sets', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  }
+
+  closeModal('set-modal');
+  await loadSets();
+  renderOverview();
+  if (editingSetId) renderCurrentSet();
+}
+
+async function deleteSet(id) {
+  if (!confirm('Delete this set?')) return;
+  await fetch(`/api/sets/${id}`, { method: 'DELETE' });
+  await loadSets();
+  renderOverview();
+  if (currentSetId === id) showPage('overview');
+}
+
+async function deleteAccount(id) {
+  if (!confirm('Remove this account?')) return;
+  await fetch(`/api/accounts/${id}`, { method: 'DELETE' });
+  await loadAccounts();
+}
+
+// ─── FOLDER PICKER ───────────────────────────────────────────────
+async function openFolderPicker() {
+  const r = await fetch('/api/drive/folders');
+  if (r.status === 401) { alert('Connect Google Drive first.'); return; }
+  const d = await r.json();
+  folders = d.folders || [];
+  renderFolderList(folders);
+  selectedFolder = null;
+  document.getElementById('folder-search').value = '';
+  document.getElementById('folder-modal').classList.remove('hidden');
+}
+
+function renderFolderList(list) {
+  const el = document.getElementById('folder-list-items');
+  if (!list.length) { el.innerHTML = '<div style="padding:14px;color:var(--muted);font-size:13px;">No folders found.</div>'; return; }
+  el.innerHTML = list.map(f => `
+    <div class="folder-item ${selectedFolder?.id===f.id?'selected':''}" onclick="selectFolder('${f.id}','${f.name.replace(/'/g,"\\'")}')">
+      📁 ${f.name}
+    </div>
+  `).join('');
+}
+
+function filterFolders() {
+  const q = document.getElementById('folder-search').value.toLowerCase();
+  renderFolderList(folders.filter(f => f.name.toLowerCase().includes(q)));
+}
+
+function selectFolder(id, name) {
+  selectedFolder = { id, name };
+  document.querySelectorAll('.folder-item').forEach(el => el.classList.toggle('selected', el.textContent.trim().includes(name)));
+}
+
+function confirmFolder() {
+  if (!selectedFolder) { alert('Select a folder first.'); return; }
+  document.getElementById('fm-folder-id').value = selectedFolder.id;
+  document.getElementById('fm-folder-name').value = selectedFolder.name;
+  document.getElementById('fm-folder-status').textContent = `📁 ${selectedFolder.name}`;
+  closeModal('folder-modal');
+}
+
+// ─── LISTING EDIT ────────────────────────────────────────────────
+function openListingModal(listingId) {
+  const set = sets.find(s => s.id === currentSetId);
+  const listing = set?.listings?.find(l => l.id === listingId);
+  if (!listing) return;
+  document.getElementById('lm-id').value = listingId;
+  document.getElementById('lm-price').value = listing.customPrice || '';
+  document.getElementById('lm-desc').value = listing.customDescription || '';
+  document.getElementById('listing-modal').classList.remove('hidden');
+}
+
+async function saveListing() {
+  const id = document.getElementById('lm-id').value;
+  const price = document.getElementById('lm-price').value.trim();
+  const desc = document.getElementById('lm-desc').value.trim();
+  await fetch(`/api/sets/${currentSetId}/listings/${id}`, {
+    method: 'PUT', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ customPrice: price || null, customDescription: desc || null })
+  });
+  closeModal('listing-modal');
+  await loadSets();
+  renderCurrentSet();
+}
+
+// ─── DRIVE ───────────────────────────────────────────────────────
+function connectDrive() { window.location.href = '/auth/google'; }
+
+// ─── UTILS ───────────────────────────────────────────────────────
+function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+
+function glog(msg, type='') {
+  const box = document.getElementById('global-log');
+  const el = document.createElement('div');
+  el.className = 'log-line ' + type;
+  el.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+  box.appendChild(el);
+  box.scrollTop = box.scrollHeight;
+  // Also log to set log if visible
+  const setLog = document.getElementById('set-log');
+  if (setLog && currentPage === 'set') {
+    const el2 = document.createElement('div');
+    el2.className = 'log-line ' + type;
+    el2.textContent = el.textContent;
+    setLog.appendChild(el2);
+    setLog.scrollTop = setLog.scrollHeight;
+  }
+}
+
+// Close modal on overlay click
+document.querySelectorAll('.modal-overlay').forEach(overlay => {
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.classList.add('hidden'); });
+});
+
+init();
+</script>
+</body>
+</html>
