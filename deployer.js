@@ -10,10 +10,8 @@ async function downloadDrivePhoto(driveId, destPath, tokens) {
   const client = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET);
   client.setCredentials(tokens);
   const drive = google.drive({ version: 'v3', auth: client });
-
   fs.ensureDirSync(path.dirname(destPath));
   const dest = fs.createWriteStream(destPath);
-
   const res = await drive.files.get({ fileId: driveId, alt: 'media' }, { responseType: 'stream' });
   return new Promise((resolve, reject) => {
     res.data.pipe(dest);
@@ -22,69 +20,103 @@ async function downloadDrivePhoto(driveId, destPath, tokens) {
   });
 }
 
-async function postListing(page, listing, localPhotos) {
+async function postListing(page, listing, localPhotos, onProgress) {
+  onProgress({ status: 'info', message: `  → Navigating to sell page...` });
   await page.goto('https://www.depop.com/sell/', { waitUntil: 'networkidle', timeout: 30000 });
-  await page.waitForTimeout(1500);
+  await page.waitForTimeout(2000);
 
+  // Take screenshot of current page state for debugging
+  const pageTitle = await page.title();
+  const pageUrl = page.url();
+  onProgress({ status: 'info', message: `  → Page: ${pageTitle} | URL: ${pageUrl}` });
+
+  // Check if we're on the right page
+  if (!pageUrl.includes('sell') && !pageUrl.includes('upload')) {
+    onProgress({ status: 'info', message: `  → Not on sell page, trying to find sell button...` });
+    const sellBtn = await page.$('a[href*="sell"], button:has-text("Sell")');
+    if (sellBtn) { await sellBtn.click(); await page.waitForTimeout(2000); }
+  }
+
+  // Upload photos
   try {
-    const photoInput = await page.$('input[type="file"][accept*="image"]');
+    const photoInput = await page.$('input[type="file"]');
     if (photoInput && localPhotos.length > 0) {
       const existing = localPhotos.filter(p => fs.existsSync(p));
-      if (existing.length) { await photoInput.setInputFiles(existing); await page.waitForTimeout(2500); }
+      onProgress({ status: 'info', message: `  → Uploading ${existing.length} photos...` });
+      if (existing.length) { await photoInput.setInputFiles(existing); await page.waitForTimeout(3000); }
+    } else {
+      onProgress({ status: 'info', message: `  → No photo input found or no photos` });
     }
-  } catch (e) { console.log('Photo upload error:', e.message); }
+  } catch (e) { onProgress({ status: 'info', message: `  → Photo error: ${e.message}` }); }
 
-  const desc = listing.customDescription || listing.description || '';
+  // Description
   try {
-    const descInput = await page.$('textarea[name="description"], textarea[placeholder*="escribe"], textarea[placeholder*="ell"]');
-    if (descInput) { await descInput.click({ clickCount: 3 }); await descInput.type(desc); await page.waitForTimeout(300); }
-  } catch {}
-
-  try {
-    const priceInput = await page.$('input[name="price"], input[placeholder*="rice"]');
-    if (priceInput) { await priceInput.click({ clickCount: 3 }); await priceInput.type(String(listing.customPrice || listing.price || '20')); await page.waitForTimeout(300); }
-  } catch {}
-
-  try {
-    const catBtn = await page.$('[data-testid="listing-category"], button[aria-label*="ategory"]');
-    if (catBtn) {
-      await catBtn.click(); await page.waitForTimeout(500);
-      const men = await page.$('text=Men'); if (men) { await men.click(); await page.waitForTimeout(400); }
-      const tee = await page.$('text=T-shirts'); if (tee) { await tee.click(); await page.waitForTimeout(400); }
+    const descSelectors = [
+      'textarea[name="description"]',
+      'textarea[placeholder*="escribe"]',
+      'textarea[placeholder*="ell people"]',
+      'textarea[placeholder*="Add a description"]',
+      '[data-testid="listing-description"] textarea',
+      'textarea'
+    ];
+    let descInput = null;
+    for (const sel of descSelectors) {
+      descInput = await page.$(sel);
+      if (descInput) { onProgress({ status: 'info', message: `  → Found desc with: ${sel}` }); break; }
     }
-  } catch {}
-
-  try {
-    const condBtn = await page.$('[data-testid="listing-condition"]');
-    if (condBtn) {
-      await condBtn.click(); await page.waitForTimeout(400);
-      const used = await page.$('text=Used - Excellent'); if (used) { await used.click(); await page.waitForTimeout(300); }
+    if (descInput) {
+      await descInput.click({ clickCount: 3 });
+      await descInput.type(listing.customDescription || listing.description || '');
+      await page.waitForTimeout(300);
+    } else {
+      onProgress({ status: 'info', message: `  → No description field found` });
     }
-  } catch {}
+  } catch (e) { onProgress({ status: 'info', message: `  → Desc error: ${e.message}` }); }
 
+  // Price
   try {
-    const sizeBtn = await page.$('[data-testid="listing-size"], button[aria-label*="ize"]');
-    if (sizeBtn) {
-      await sizeBtn.click(); await page.waitForTimeout(400);
-      const sizeOpt = await page.$(`text="${listing.size}"`); if (sizeOpt) { await sizeOpt.click(); await page.waitForTimeout(300); }
+    const priceSelectors = [
+      'input[name="price"]',
+      'input[placeholder*="rice"]',
+      'input[placeholder*="0.00"]',
+      '[data-testid*="price"] input',
+    ];
+    let priceInput = null;
+    for (const sel of priceSelectors) {
+      priceInput = await page.$(sel);
+      if (priceInput) { onProgress({ status: 'info', message: `  → Found price with: ${sel}` }); break; }
     }
-  } catch {}
-
-  try {
-    const qtyInput = await page.$('input[name="quantity"]');
-    if (qtyInput) { await qtyInput.click({ clickCount: 3 }); await qtyInput.type('100'); await page.waitForTimeout(300); }
-  } catch {}
-
-  try {
-    const pkgBtn = await page.$('[data-testid*="package"]');
-    if (pkgBtn) {
-      await pkgBtn.click(); await page.waitForTimeout(400);
-      const xs = await page.$('text=Extra small'); if (xs) { await xs.click(); await page.waitForTimeout(300); }
+    if (priceInput) {
+      await priceInput.click({ clickCount: 3 });
+      await priceInput.type(String(listing.customPrice || listing.price || '20'));
+      await page.waitForTimeout(300);
+    } else {
+      onProgress({ status: 'info', message: `  → No price field found` });
     }
-  } catch {}
+  } catch (e) { onProgress({ status: 'info', message: `  → Price error: ${e.message}` }); }
 
-  const postBtn = await page.$('button[type="submit"], button:has-text("Post"), button:has-text("List")');
-  if (postBtn) { await postBtn.click(); await page.waitForTimeout(3000); return true; }
+  // Find and click Post button
+  const postSelectors = [
+    'button[type="submit"]',
+    'button:has-text("Post")',
+    'button:has-text("List")',
+    'button:has-text("Upload")',
+    'button:has-text("Publish")',
+  ];
+  let postBtn = null;
+  for (const sel of postSelectors) {
+    postBtn = await page.$(sel);
+    if (postBtn) { onProgress({ status: 'info', message: `  → Found post btn with: ${sel}` }); break; }
+  }
+
+  if (postBtn) {
+    await postBtn.click();
+    await page.waitForTimeout(3000);
+    onProgress({ status: 'info', message: `  → Clicked post, new URL: ${page.url()}` });
+    return true;
+  }
+
+  onProgress({ status: 'info', message: `  → No post button found. Page HTML snippet: ${(await page.content()).substring(0, 300)}` });
   return false;
 }
 
@@ -92,15 +124,10 @@ async function deploySet(set, account, onProgress) {
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext();
 
-  // Sanitize cookies
   if (account.cookies?.length) {
     const cleanCookies = account.cookies.map(c => ({
-      name: c.name,
-      value: c.value,
-      domain: c.domain,
-      path: c.path || '/',
-      secure: c.secure || false,
-      httpOnly: c.httpOnly || false,
+      name: c.name, value: c.value, domain: c.domain,
+      path: c.path || '/', secure: c.secure || false, httpOnly: c.httpOnly || false,
       sameSite: ['Strict','Lax','None'].includes(c.sameSite) ? c.sameSite : 'Lax'
     }));
     await context.addCookies(cleanCookies);
@@ -112,17 +139,23 @@ async function deploySet(set, account, onProgress) {
   fs.ensureDirSync(tmpDir);
 
   try {
+    onProgress({ status: 'info', message: `Checking login status...` });
     await page.goto('https://www.depop.com/', { waitUntil: 'networkidle' });
     await page.waitForTimeout(1500);
+    const url = page.url();
+    const title = await page.title();
+    onProgress({ status: 'info', message: `Home page: ${title} | ${url}` });
 
     const pending = set.listings.filter(l => !l.posted);
     onProgress({ status: 'starting', message: `Starting deploy — ${pending.length} listings to post` });
 
     const photoCache = {};
 
-    for (let i = 0; i < pending.length; i++) {
-      const listing = pending[i];
+    // Only do first listing for now to debug
+    const testListings = pending.slice(0, 1);
 
+    for (let i = 0; i < testListings.length; i++) {
+      const listing = testListings[i];
       try {
         if (!photoCache[listing.groupId]) {
           const localPhotos = [];
@@ -133,36 +166,28 @@ async function deploySet(set, account, onProgress) {
             try {
               await downloadDrivePhoto(photo.driveId, localPath, account.googleTokens || {});
               localPhotos.push(localPath);
-            } catch (e) { console.log('Photo download failed:', e.message); }
+              onProgress({ status: 'info', message: `  → Downloaded photo ${j+1}` });
+            } catch (e) { onProgress({ status: 'info', message: `  → Photo ${j+1} failed: ${e.message}` }); }
           }
           photoCache[listing.groupId] = localPhotos;
         }
 
-        onProgress({
-          status: 'posting',
-          message: `Posting ${i + 1}/${pending.length}: ${listing.size} — Group ${listing.groupIndex + 1}`,
-          progress: Math.round(((i + 1) / pending.length) * 100),
-          listingId: listing.id
-        });
-
-        const success = await postListing(page, listing, photoCache[listing.groupId] || []);
+        onProgress({ status: 'posting', message: `Testing post: ${listing.size} Group ${listing.groupIndex + 1}`, listingId: listing.id });
+        const success = await postListing(page, listing, photoCache[listing.groupId] || [], onProgress);
 
         if (success) {
           successCount++;
-          onProgress({ status: 'posted', message: `✓ Posted: Size ${listing.size} Group ${listing.groupIndex + 1}`, listingId: listing.id });
+          onProgress({ status: 'posted', message: `✓ Posted: Size ${listing.size}`, listingId: listing.id });
         } else {
-          onProgress({ status: 'error', message: `Failed: Size ${listing.size} Group ${listing.groupIndex + 1}`, listingId: listing.id });
+          onProgress({ status: 'error', message: `Failed: Size ${listing.size}`, listingId: listing.id });
         }
 
-        await page.waitForTimeout(3000 + Math.random() * 4000);
-
       } catch (err) {
-        console.error('Listing error:', err.message);
         onProgress({ status: 'error', message: `Error: ${err.message}`, listingId: listing.id });
       }
     }
 
-    onProgress({ status: 'done', message: `Deploy complete — ${successCount}/${pending.length} posted` });
+    onProgress({ status: 'done', message: `Debug run complete — ${successCount} posted` });
 
   } catch (err) {
     onProgress({ status: 'error', message: err.message });
