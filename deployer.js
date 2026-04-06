@@ -5,8 +5,8 @@ const path = require('path');
 const https = require('https');
 const http = require('http');
 
-const CLIENT_ID = process.env.GOOGLE_CLIENT_ID || 'YOUR_GOOGLE_CLIENT_ID';
-const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || 'YOUR_GOOGLE_CLIENT_SECRET';
+const CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '1049938897487-liap0llpr407fv458k71qqpnm9sg484l.apps.googleusercontent.com';
+const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || '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';
 
 async function downloadDrivePhoto(driveId, destPath, tokens) {
   const client = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET);
@@ -100,7 +100,7 @@ async function postListing(page, listing, localPhotos) {
 }
 
 async function deploySet(set, account, onProgress) {
-  const browser = await chromium.launch({ headless: false });
+  const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext();
 
   // Inject cookies
