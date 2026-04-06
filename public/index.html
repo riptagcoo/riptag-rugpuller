@@ -335,6 +335,9 @@ tr:hover td{background:rgba(255,255,255,0.02);}
     <div class="field">
       <label>Google Drive Folder</label>
       <div id="fm-folder-status" style="font-size:12px;color:var(--muted);margin-bottom:8px;">No folder selected</div>
+      <div style="font-size:11px;color:var(--faint);margin-bottom:8px;line-height:1.6;">
+        Structure: <code style="color:var(--violet);">Set Folder → Group 1, Group 2... → S, M, L, XL → photos</code>
+      </div>
       <button class="btn sm" onclick="openFolderPicker()">📁 Pick Drive Folder</button>
       <input type="hidden" id="fm-folder-id"/>
       <input type="hidden" id="fm-folder-name"/>
@@ -600,7 +603,7 @@ async function buildListings() {
   const r = await fetch(`/api/sets/${currentSetId}/build-listings`, { method: 'POST' });
   const d = await r.json();
   if (d.error) { glog('Error: ' + d.error, 'err'); return; }
-  glog(`Built ${d.count} listings from ${d.groups} photo groups`, 'ok');
+  glog(`Built ${d.count} listings from ${d.groups} groups (${d.mode === 'structured' ? 'Group/Size folder structure' : 'flat photo structure'})`, 'ok');
   await loadSets();
   renderCurrentSet();
 }

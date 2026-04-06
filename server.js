@@ -232,6 +232,7 @@ app.delete('/api/sets/:id', async (req, res) => {
 });
 
 // ─── BUILD LISTINGS ───────────────────────────────────────────
+// New structure: Set Folder > Group Folders > Size Subfolders > Photos (in order)
 app.post('/api/sets/:id/build-listings', async (req, res) => {
   if (!req.session.googleTokens) return res.status(401).json({ error: 'Not authenticated with Google' });
   try {
@@ -242,31 +243,95 @@ app.post('/api/sets/:id/build-listings', async (req, res) => {
 
     const client = getOAuth2Client(req.session.googleTokens);
     const drive = google.drive({ version: 'v3', auth: client });
-    const photos = await drive.files.list({
-      q: `'${set.driveFolder}' in parents and mimeType contains 'image/' and trashed=false`,
-      fields: 'files(id,name,mimeType,thumbnailLink)', orderBy: 'name', pageSize: 200
-    });
 
-    const groupSize = set.groupSize || 4;
+    // Helper: list children of a folder
+    async function listChildren(folderId, type='all') {
+      const q = type === 'folders'
+        ? `'${folderId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`
+        : type === 'images'
+        ? `'${folderId}' in parents and mimeType contains 'image/' and trashed=false`
+        : `'${folderId}' in parents and trashed=false`;
+      const r = await drive.files.list({ q, fields: 'files(id,name,mimeType,thumbnailLink)', orderBy: 'name', pageSize: 200 });
+      return r.data.files;
+    }
+
+    // Get Group folders inside Set folder (sorted by name)
+    const groupFolders = await listChildren(set.driveFolder, 'folders');
+
+    if (groupFolders.length === 0) {
+      // Fallback: flat structure (old behavior)
+      const photos = await listChildren(set.driveFolder, 'images');
+      const groupSize = set.groupSize || 4;
+      const listings = [];
+      for (let i = 0; i < photos.length; i += groupSize) {
+        const group = photos.slice(i, i + groupSize);
+        const groupId = uuid();
+        for (const size of set.sizes) {
+          listings.push({
+            id: uuid(), groupId, groupIndex: Math.floor(i / groupSize),
+            title: set.name, description: set.description, price: set.price, size,
+            photos: group.map(p => ({ driveId: p.id, name: p.name, thumb: p.thumbnailLink })),
+            customDescription: null, customPrice: null, posted: false
+          });
+        }
+      }
+      set.listings = listings;
+      await pool.query('UPDATE sets SET data=$1 WHERE id=$2', [JSON.stringify(set), set.id]);
+      return res.json({ ok: true, count: listings.length, groups: groupFolders.length, mode: 'flat' });
+    }
+
+    // New structured mode: Group > Size > Photos
     const listings = [];
-    const files = photos.data.files;
+    const sizeAliases = {
+      's': 'S', 'small': 'S',
+      'm': 'M', 'medium': 'M', 'med': 'M',
+      'l': 'L', 'large': 'L',
+      'xl': 'XL', 'x-large': 'XL', 'xlarge': 'XL',
+      'xxl': 'XXL', 'xx-large': 'XXL', '2xl': 'XXL'
+    };
 
-    for (let i = 0; i < files.length; i += groupSize) {
-      const group = files.slice(i, i + groupSize);
+    for (let gi = 0; gi < groupFolders.length; gi++) {
+      const groupFolder = groupFolders[gi];
       const groupId = uuid();
-      for (const size of set.sizes) {
-        listings.push({
-          id: uuid(), groupId, groupIndex: Math.floor(i / groupSize),
-          title: set.name, description: set.description, price: set.price, size,
-          photos: group.map(p => ({ driveId: p.id, name: p.name, thumb: p.thumbnailLink })),
-          customDescription: null, customPrice: null, posted: false
-        });
+
+      // Get size subfolders inside this group
+      const sizeFolders = await listChildren(groupFolder.id, 'folders');
+
+      if (sizeFolders.length === 0) {
+        // Group has no size subfolders - use photos directly for all sizes
+        const photos = await listChildren(groupFolder.id, 'images');
+        for (const size of set.sizes) {
+          listings.push({
+            id: uuid(), groupId, groupIndex: gi,
+            title: set.name, description: set.description, price: set.price, size,
+            photos: photos.map(p => ({ driveId: p.id, name: p.name, thumb: p.thumbnailLink })),
+            customDescription: null, customPrice: null, posted: false
+          });
+        }
+      } else {
+        // Each size subfolder = one listing
+        for (const sizeFolder of sizeFolders) {
+          const sizeName = sizeFolder.name.trim();
+          const normalizedSize = sizeAliases[sizeName.toLowerCase()] || sizeName.toUpperCase();
+
+          // Only include if this size is in the set's sizes list
+          if (!set.sizes.includes(normalizedSize)) continue;
+
+          const photos = await listChildren(sizeFolder.id, 'images');
+          listings.push({
+            id: uuid(), groupId, groupIndex: gi,
+            title: set.name, description: set.description, price: set.price,
+            size: normalizedSize,
+            photos: photos.map(p => ({ driveId: p.id, name: p.name, thumb: p.thumbnailLink })),
+            customDescription: null, customPrice: null, posted: false
+          });
+        }
       }
     }
 
     set.listings = listings;
     await pool.query('UPDATE sets SET data=$1 WHERE id=$2', [JSON.stringify(set), set.id]);
-    res.json({ ok: true, count: listings.length, groups: Math.floor(files.length / groupSize) });
+    res.json({ ok: true, count: listings.length, groups: groupFolders.length, mode: 'structured' });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
