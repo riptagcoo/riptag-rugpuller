@@ -395,9 +395,9 @@ async function renderActiveThisWeek(){
             +'<div style="font-size:12px;color:var(--muted);font-family:var(--mono);">'+a.setName+' · '+a.posted+'/'+a.listings+' posted · Live '+a.hoursLive+'h ago</div>'
           +'</div>'
           +'<div class="active-card-actions">'
-            +'<button class="btn sm" onclick="openDescSchedule(''+a.setId+'')">📝 Descriptions</button>'
-            +'<button class="btn sm" onclick="openMassEdit(''+a.accountId+'',''+a.setId+'',''+a.username+'')">✏️ Mass Edit</button>'
-            +'<button class="btn sm" onclick="checkStatus(''+a.accountId+'',''+a.username+'')">🔍 Check</button>'
+            +'<button class="btn sm" onclick="openDescSchedule(this)" data-setid="'+a.setId+'">📝 Descriptions</button>'
+            +'<button class="btn sm" onclick="openMassEditBtn(this)" data-accountid="'+a.accountId+'" data-setid="'+a.setId+'" data-username="'+a.username+'">✏️ Mass Edit</button>'
+            +'<button class="btn sm" onclick="checkStatusBtn(this)" data-accountid="'+a.accountId+'" data-username="'+a.username+'">🔍 Check</button>'
           +'</div>'
         +'</div>'
         +(a.descriptionPhase==='launch'?
@@ -458,7 +458,7 @@ async function confirmMassEdit(){
   alert('Mass edit queued! Run node agent.js and select "Mass Edit" option to execute.');
 }
 
-async function openDescSchedule(setId){
+async function openDescScheduleById(setId){
   const set=sets.find(s=>s.id===setId);
   if(!set)return;
   document.getElementById('ds-set-id').value=setId;
