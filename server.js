@@ -39,7 +39,7 @@ async function initDB() {
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(session({ secret: SESSION_SECRET, resave: false, saveUninitialized: true, cookie: { maxAge: 7 * 24 * 60 * 60 * 1000 } }));
-app.use(express.static(path.join(__dirname, 'public')));
+// Static files served after auth (see below)
 
 // CORS
 app.use((req, res, next) => {
@@ -113,6 +113,7 @@ app.get('/logout', (req, res) => {
 
 
 app.use(requireAuth);
+app.use(express.static(path.join(__dirname, 'public')));
 
 // SSE
 let sseClients = [];
