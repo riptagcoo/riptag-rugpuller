@@ -344,8 +344,12 @@ function showPage(page,setId){
 
 function switchTab(tab){
   currentTab=tab;
-  ['rugpull','riptag','all'].forEach(t=>{const el=document.getElementById('tab-'+t);el.className='cat-tab'+(t===tab?' active '+t:'');});
-  renderOverview();
+  ['rugpull','riptag','all'].forEach(t=>{
+    const el=document.getElementById('tab-'+t);
+    if(!el)return;
+    el.className='cat-tab'+(t===tab?' active '+t:'');
+  });
+  renderOverviewSets();
 }
 
 function renderOverview(){
@@ -353,22 +357,26 @@ function renderOverview(){
   document.getElementById('ov-deployed').textContent=sets.filter(s=>s.status==='deployed').length;
   document.getElementById('ov-listings').textContent=sets.reduce((a,s)=>a+(s.listings?.length||0),0);
   document.getElementById('ov-accounts').textContent=accounts.length;
-  const filtered=currentTab==='all'?sets:sets.filter(s=>s.category===currentTab);
+  renderOverviewSets();
+}
+
+function renderOverviewSets(){
+  const filtered=currentTab==='all'?[...sets]:sets.filter(s=>s.category===currentTab);
   const el=document.getElementById('sets-list-overview');
-  if(!filtered.length){el.innerHTML='<div class="empty"><div class="empty-icon">📦</div>No sets yet.</div>';return;}
-  el.innerHTML=filtered.map(s=>`
-    <div class="set-card" onclick="showPage('set','${s.id}')">
-      <div class="set-card-icon">${s.category==='riptag'?'🌐':'🎯'}</div>
-      <div class="set-card-info">
-        <div class="set-card-name">${s.name}</div>
-        <div class="set-card-sub">${s.listings?.length||0} listings · ${s.driveFolderName||"No folder"} · ${getAccountName(s.accountId)}${s.schedule&&s.schedule.enabled?" · Sched":""}</div>
-      </div>
-      <div class="set-card-actions">
-        <span class="badge badge-${s.category}">${s.category==='riptag'?'riptag.co':'rugpull'}</span>
-        <span class="badge badge-${s.status}">${s.status}</span>
-        <button class="btn sm danger" onclick="event.stopPropagation();deleteSet('${s.id}')">🗑</button>
-      </div>
-    </div>`).join('');
+  if(!filtered.length){el.innerHTML='<div class="empty"><div class="empty-icon">📦</div>No sets in this category yet.</div>';return;}
+  el.innerHTML=filtered.map(s=>{
+    const icon=s.category==='riptag'?'🌐':'🎯';
+    const catBadge=s.category==='riptag'?'riptag.co':'rugpull';
+    const sub=(s.listings?.length||0)+' listings · '+(s.driveFolderName||'No folder')+' · '+getAccountName(s.accountId);
+    return '<div class="set-card" onclick="showPage(\'set\',\''+s.id+'\')">'
+      +'<div class="set-card-icon">'+icon+'</div>'
+      +'<div class="set-card-info"><div class="set-card-name">'+s.name+'</div><div class="set-card-sub">'+sub+'</div></div>'
+      +'<div class="set-card-actions">'
+      +'<span class="badge badge-'+s.category+'">'+catBadge+'</span>'
+      +'<span class="badge badge-'+s.status+'">'+s.status+'</span>'
+      +'<button class="btn sm danger" onclick="event.stopPropagation();deleteSet(\''+s.id+'\')">🗑</button>'
+      +'</div></div>';
+  }).join('');
 }
 
 function renderSidebarSets(){
@@ -394,9 +402,56 @@ function renderAccounts(){
 
 function renderSchedule(){
   const el=document.getElementById('schedule-list');
-  const scheduled=sets.filter(s=>s.schedule?.enabled);
-  if(!scheduled.length){el.innerHTML='<div class="empty"><div class="empty-icon">📅</div>No scheduled sets. Edit a set to add a schedule.</div>';return;}
-  el.innerHTML=scheduled.map(s=>`<div class="card"><div style="display:flex;align-items:center;justify-content:space-between;"><div><div style="font-weight:600;">${s.name}</div><div style="font-size:12px;color:var(--muted);margin-top:4px;font-family:var(--mono);">${s.schedule.days.map(d=>d.charAt(0).toUpperCase()+d.slice(1)).join(', ')} at ${s.schedule.time} → ${getAccountName(s.accountId)}</div></div><button class="btn sm" onclick="showPage('set','${s.id}')">View</button></div></div>`).join('');
+  const days=['monday','tuesday','wednesday','thursday','friday','saturday','sunday'];
+  const dayLabels={'monday':'Monday','tuesday':'Tuesday','wednesday':'Wednesday','thursday':'Thursday','friday':'Friday','saturday':'Saturday','sunday':'Sunday'};
+
+  // Load saved schedule from localStorage
+  let sched={};
+  try{sched=JSON.parse(localStorage.getItem('riptag_schedule')||'{}');}catch{}
+
+  const setOptions='<option value="">— No deploy —</option>'+sets.map(s=>'<option value="'+s.id+'">'+s.name+'</option>').join('');
+  const acctOptions='<option value="">— Select account —</option>'+accounts.map(a=>'<option value="'+a.id+'">@'+a.username+'</option>').join('');
+
+  el.innerHTML='<div class="card"><div class="card-title">Weekly Deploy Schedule (MST)</div>'
+    +days.map(day=>{
+      const d=sched[day]||{};
+      return '<div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--border);">'
+        +'<div style="width:90px;font-size:13px;font-weight:600;">'+dayLabels[day]+'</div>'
+        +'<select class="input" style="flex:1;" id="sched-set-'+day+'" onchange="saveScheduleDay(\''+day+'\')">'
+          +setOptions
+        +'</select>'
+        +'<select class="input" style="flex:1;" id="sched-acct-'+day+'" onchange="saveScheduleDay(\''+day+'\')">'
+          +acctOptions
+        +'</select>'
+        +'<input type="time" class="input" style="width:120px;" id="sched-time-'+day+'" value="'+(d.time||'09:00')+'" onchange="saveScheduleDay(\''+day+'\')" />'
+        +'<span style="font-size:11px;color:var(--muted);font-family:var(--mono);">MST</span>'
+        +'</div>';
+    }).join('')
+    +'</div>';
+
+  // Restore saved values
+  days.forEach(day=>{
+    const d=sched[day]||{};
+    const setEl=document.getElementById('sched-set-'+day);
+    const acctEl=document.getElementById('sched-acct-'+day);
+    if(setEl&&d.setId)setEl.value=d.setId;
+    if(acctEl&&d.accountId)acctEl.value=d.accountId;
+  });
+}
+
+function saveScheduleDay(day){
+  let sched={};
+  try{sched=JSON.parse(localStorage.getItem('riptag_schedule')||'{}');}catch{}
+  const setId=document.getElementById('sched-set-'+day)?.value||'';
+  const accountId=document.getElementById('sched-acct-'+day)?.value||'';
+  const time=document.getElementById('sched-time-'+day)?.value||'09:00';
+  sched[day]={setId,accountId,time};
+  localStorage.setItem('riptag_schedule',JSON.stringify(sched));
+  // Also update the set's schedule on server
+  if(setId){
+    const existingDays=Object.entries(sched).filter(([d,v])=>v.setId===setId).map(([d])=>d);
+    fetch('/api/sets/'+setId,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({schedule:{enabled:true,days:existingDays,time,accountId}})});
+  }
 }
 
 function renderCurrentSet(){
