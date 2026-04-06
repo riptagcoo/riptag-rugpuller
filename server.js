@@ -3,31 +3,45 @@ const session = require('express-session');
 const fs = require('fs-extra');
 const path = require('path');
 const { google } = require('googleapis');
-const multer = require('multer');
 const { v4: uuid } = require('uuid');
+const { Pool } = require('pg');
 
 const app = express();
 const PORT = process.env.PORT || 3099;
 
-const CLIENT_ID = process.env.GOOGLE_CLIENT_ID || 'YOUR_GOOGLE_CLIENT_ID';
-const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || 'YOUR_GOOGLE_CLIENT_SECRET';
-const BASE_URL = process.env.BASE_URL || `https://riptag-crosslister-production.up.railway.app`;
+const CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
+const BASE_URL = process.env.BASE_URL || 'https://riptag-rugpuller-production.up.railway.app';
 const REDIRECT_URI = `${BASE_URL}/auth/google/callback`;
 const SESSION_SECRET = process.env.SESSION_SECRET || 'riptag-secret-2024';
+const DATABASE_URL = process.env.DATABASE_URL;
 
-// Dirs
-fs.ensureDirSync('./data/sets');
-fs.ensureDirSync('./data/accounts');
-fs.ensureDirSync('./uploads');
+// Postgres
+const pool = new Pool({ connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false } });
+
+async function initDB() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS sets (
+      id TEXT PRIMARY KEY,
+      data JSONB NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS accounts (
+      id TEXT PRIMARY KEY,
+      data JSONB NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+  `);
+  console.log('✅ Database initialized');
+}
 
 // Middleware
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(session({ secret: SESSION_SECRET, resave: false, saveUninitialized: true, cookie: { maxAge: 7 * 24 * 60 * 60 * 1000 } }));
 app.use(express.static(path.join(__dirname, 'public')));
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// CORS for extension
+// CORS
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Headers', 'Content-Type');
@@ -35,9 +49,6 @@ app.use((req, res, next) => {
   if (req.method === 'OPTIONS') return res.sendStatus(200);
   next();
 });
-
-// Multer for photo uploads
-const upload = multer({ dest: './uploads/' });
 
 // SSE
 let sseClients = [];
@@ -56,7 +67,7 @@ app.get('/api/stream', (req, res) => {
   req.on('close', () => { clearInterval(hb); sseClients = sseClients.filter(c => c !== res); });
 });
 
-// ─── GOOGLE AUTH ───────────────────────────────────────────────
+// ─── GOOGLE AUTH ──────────────────────────────────────────────
 function getOAuth2Client(tokens) {
   const client = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI);
   if (tokens) client.setCredentials(tokens);
@@ -74,22 +85,17 @@ app.get('/auth/google', (req, res) => {
 });
 
 app.get('/auth/google/callback', async (req, res) => {
-  const { code } = req.query;
   try {
     const client = getOAuth2Client();
-    const { tokens } = await client.getToken(code);
+    const { tokens } = await client.getToken(req.query.code);
     req.session.googleTokens = tokens;
     res.redirect('/?connected=drive');
-  } catch (err) {
-    res.redirect('/?error=auth');
-  }
+  } catch { res.redirect('/?error=auth'); }
 });
 
-app.get('/api/drive/status', (req, res) => {
-  res.json({ connected: !!req.session.googleTokens });
-});
+app.get('/api/drive/status', (req, res) => res.json({ connected: !!req.session.googleTokens }));
 
-// ─── DRIVE FOLDERS ─────────────────────────────────────────────
+// ─── DRIVE ────────────────────────────────────────────────────
 app.get('/api/drive/folders', async (req, res) => {
   if (!req.session.googleTokens) return res.status(401).json({ error: 'Not authenticated' });
   try {
@@ -97,13 +103,10 @@ app.get('/api/drive/folders', async (req, res) => {
     const drive = google.drive({ version: 'v3', auth: client });
     const r = await drive.files.list({
       q: "mimeType='application/vnd.google-apps.folder' and trashed=false",
-      fields: 'files(id,name,parents)',
-      pageSize: 100
+      fields: 'files(id,name)', pageSize: 100
     });
     res.json({ folders: r.data.files });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.get('/api/drive/folder/:folderId/photos', async (req, res) => {
@@ -113,208 +116,156 @@ app.get('/api/drive/folder/:folderId/photos', async (req, res) => {
     const drive = google.drive({ version: 'v3', auth: client });
     const r = await drive.files.list({
       q: `'${req.params.folderId}' in parents and mimeType contains 'image/' and trashed=false`,
-      fields: 'files(id,name,mimeType,thumbnailLink,webContentLink)',
-      orderBy: 'name',
-      pageSize: 200
+      fields: 'files(id,name,mimeType,thumbnailLink)',
+      orderBy: 'name', pageSize: 200
     });
     res.json({ photos: r.data.files });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ─── SETS ──────────────────────────────────────────────────────
-async function getSets() {
-  const files = await fs.readdir('./data/sets').catch(() => []);
-  const sets = [];
-  for (const f of files.filter(f => f.endsWith('.json'))) {
-    try { sets.push(await fs.readJson(`./data/sets/${f}`)); } catch {}
-  }
-  return sets.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-}
-
+// ─── SETS ─────────────────────────────────────────────────────
 app.get('/api/sets', async (req, res) => {
-  res.json(await getSets());
+  const r = await pool.query('SELECT data FROM sets ORDER BY created_at DESC');
+  res.json(r.rows.map(row => row.data));
 });
 
 app.get('/api/sets/:id', async (req, res) => {
-  try { res.json(await fs.readJson(`./data/sets/${req.params.id}.json`)); }
-  catch { res.status(404).json({ error: 'Set not found' }); }
+  const r = await pool.query('SELECT data FROM sets WHERE id=$1', [req.params.id]);
+  if (!r.rows.length) return res.status(404).json({ error: 'Not found' });
+  res.json(r.rows[0].data);
 });
 
 app.post('/api/sets', async (req, res) => {
   const id = uuid();
   const set = {
-    id,
-    name: req.body.name || `Set ${Date.now()}`,
+    id, name: req.body.name || 'New Set',
     description: req.body.description || '🌴 New Y2K & Vintage Drops 🌴\n\n⦾ Curated Bundles & Sick Pieces\n⦾ Promotional Post\n⦾ DM me for Bundle Info\n\n#vintage #y2k #thrift #streetwear',
     price: req.body.price || '20',
-    sizes: req.body.sizes || ['S', 'M', 'L', 'XL'],
-    hashtags: req.body.hashtags || '#vintage #y2k #thrift',
+    sizes: req.body.sizes || ['S','M','L','XL'],
     groupSize: req.body.groupSize || 4,
     driveFolder: req.body.driveFolder || null,
     driveFolderName: req.body.driveFolderName || null,
     accountId: req.body.accountId || null,
-    listings: [],
-    status: 'draft',
-    createdAt: new Date().toISOString(),
-    deployedAt: null
+    listings: [], status: 'draft',
+    createdAt: new Date().toISOString(), deployedAt: null
   };
-  await fs.writeJson(`./data/sets/${id}.json`, set, { spaces: 2 });
+  await pool.query('INSERT INTO sets (id, data) VALUES ($1, $2)', [id, JSON.stringify(set)]);
   res.json(set);
 });
 
 app.put('/api/sets/:id', async (req, res) => {
-  try {
-    const set = await fs.readJson(`./data/sets/${req.params.id}.json`);
-    const updated = { ...set, ...req.body, id: set.id, createdAt: set.createdAt };
-    await fs.writeJson(`./data/sets/${req.params.id}.json`, updated, { spaces: 2 });
-    res.json(updated);
-  } catch { res.status(404).json({ error: 'Set not found' }); }
+  const r = await pool.query('SELECT data FROM sets WHERE id=$1', [req.params.id]);
+  if (!r.rows.length) return res.status(404).json({ error: 'Not found' });
+  const updated = { ...r.rows[0].data, ...req.body, id: req.params.id };
+  await pool.query('UPDATE sets SET data=$1 WHERE id=$2', [JSON.stringify(updated), req.params.id]);
+  res.json(updated);
 });
 
 app.delete('/api/sets/:id', async (req, res) => {
-  await fs.remove(`./data/sets/${req.params.id}.json`);
+  await pool.query('DELETE FROM sets WHERE id=$1', [req.params.id]);
   res.json({ ok: true });
 });
 
-// ─── LISTINGS within a set ─────────────────────────────────────
-// Build listings from Drive folder photos (auto-group by groupSize)
+// ─── BUILD LISTINGS ───────────────────────────────────────────
 app.post('/api/sets/:id/build-listings', async (req, res) => {
   if (!req.session.googleTokens) return res.status(401).json({ error: 'Not authenticated with Google' });
   try {
-    const set = await fs.readJson(`./data/sets/${req.params.id}.json`);
+    const r = await pool.query('SELECT data FROM sets WHERE id=$1', [req.params.id]);
+    if (!r.rows.length) return res.status(404).json({ error: 'Set not found' });
+    const set = r.rows[0].data;
     if (!set.driveFolder) return res.status(400).json({ error: 'No Drive folder selected' });
 
     const client = getOAuth2Client(req.session.googleTokens);
     const drive = google.drive({ version: 'v3', auth: client });
-    const r = await drive.files.list({
+    const photos = await drive.files.list({
       q: `'${set.driveFolder}' in parents and mimeType contains 'image/' and trashed=false`,
-      fields: 'files(id,name,mimeType,thumbnailLink)',
-      orderBy: 'name',
-      pageSize: 200
+      fields: 'files(id,name,mimeType,thumbnailLink)', orderBy: 'name', pageSize: 200
     });
 
-    const photos = r.data.files;
     const groupSize = set.groupSize || 4;
     const listings = [];
+    const files = photos.data.files;
 
-    // Group photos into chunks
-    for (let i = 0; i < photos.length; i += groupSize) {
-      const group = photos.slice(i, i + groupSize);
-      const listingId = uuid();
-      // Create one listing per size
+    for (let i = 0; i < files.length; i += groupSize) {
+      const group = files.slice(i, i + groupSize);
+      const groupId = uuid();
       for (const size of set.sizes) {
         listings.push({
-          id: uuid(),
-          groupId: listingId,
-          groupIndex: Math.floor(i / groupSize),
-          title: set.name,
-          description: set.description,
-          price: set.price,
-          size,
+          id: uuid(), groupId, groupIndex: Math.floor(i / groupSize),
+          title: set.name, description: set.description, price: set.price, size,
           photos: group.map(p => ({ driveId: p.id, name: p.name, thumb: p.thumbnailLink })),
-          customDescription: null,
-          customPrice: null,
-          posted: false,
-          postError: null
+          customDescription: null, customPrice: null, posted: false
         });
       }
     }
 
     set.listings = listings;
-    await fs.writeJson(`./data/sets/${set.id}.json`, set, { spaces: 2 });
-    res.json({ ok: true, count: listings.length, groups: Math.floor(photos.length / groupSize) });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+    await pool.query('UPDATE sets SET data=$1 WHERE id=$2', [JSON.stringify(set), set.id]);
+    res.json({ ok: true, count: listings.length, groups: Math.floor(files.length / groupSize) });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// Update individual listing override
+// Update individual listing
 app.put('/api/sets/:setId/listings/:listingId', async (req, res) => {
   try {
-    const set = await fs.readJson(`./data/sets/${req.params.setId}.json`);
+    const r = await pool.query('SELECT data FROM sets WHERE id=$1', [req.params.setId]);
+    if (!r.rows.length) return res.status(404).json({ error: 'Not found' });
+    const set = r.rows[0].data;
     const idx = set.listings.findIndex(l => l.id === req.params.listingId);
     if (idx === -1) return res.status(404).json({ error: 'Listing not found' });
     set.listings[idx] = { ...set.listings[idx], ...req.body };
-    await fs.writeJson(`./data/sets/${req.params.setId}.json`, set, { spaces: 2 });
+    await pool.query('UPDATE sets SET data=$1 WHERE id=$2', [JSON.stringify(set), set.id]);
     res.json(set.listings[idx]);
   } catch { res.status(500).json({ error: 'Failed' }); }
 });
 
-// ─── ACCOUNTS ──────────────────────────────────────────────────
+// ─── ACCOUNTS ─────────────────────────────────────────────────
 app.get('/api/accounts', async (req, res) => {
-  const files = await fs.readdir('./data/accounts').catch(() => []);
-  const accounts = [];
-  for (const f of files.filter(f => f.endsWith('.json'))) {
-    try { accounts.push(await fs.readJson(`./data/accounts/${f}`)); } catch {}
-  }
-  res.json(accounts);
+  const r = await pool.query('SELECT data FROM accounts ORDER BY created_at DESC');
+  res.json(r.rows.map(row => row.data));
 });
 
-app.post('/api/accounts', async (req, res) => {
-  const { username, cookies } = req.body;
-  if (!username) return res.status(400).json({ error: 'Missing username' });
-  const account = { id: uuid(), username, cookies: cookies || [], connectedAt: new Date().toISOString() };
-  await fs.writeJson(`./data/accounts/${account.id}.json`, account, { spaces: 2 });
-  broadcast({ type: 'account', username, status: 'connected' });
-  res.json(account);
-});
-
-// Extension connects account (backwards compat)
 app.post('/api/save-cookies', async (req, res) => {
   const { username, cookies, accountId } = req.body;
   if (!username) return res.status(400).json({ error: 'Missing username' });
   const id = accountId || uuid();
+  // Check if account exists
+  const existing = await pool.query('SELECT id FROM accounts WHERE id=$1', [id]);
   const account = { id, username, cookies: cookies || [], connectedAt: new Date().toISOString() };
-  await fs.writeJson(`./data/accounts/${id}.json`, account, { spaces: 2 });
+  if (existing.rows.length) {
+    await pool.query('UPDATE accounts SET data=$1 WHERE id=$2', [JSON.stringify(account), id]);
+  } else {
+    await pool.query('INSERT INTO accounts (id, data) VALUES ($1, $2)', [id, JSON.stringify(account)]);
+  }
   broadcast({ type: 'account', username, status: 'connected', id });
   res.json({ ok: true, id, username });
 });
 
 app.delete('/api/accounts/:id', async (req, res) => {
-  await fs.remove(`./data/accounts/${req.params.id}.json`);
+  await pool.query('DELETE FROM accounts WHERE id=$1', [req.params.id]);
   res.json({ ok: true });
 });
 
-// ─── DEPLOY ────────────────────────────────────────────────────
+// ─── DEPLOY ───────────────────────────────────────────────────
 app.post('/api/sets/:id/deploy', async (req, res) => {
-  res.json({ ok: true, message: 'Deploy started' });
-
-  try {
-    const set = await fs.readJson(`./data/sets/${req.params.id}.json`);
-    if (!set.accountId) { broadcast({ type: 'deploy', setId: set.id, status: 'error', message: 'No account assigned to this set' }); return; }
-
-    const account = await fs.readJson(`./data/accounts/${set.accountId}.json`);
-    const { deploySet } = require('./deployer');
-
-    set.status = 'deploying';
-    await fs.writeJson(`./data/sets/${set.id}.json`, set, { spaces: 2 });
-
-    await deploySet(set, account, async (progress) => {
-      broadcast({ type: 'deploy', setId: set.id, ...progress });
-      // Update posted status
-      if (progress.listingId && progress.status === 'posted') {
-        const s = await fs.readJson(`./data/sets/${set.id}.json`);
-        const idx = s.listings.findIndex(l => l.id === progress.listingId);
-        if (idx !== -1) { s.listings[idx].posted = true; await fs.writeJson(`./data/sets/${s.id}.json`, s, { spaces: 2 }); }
-      }
-    });
-
-    const finalSet = await fs.readJson(`./data/sets/${set.id}.json`);
-    finalSet.status = 'deployed';
-    finalSet.deployedAt = new Date().toISOString();
-    await fs.writeJson(`./data/sets/${set.id}.json`, finalSet, { spaces: 2 });
-
-  } catch (err) {
-    broadcast({ type: 'deploy', status: 'error', message: err.message });
-  }
+  res.json({ ok: true });
+  // Deploy runs locally via agent.js - this just marks status
+  const r = await pool.query('SELECT data FROM sets WHERE id=$1', [req.params.id]);
+  if (!r.rows.length) return;
+  const set = r.rows[0].data;
+  set.status = 'deploying';
+  await pool.query('UPDATE sets SET data=$1 WHERE id=$2', [JSON.stringify(set), set.id]);
+  broadcast({ type: 'deploy', setId: set.id, status: 'info', message: 'Use the local agent.js to deploy this set.' });
 });
 
-// Ping
-app.get('/api/ping', (req, res) => res.json({ ok: true, version: '2.0.0' }));
+app.get('/api/ping', (req, res) => res.json({ ok: true, version: '2.1.0' }));
 
-app.listen(PORT, () => {
-  console.log(`\n🏄  Riptag Set Manager v2`);
-  console.log(`    Dashboard: http://localhost:${PORT}\n`);
+initDB().then(() => {
+  app.listen(PORT, () => {
+    console.log(`\n🏄  Riptag Set Manager v2.1 (Postgres)`);
+    console.log(`    Dashboard: http://localhost:${PORT}\n`);
+  });
+}).catch(err => {
+  console.error('DB init failed:', err);
+  process.exit(1);
 });
