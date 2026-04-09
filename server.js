@@ -121,8 +121,21 @@ app.get('/api/drive/folders', async (req, res) => {
   if (!req.session.googleTokens) return res.status(401).json({ error: 'Not authenticated' });
   try {
     const drive = google.drive({ version: 'v3', auth: getOAuth2Client(req.session.googleTokens) });
-    const r = await drive.files.list({ q: "mimeType='application/vnd.google-apps.folder' and trashed=false", fields: 'files(id,name)', pageSize: 100 });
-    res.json({ folders: r.data.files });
+    let allFolders = [];
+    let pageToken = null;
+    do {
+      const params = {
+        q: "mimeType='application/vnd.google-apps.folder' and trashed=false",
+        fields: 'nextPageToken, files(id,name)',
+        pageSize: 1000,
+        orderBy: 'name'
+      };
+      if (pageToken) params.pageToken = pageToken;
+      const r = await drive.files.list(params);
+      allFolders = allFolders.concat(r.data.files || []);
+      pageToken = r.data.nextPageToken;
+    } while (pageToken);
+    res.json({ folders: allFolders });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
