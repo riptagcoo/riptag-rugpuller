@@ -132,6 +132,7 @@ code{font-family:var(--mono);font-size:11px;background:var(--s3);padding:2px 6px
     <div class="sb-btn" id="nav-accounts" onclick="showPage('accounts')"><span class="icon">🔗</span>Accounts</div>
     <div class="sb-btn" id="nav-schedule" onclick="showPage('schedule')"><span class="icon">📅</span>Schedule</div>
     <div class="sb-btn" id="nav-active" onclick="showPage('active')"><span class="icon">📡</span>Active This Week</div>
+    <div class="sb-btn" id="nav-sold" onclick="showPage('sold')"><span class="icon">📦</span>Sold & Labels</div>
     <div class="sb-cat"><span class="sb-cat-dot" style="background:var(--green)"></span>Rugpull</div>
     <div id="sb-rugpull"></div>
     <div class="sb-cat"><span class="sb-cat-dot" style="background:var(--violet)"></span>Riptag.co</div>
@@ -228,6 +229,23 @@ code{font-family:var(--mono);font-size:11px;background:var(--s3);padding:2px 6px
       </div>
       <div id="listings-table-wrap"><div class="empty"><div class="empty-icon">📋</div>No listings. Click Build Listings.</div></div>
     </div>
+  </div>
+</div>
+
+<!-- Sold & Labels Page -->
+<div id="page-sold" class="hidden">
+  <div class="topbar">
+    <div class="page-title">Sold & Labels</div>
+    <div class="topbar-actions">
+      <select class="input" id="sold-account-select" style="width:200px;" onchange="loadOrders()">
+        <option value="">— Select account —</option>
+      </select>
+      <button class="btn sm" onclick="scrapeOrders()">🔍 Scrape Orders</button>
+    </div>
+  </div>
+  <div class="content">
+    <div id="sold-stats" class="grid4" style="margin-bottom:14px;display:none;"></div>
+    <div id="sold-content"></div>
   </div>
 </div>
 
@@ -480,6 +498,131 @@ async function saveDescSchedule(){
   glog('Description schedule saved','ok');
 }
 
+// ─── SOLD & LABELS ───────────────────────────────────────────
+function initSoldPage(){
+  const sel=document.getElementById('sold-account-select');
+  sel.innerHTML='<option value="">— Select account —</option>'+accounts.map(a=>'<option value="'+a.id+'">@'+a.username+'</option>').join('');
+}
+
+async function loadOrders(){
+  const accountId=document.getElementById('sold-account-select').value;
+  if(!accountId)return;
+  const el=document.getElementById('sold-content');
+  el.innerHTML='<div class="empty"><div class="empty-icon">⏳</div>Loading orders...</div>';
+  const r=await fetch('/api/accounts/'+accountId+'/orders');
+  const d=await r.json();
+  const orders=d.orders||[];
+  if(!orders.length){
+    el.innerHTML='<div class="empty"><div class="empty-icon">📦</div>No orders yet. Click Scrape Orders to pull from Depop.</div>';
+    document.getElementById('sold-stats').style.display='none';
+    return;
+  }
+  currentOrders=orders;
+  renderOrders(orders, d.scrapedAt);
+}
+
+function renderOrders(orders, scrapedAt){
+  const sizes=['S','M','L','XL','XXL'];
+  const grouped={};
+  sizes.forEach(s=>grouped[s]=[]);
+  grouped['Other']=[];
+  orders.forEach(o=>{
+    const size=(o.size||'').toUpperCase().trim();
+    if(sizes.includes(size)) grouped[size].push(o);
+    else grouped['Other'].push(o);
+  });
+
+  // Stats
+  const statsEl=document.getElementById('sold-stats');
+  statsEl.style.display='grid';
+  statsEl.innerHTML=sizes.concat(['Other']).filter(s=>grouped[s].length>0).map(s=>
+    '<div class="stat"><div class="stat-n green">'+grouped[s].length+'</div><div class="stat-lbl">size '+s+'</div></div>'
+  ).join('')+'<div class="stat"><div class="stat-n">'+orders.length+'</div><div class="stat-lbl">total orders</div></div>';
+
+  // Buttons + tables per size
+  let html='<div style="font-size:11px;color:var(--muted);font-family:var(--mono);margin-bottom:16px;">Scraped '+new Date(scrapedAt).toLocaleString()+'</div>';
+  
+  sizes.concat(['Other']).forEach(size=>{
+    const group=grouped[size];
+    if(!group.length)return;
+    html+='<div class="card" style="margin-bottom:14px;">'
+      +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">'
+        +'<div class="card-title" style="margin:0;">Size '+size+' — '+group.length+' orders</div>'
+        +'<button class="btn primary sm" onclick="printLabels(this.dataset.size)" data-size="'+size+'">🖨️ Print '+size+' Labels</button>'
+      +'</div>'
+      +'<table><thead><tr><th>Buyer</th><th>Item</th><th>Size</th><th>Order #</th><th>Date</th></tr></thead><tbody>'
+      +group.map(o=>'<tr><td>'+o.buyer+'</td><td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+o.item+'</td><td><span style="font-family:var(--mono);font-size:12px;background:var(--s3);padding:2px 8px;border-radius:4px;">'+o.size+'</span></td><td style="font-family:var(--mono);font-size:12px;">'+o.orderId+'</td><td style="font-size:12px;color:var(--muted);">'+new Date(o.date).toLocaleDateString()+'</td></tr>').join('')
+      +'</tbody></table></div>';
+  });
+
+  document.getElementById('sold-content').innerHTML=html;
+}
+
+function printLabels(el){
+  const size = typeof el === 'string' ? el : el.dataset.size;
+  const sizeKey = typeof size === 'string' ? size : size.dataset?.size;
+  const orders=currentOrders.filter(o=>(o.size||'').toUpperCase().trim()===sizeKey);
+  if(!orders.length){alert('No orders for size '+size);return;}
+  
+  const win=window.open('','_blank');
+  win.document.write(`<!DOCTYPE html><html><head><title>Labels - Size ${size}</title>
+<style>
+  @page { size: 4in 6in; margin: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; }
+  .label {
+    width: 4in; height: 6in;
+    padding: 0.25in;
+    page-break-after: always;
+    border: 1px solid #ccc;
+    display: flex; flex-direction: column; justify-content: space-between;
+  }
+  .label:last-child { page-break-after: avoid; }
+  .brand { font-size: 18pt; font-weight: bold; margin-bottom: 8pt; }
+  .size-box { 
+    background: #000; color: #fff; 
+    font-size: 48pt; font-weight: bold; 
+    text-align: center; padding: 12pt;
+    border-radius: 4pt; margin: 12pt 0;
+  }
+  .item { font-size: 12pt; margin-bottom: 6pt; }
+  .buyer { font-size: 11pt; color: #444; }
+  .order { font-size: 10pt; color: #666; margin-top: 8pt; }
+  .date { font-size: 10pt; color: #888; }
+</style>
+</head><body>`);
+  
+  orders.forEach(o=>{
+    win.document.write(`
+    <div class="label">
+      <div>
+        <div class="brand">🏄 Riptag</div>
+        <div class="item">${o.item||'Mystery Bundle'}</div>
+        <div class="buyer">To: ${o.buyer||'Customer'}</div>
+      </div>
+      <div class="size-box">${size}</div>
+      <div>
+        <div class="order">Order: ${o.orderId||'—'}</div>
+        <div class="date">${new Date(o.date||Date.now()).toLocaleDateString()}</div>
+      </div>
+    </div>`);
+  });
+  
+  win.document.write('</body></html>');
+  win.document.close();
+  win.focus();
+  setTimeout(()=>win.print(), 500);
+}
+
+let currentOrders=[];
+
+async function scrapeOrders(){
+  const accountId=document.getElementById('sold-account-select').value;
+  if(!accountId){alert('Select an account first.');return;}
+  glog('Scraping orders — run agent.js and select "Scrape Orders"','hi');
+  alert('Open Command Prompt and run:\n\nnode agent.js\n\nThen select "Scrape Orders" option.');
+}
+
 async function checkDaemon(){
   try{
     const r=await fetch('/api/daemon/status');
@@ -539,13 +682,14 @@ async function loadAccounts(){const r=await fetch('/api/accounts').catch(()=>({j
 async function checkDrive(){const r=await fetch('/api/drive/status').catch(()=>({json:()=>({})}));const d=await r.json().catch(()=>({}));const btn=document.getElementById('drive-btn');const lbl=document.getElementById('drive-label');if(d.connected){btn.classList.add('connected');lbl.textContent='Drive Connected ✓';}else{btn.classList.remove('connected');lbl.textContent='Connect Google Drive';}}
 
 function showPage(page,setId){
-  ['overview','accounts','schedule','active','set'].forEach(p=>{document.getElementById('page-'+p).classList.toggle('hidden',p!==page);const nav=document.getElementById('nav-'+p);if(nav)nav.classList.toggle('active',p===page);});
+  ['overview','accounts','schedule','active','sold','set'].forEach(p=>{document.getElementById('page-'+p).classList.toggle('hidden',p!==page);const nav=document.getElementById('nav-'+p);if(nav)nav.classList.toggle('active',p===page);});
   currentPage=page;
   if(page==='set'&&setId){currentSetId=setId;renderCurrentSet();}
   if(page==='overview')renderOverview();
   if(page==='accounts')renderAccounts();
   if(page==='schedule')renderSchedule();
   if(page==='active')renderActiveThisWeek();
+  if(page==='sold')initSoldPage();
   document.querySelectorAll('.sb-set').forEach(el=>el.classList.toggle('active',el.dataset.id===setId));
 }
 

@@ -363,6 +363,97 @@ async function runStatusCheck() {
   console.log('\nDone. Check dashboard for updated statuses.');
 }
 
+async function runScrapeOrders() {
+  const accounts = await apiGet('/api/accounts');
+  console.log('\nSelect account to scrape orders from:');
+  accounts.forEach((a, i) => console.log(`  ${i+1}. @${a.username}`));
+  const choice = await ask('\nEnter account number: ');
+  const account = accounts[parseInt(choice) - 1];
+  if (!account) { console.log('Invalid.'); return; }
+
+  console.log(`\nOpening browser for @${account.username}...`);
+  const { chromium } = require('playwright');
+  const browser = await chromium.launch({ headless: false, slowMo: 50 });
+  const context = await browser.newContext();
+
+  if (account.cookies?.length) {
+    const clean = account.cookies.map(c => ({
+      name: c.name, value: c.value, domain: c.domain,
+      path: c.path || '/', secure: c.secure || false, httpOnly: c.httpOnly || false,
+      sameSite: ['Strict','Lax','None'].includes(c.sameSite) ? c.sameSite : 'Lax'
+    }));
+    await context.addCookies(clean);
+  }
+
+  const page = await context.newPage();
+  const orders = [];
+
+  try {
+    console.log('Loading orders page...');
+    await page.goto('https://www.depop.com/sellinghub/orders/', { waitUntil: 'networkidle', timeout: 30000 });
+    await page.waitForTimeout(2000);
+
+    // Scroll to load all orders
+    let prevCount = 0, sameCount = 0;
+    while (sameCount < 3) {
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+      await page.waitForTimeout(1500);
+      const items = await page.$$('[data-testid*="order"], [class*="Order"], [class*="order"]');
+      if (items.length === prevCount) sameCount++;
+      else sameCount = 0;
+      prevCount = items.length;
+    }
+
+    // Extract order data
+    const orderData = await page.evaluate(() => {
+      const orders = [];
+      // Try multiple selectors for order rows
+      const rows = document.querySelectorAll('[data-testid*="order-row"], [class*="OrderItem"], li[class*="order"]');
+      rows.forEach(row => {
+        const text = row.innerText || '';
+        const lines = text.split('\n').filter(l => l.trim());
+        
+        // Try to extract size from text
+        const sizeMatch = text.match(/\b(XXL|XL|Small|Medium|Large|S|M|L)\b/i);
+        const size = sizeMatch ? sizeMatch[1].toUpperCase()
+          .replace('SMALL','S').replace('MEDIUM','M').replace('LARGE','L') : 'Unknown';
+        
+        // Try to get buyer name
+        const buyerEl = row.querySelector('[class*="buyer"], [class*="username"], [data-testid*="buyer"]');
+        const buyer = buyerEl?.textContent?.trim() || lines[0] || 'Unknown';
+        
+        // Item name
+        const itemEl = row.querySelector('[class*="item"], [class*="title"], [data-testid*="item"]');
+        const item = itemEl?.textContent?.trim() || lines[1] || 'Mystery Bundle';
+        
+        // Order ID
+        const idMatch = text.match(/#([A-Z0-9]{6,})/);
+        const orderId = idMatch ? idMatch[1] : Math.random().toString(36).substr(2,8).toUpperCase();
+        
+        orders.push({ buyer, item, size, orderId, date: new Date().toISOString() });
+      });
+      return orders;
+    });
+
+    orders.push(...orderData);
+    console.log(`\nFound ${orders.length} orders`);
+
+    // Save to dashboard
+    if (orders.length > 0) {
+      await apiPost('/api/accounts/' + account.id + '/orders', { orders });
+      console.log('✓ Saved to dashboard');
+    } else {
+      console.log('No orders found. Depop may have updated their UI.');
+    }
+
+  } catch (err) {
+    console.log('Error:', err.message);
+  }
+
+  await browser.close();
+  console.log('\nDone. Check the Sold & Labels tab on the dashboard.');
+}
+
 function browser_close_placeholder() { return Promise.resolve(); }
 
 async function main() {
@@ -393,7 +484,8 @@ async function main() {
   console.log('  1. Deploy a set');
   console.log('  2. Mass edit descriptions on an account');
   console.log('  3. Check account statuses');
-  const action = await ask('\nEnter choice (1/2/3): ');
+  console.log('  4. Scrape orders (for labels)');
+  const action = await ask('\nEnter choice (1/2/3/4): ');
 
   if (action === '2') {
     await runMassEdit();
@@ -402,6 +494,10 @@ async function main() {
   }
   if (action === '3') {
     await runStatusCheck();
+    return;
+  }
+  if (action === '4') {
+    await runScrapeOrders();
     return;
   }
 

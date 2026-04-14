@@ -434,6 +434,31 @@ app.post('/api/sets/:id/mark-switched', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+
+// ─── ORDERS / LABELS ──────────────────────────────────────────
+
+// Store scraped orders
+app.post('/api/accounts/:id/orders', async (req, res) => {
+  try {
+    const r = await pool.query('SELECT data FROM accounts WHERE id=$1', [req.params.id]);
+    if (!r.rows.length) return res.status(404).json({ error: 'Not found' });
+    const account = r.rows[0].data;
+    account.orders = req.body.orders || [];
+    account.ordersScrapedAt = new Date().toISOString();
+    await pool.query('UPDATE accounts SET data=$1 WHERE id=$2', [JSON.stringify(account), req.params.id]);
+    res.json({ ok: true, count: account.orders.length });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Get orders for an account
+app.get('/api/accounts/:id/orders', async (req, res) => {
+  try {
+    const r = await pool.query('SELECT data FROM accounts WHERE id=$1', [req.params.id]);
+    if (!r.rows.length) return res.status(404).json({ error: 'Not found' });
+    res.json({ orders: r.rows[0].data.orders || [], scrapedAt: r.rows[0].data.ordersScrapedAt });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 app.get('/api/ping', (req, res) => res.json({ ok: true, version: '2.2.0' }));
 
 // Daemon heartbeat
