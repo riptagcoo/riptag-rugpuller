@@ -2,1229 +2,735 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Riptag — Set Manager</title>
-<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Riptag — Curated Vintage Mystery Boxes</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,300&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet"/>
+<!--
+  LOOX REVIEWS — SHOPIFY INTEGRATION
+  1. Install Loox from Shopify App Store (script loads via content_for_header automatically)
+  2. Replace every LOOX_PRODUCT_ID with the numeric Shopify product ID
+     (Admin > Products > click product > number in URL)
+  3. Loox renders: star ratings on cards, full reviews on PDP, homepage video slider
+-->
+<script>
+var loox_floating_widget={active:true,display_on_other_pages:true,position:"right",button_text:"Reviews",button_bg_color:"111111",button_text_color:"FFFFFF",hide_on_mobile:false,display_on_home_page:true};
+</script>
 <style>
-:root {
-  --bg: #060608;
-  --glass: rgba(255,255,255,0.03);
-  --glass-border: rgba(255,255,255,0.06);
-  --glass-hover: rgba(255,255,255,0.06);
-  --ink: #f0f0f5;
-  --ink-2: #a0a0b0;
-  --ink-3: #505060;
-  --ink-4: #2a2a38;
-  --green: #00e5a0;
-  --green-dim: rgba(0,229,160,0.12);
-  --green-glow: rgba(0,229,160,0.25);
-  --violet: #a78bfa;
-  --violet-dim: rgba(167,139,250,0.12);
-  --amber: #fbbf24;
-  --amber-dim: rgba(251,191,36,0.12);
-  --red: #f87171;
-  --red-dim: rgba(248,113,113,0.12);
-  --mono: 'JetBrains Mono', monospace;
-  --sans: 'Syne', sans-serif;
-  --r: 14px;
-  --r-sm: 10px;
-  --sidebar: 220px;
-  --transition: 0.2s cubic-bezier(0.4,0,0.2,1);
+:root{--white:#fff;--off:#F6F5F3;--off2:#EEECEA;--border:#E3E1DC;--text:#111;--muted:#878680;--light:#C2BFB8;--green:#16a34a;--radius:12px;--radius-sm:8px;--t:.22s ease;}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+html{scroll-behavior:smooth;}
+img{display:block;max-width:100%;}
+a{text-decoration:none;color:inherit;}
+button{cursor:pointer;border:none;background:none;font:inherit;}
+ul{list-style:none;}
+body{font-family:"DM Sans",sans-serif;background:var(--white);color:var(--text);-webkit-font-smoothing:antialiased;overflow-x:hidden;}
+.page{display:none;}.page.active{display:block;}
+.wrap{max-width:1280px;margin:0 auto;padding:0 40px;}
+#announce{background:var(--text);color:var(--white);text-align:center;padding:11px 20px;font-size:12px;font-weight:500;letter-spacing:.07em;}
+#announce a{color:inherit;text-decoration:underline;}
+#header{position:sticky;top:0;z-index:200;background:rgba(255,255,255,.96);backdrop-filter:blur(14px);border-bottom:1px solid var(--border);transition:box-shadow var(--t);}
+#header.sh{box-shadow:0 2px 24px rgba(0,0,0,.06);}
+.nav{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;height:62px;}
+.nav-l,.nav-r{display:flex;align-items:center;gap:26px;}
+.nav-r{justify-content:flex-end;}
+.nl{font-size:13px;font-weight:500;color:var(--muted);transition:color var(--t);cursor:pointer;background:none;border:none;}
+.nl:hover{color:var(--text);}
+.logo{display:flex;align-items:center;justify-content:center;cursor:pointer;}
+.cart-btn{display:flex;align-items:center;gap:7px;font-size:13px;font-weight:600;background:var(--text);color:var(--white);padding:8px 18px;border-radius:100px;transition:opacity var(--t);cursor:pointer;border:none;}
+.cart-btn:hover{opacity:.82;}
+.cart-btn svg{width:15px;height:15px;}
+.cart-n{background:var(--white);color:var(--text);width:17px;height:17px;border-radius:50%;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;}
+.burger{display:none;flex-direction:column;gap:5px;padding:8px;cursor:pointer;border:none;background:none;}
+.burger span{display:block;width:22px;height:2px;background:var(--text);border-radius:2px;}
+.mob-nav{display:none;position:fixed;inset:0;z-index:500;background:var(--white);flex-direction:column;padding:80px 32px 32px;gap:8px;}
+.mob-nav.open{display:flex;}
+.mob-nav-close{position:absolute;top:20px;right:20px;font-size:24px;cursor:pointer;background:none;border:none;}
+.mob-link{font-size:28px;font-family:"DM Serif Display",serif;color:var(--text);padding:12px 0;border-bottom:1px solid var(--border);cursor:pointer;}
+.mob-link em{font-style:italic;}
+.btn{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:600;background:var(--text);color:var(--white);padding:13px 26px;border-radius:100px;transition:opacity var(--t),transform var(--t);cursor:pointer;border:none;}
+.btn:hover{opacity:.84;transform:translateY(-1px);}
+.btn svg{width:14px;height:14px;}
+.btn-secondary{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:var(--text);border:1.5px solid var(--border);padding:12px 22px;border-radius:100px;transition:border-color var(--t);cursor:pointer;background:none;}
+.btn-secondary:hover{border-color:var(--text);}
+.btn-ghost{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:500;color:var(--muted);padding:13px 0;transition:color var(--t),gap var(--t);cursor:pointer;background:none;border:none;}
+.btn-ghost:hover{color:var(--text);gap:12px;}
+.btn-ghost::after{content:"→";}
+.btn-full{display:inline-flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;color:var(--text);border:1.5px solid var(--border);padding:13px 26px;border-radius:100px;transition:border-color var(--t);width:100%;background:none;cursor:pointer;}
+.btn-full:hover{border-color:var(--text);}
+.btn-white{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:600;background:var(--white);color:var(--text);padding:13px 28px;border-radius:100px;transition:opacity var(--t),transform var(--t);border:none;cursor:pointer;}
+.btn-white:hover{opacity:.9;transform:translateY(-1px);}
+.sec-kicker{font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:10px;}
+.sec-title{font-family:"DM Serif Display",serif;font-size:clamp(28px,3.5vw,46px);line-height:1.08;letter-spacing:-.02em;}
+.sec-title em{font-style:italic;}
+.sec-sub{font-size:15px;color:var(--muted);line-height:1.72;max-width:480px;}
+.sec-header{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:40px;gap:20px;flex-wrap:wrap;}
+.see-all{font-size:13px;font-weight:500;color:var(--muted);display:flex;align-items:center;gap:5px;cursor:pointer;transition:color var(--t),gap var(--t);background:none;border:none;}
+.see-all:hover{color:var(--text);gap:9px;}
+.see-all::after{content:"→";}
+.sr{opacity:0;transform:translateY(16px);transition:opacity .6s ease,transform .6s ease;}
+.sr.in{opacity:1;transform:none;}
+.d1{transition-delay:.07s;}.d2{transition-delay:.14s;}.d3{transition-delay:.21s;}.d4{transition-delay:.28s;}
+.marquee-bar{border-top:1px solid var(--border);border-bottom:1px solid var(--border);overflow:hidden;padding:13px 0;}
+.marquee-track{display:flex;white-space:nowrap;animation:mq 32s linear infinite;}
+.marquee-track:hover{animation-play-state:paused;}
+.mq-item{font-size:11px;font-weight:500;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding:0 36px;display:flex;align-items:center;gap:36px;}
+.mq-dot{width:3px;height:3px;border-radius:50%;background:var(--light);}
+@keyframes mq{from{transform:translateX(0);}to{transform:translateX(-50%);}}
+.prod-card{cursor:pointer;transition:transform var(--t);}
+.prod-card:hover{transform:translateY(-4px);}
+.prod-thumb{aspect-ratio:3/4;border-radius:var(--radius);overflow:hidden;background:var(--off);position:relative;margin-bottom:14px;}
+.prod-thumb img{width:100%;height:100%;object-fit:cover;transition:transform .5s ease;}
+.prod-card:hover .prod-thumb img{transform:scale(1.04);}
+.prod-badge{position:absolute;top:10px;left:10px;font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:4px 10px;border-radius:100px;}
+.b-dark{background:var(--text);color:var(--white);}
+.b-light{background:var(--white);color:var(--text);border:1px solid var(--border);}
+.b-sale{background:#E5372A;color:var(--white);}
+.prod-name{font-size:15px;font-weight:600;margin-bottom:6px;line-height:1.3;}
+.prod-stars{font-size:12px;color:var(--text);letter-spacing:.5px;margin-bottom:6px;}
+.prod-stars span{color:var(--muted);font-size:11px;margin-left:2px;}
+.loox-rating{margin-bottom:6px;}
+.prod-meta{font-size:13px;color:var(--muted);margin-bottom:8px;line-height:1.5;}
+.prod-price{font-size:15px;font-weight:600;}
+.prod-price del{font-weight:400;color:var(--light);font-size:12px;margin-left:5px;}
+.hero{display:grid;grid-template-columns:1fr 1fr;min-height:calc(100vh - 110px);gap:48px;align-items:center;padding:60px 40px;max-width:1280px;margin:0 auto;}
+.hero-kicker{display:inline-flex;align-items:center;gap:7px;font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:22px;}
+.kicker-live{width:6px;height:6px;border-radius:50%;background:#22c55e;animation:live 2s infinite;}
+@keyframes live{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.5;transform:scale(1.5);}}
+.hero-h1{font-family:"DM Serif Display",serif;font-size:clamp(42px,5.5vw,72px);line-height:1.06;letter-spacing:-.025em;margin-bottom:22px;}
+.hero-h1 em{font-style:italic;color:var(--muted);}
+.hero-body{font-size:17px;color:var(--muted);line-height:1.72;max-width:400px;margin-bottom:36px;}
+.hero-actions{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:40px;}
+.hero-trust{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding-top:28px;border-top:1px solid var(--border);}
+.trust-chip{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);font-weight:500;}
+.trust-chip svg{width:13px;height:13px;flex-shrink:0;}
+.hero-main-img{border-radius:18px;overflow:hidden;aspect-ratio:4/5;background:var(--off);}
+.hero-main-img img{width:100%;height:100%;object-fit:cover;transition:transform 7s ease;}
+.hero-main-img img.kb{transform:scale(1.04);}
+.hero-card{position:absolute;bottom:20px;left:20px;right:20px;background:rgba(255,255,255,.96);backdrop-filter:blur(12px);border-radius:var(--radius);padding:14px 18px;display:flex;align-items:center;justify-content:space-between;gap:12px;}
+.hero-img-col{position:relative;}
+.hc-name{font-size:14px;font-weight:600;margin-bottom:2px;}
+.hc-sub{font-size:12px;color:var(--muted);}
+.hc-rating{display:flex;align-items:center;gap:5px;font-size:13px;font-weight:600;}
+.hc-stars{font-size:10px;letter-spacing:1px;}
+.home-sec{padding:80px 40px;max-width:1280px;margin:0 auto;}
+.callout{background:var(--off);border-top:1px solid var(--border);border-bottom:1px solid var(--border);}
+.callout-in{max-width:1280px;margin:0 auto;padding:80px 40px;display:grid;grid-template-columns:1fr 1fr;gap:88px;align-items:center;}
+.callout-img{border-radius:var(--radius);overflow:hidden;aspect-ratio:4/5;background:var(--off2);}
+.callout-img img{width:100%;height:100%;object-fit:cover;}
+.pillars{margin-top:28px;display:flex;flex-direction:column;}
+.pillar{display:flex;gap:16px;padding:18px 0;border-bottom:1px solid var(--border);}
+.pillar:first-child{border-top:1px solid var(--border);}
+.p-n{font-family:"DM Serif Display",serif;font-size:12px;font-style:italic;color:var(--light);min-width:18px;padding-top:2px;}
+.p-title{font-size:14px;font-weight:600;margin-bottom:3px;}
+.p-desc{font-size:13px;color:var(--muted);line-height:1.65;}
+.how-bg{background:var(--off);border-top:1px solid var(--border);}
+.how-in{max-width:1280px;margin:0 auto;padding:80px 40px;}
+.how-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:48px;margin-top:52px;padding-top:52px;border-top:1px solid var(--border);}
+.step-n{font-family:"DM Serif Display",serif;font-size:12px;font-style:italic;color:var(--light);display:block;margin-bottom:12px;}
+.step-ico{font-size:26px;display:block;margin-bottom:12px;}
+.step-title{font-size:15px;font-weight:600;margin-bottom:7px;}
+.step-desc{font-size:13px;color:var(--muted);line-height:1.72;}
+.strip-wrap{overflow:hidden;border-top:1px solid var(--border);padding:20px 0;background:var(--off);}
+.strip-track{display:flex;gap:14px;width:max-content;animation:st 40s linear infinite;}
+.strip-track:hover{animation-play-state:paused;}
+.strip-item{width:210px;height:270px;border-radius:var(--radius);overflow:hidden;flex-shrink:0;background:var(--off2);}
+.strip-item img{width:100%;height:100%;object-fit:cover;}
+@keyframes st{from{transform:translateX(0);}to{transform:translateX(-50%);}}
+.loved-section{padding:80px 0;border-top:1px solid var(--border);}
+.loved-heading{font-family:"DM Serif Display",serif;font-size:clamp(22px,3vw,38px);font-weight:700;letter-spacing:-.01em;text-align:center;text-transform:uppercase;margin-bottom:40px;}
+.carousel-outer{position:relative;}
+.carousel-track-wrap{overflow:hidden;}
+.carousel-track{display:flex;gap:16px;transition:transform .45s cubic-bezier(.25,.46,.45,.94);}
+.carousel-slide{flex:0 0 calc(25% - 12px);aspect-ratio:3/4;border-radius:var(--radius);overflow:hidden;background:var(--off2);position:relative;cursor:pointer;}
+@media(max-width:860px){.carousel-slide{flex:0 0 calc(50% - 8px);}}
+@media(max-width:520px){.carousel-slide{flex:0 0 calc(85% - 8px);}}
+.carousel-slide img{width:100%;height:100%;object-fit:cover;transition:transform .5s ease;}
+.carousel-slide:hover img{transform:scale(1.04);}
+.carousel-stat-card{position:absolute;bottom:20px;left:50%;transform:translateX(-50%);background:rgba(255,255,255,.97);backdrop-filter:blur(12px);border-radius:var(--radius);padding:14px 28px;white-space:nowrap;text-align:center;pointer-events:none;box-shadow:0 4px 24px rgba(0,0,0,.1);}
+.csc-num{font-family:"DM Serif Display",serif;font-size:20px;font-weight:700;letter-spacing:-.01em;margin-bottom:2px;}
+.csc-label{font-size:12px;color:var(--muted);font-weight:500;}
+.carousel-btn{position:absolute;top:50%;transform:translateY(-50%);width:44px;height:44px;border-radius:50%;background:var(--white);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;z-index:10;cursor:pointer;transition:background var(--t),border-color var(--t),color var(--t);box-shadow:0 2px 12px rgba(0,0,0,.08);}
+.carousel-btn:hover{background:var(--text);border-color:var(--text);color:var(--white);}
+.carousel-btn svg{width:18px;height:18px;}
+.carousel-prev{left:20px;}.carousel-next{right:20px;}
+.carousel-dots{display:flex;justify-content:center;gap:6px;margin-top:20px;}
+.carousel-dot{width:6px;height:6px;border-radius:50%;background:var(--border);cursor:pointer;transition:background var(--t),transform var(--t);border:none;}
+.carousel-dot.active{background:var(--text);transform:scale(1.2);}
+.loved-cta{text-align:center;margin-top:32px;}
+.loved-view-btn{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;background:var(--text);color:var(--white);padding:14px 32px;border-radius:100px;transition:opacity var(--t),transform var(--t);}
+.loved-view-btn:hover{opacity:.84;transform:translateY(-1px);}
+.stats-row{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;}
+.stat{padding:32px 20px;border-right:1px solid var(--border);text-align:center;transition:background var(--t);}
+.stat:last-child{border-right:none;}
+.stat:hover{background:var(--off);}
+.stat-n{font-family:"DM Serif Display",serif;font-size:42px;line-height:1;letter-spacing:-.02em;margin-bottom:5px;}
+.stat-l{font-size:13px;color:var(--muted);font-weight:500;}
+.reviews{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:48px;}
+.review{background:var(--off);border-radius:var(--radius);padding:26px;transition:background var(--t);}
+.review:hover{background:var(--off2);}
+.rev-stars{font-size:11px;letter-spacing:2px;color:var(--text);margin-bottom:12px;}
+.rev-text{font-family:"DM Serif Display",serif;font-size:15px;font-style:italic;line-height:1.7;color:var(--text);margin-bottom:18px;}
+.rev-author{display:flex;align-items:center;gap:10px;}
+.rev-avi{width:30px;height:30px;border-radius:50%;background:var(--off2);display:flex;align-items:center;justify-content:center;font-size:14px;}
+.rev-name{font-size:13px;font-weight:600;}
+.rev-handle{font-size:12px;color:var(--muted);}
+.unboxing-section{background:var(--off);border-top:1px solid var(--border);border-bottom:1px solid var(--border);}
+.unboxing-header{padding:60px 40px 0;max-width:1280px;margin:0 auto;text-align:center;}
+.unboxing-title{font-family:"DM Serif Display",serif;font-size:clamp(24px,3.5vw,44px);font-style:italic;letter-spacing:-.01em;margin-bottom:8px;}
+.unboxing-sub{font-size:14px;color:var(--muted);margin-bottom:40px;}
+.unboxing-grid{display:grid;grid-template-columns:1fr 1fr;max-width:1280px;margin:0 auto;gap:12px;padding:0 40px;}
+@media(max-width:640px){.unboxing-grid{grid-template-columns:1fr;}}
+.unboxing-item{position:relative;aspect-ratio:9/16;overflow:hidden;background:var(--off2);cursor:pointer;border-radius:var(--radius);}
+.unboxing-item img{width:100%;height:100%;object-fit:cover;transition:transform .5s ease;}
+.unboxing-item:hover img{transform:scale(1.04);}
+.unboxing-overlay{position:absolute;inset:0;background:linear-gradient(to top,rgba(0,0,0,.55) 0%,transparent 45%);display:flex;flex-direction:column;align-items:center;justify-content:flex-end;padding:28px;}
+.unboxing-play{width:52px;height:52px;border-radius:50%;background:rgba(255,255,255,.95);display:flex;align-items:center;justify-content:center;margin-bottom:14px;transition:transform .2s ease;}
+.unboxing-item:hover .unboxing-play{transform:scale(1.1);}
+.unboxing-play svg{width:20px;height:20px;margin-left:3px;}
+.unboxing-label{font-family:"DM Serif Display",serif;font-size:18px;font-style:italic;color:var(--white);text-align:center;}
+.unboxing-handle{font-size:12px;color:rgba(255,255,255,.7);margin-top:4px;}
+.unboxing-more{padding:12px 40px 60px;max-width:1280px;margin:0 auto;display:grid;grid-template-columns:repeat(4,1fr);gap:12px;}
+@media(max-width:860px){.unboxing-more{grid-template-columns:repeat(2,1fr);}}
+.unboxing-mini{position:relative;aspect-ratio:9/16;border-radius:var(--radius-sm);overflow:hidden;background:var(--off2);cursor:pointer;}
+.unboxing-mini img{width:100%;height:100%;object-fit:cover;transition:transform .4s ease;}
+.unboxing-mini:hover img{transform:scale(1.05);}
+.unboxing-mini-play{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;}
+.unboxing-mini-ico{width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.9);display:flex;align-items:center;justify-content:center;}
+.unboxing-mini-ico svg{width:14px;height:14px;margin-left:2px;}
+.cta-band{background:var(--text);padding:100px 40px;text-align:center;}
+.cta-in{max-width:560px;margin:0 auto;}
+.cta-h2{font-family:"DM Serif Display",serif;font-size:clamp(36px,5vw,66px);line-height:1.07;letter-spacing:-.025em;color:var(--white);margin-bottom:16px;}
+.cta-h2 em{font-style:italic;opacity:.6;}
+.cta-body{font-size:15px;color:rgba(255,255,255,.5);line-height:1.72;margin-bottom:34px;}
+.cta-acts{display:flex;align-items:center;justify-content:center;gap:22px;flex-wrap:wrap;}
+.cta-link{font-size:13px;font-weight:500;color:rgba(255,255,255,.45);transition:color var(--t);}
+.cta-link:hover{color:rgba(255,255,255,.75);}
+.shop-header{padding:52px 40px 40px;max-width:1280px;margin:0 auto;border-bottom:1px solid var(--border);}
+.shop-h1{font-family:"DM Serif Display",serif;font-size:clamp(32px,4vw,52px);letter-spacing:-.02em;line-height:1.08;}
+.shop-h1 em{font-style:italic;}
+.shop-count{font-size:14px;color:var(--muted);margin-top:6px;}
+.filter-row{display:flex;gap:8px;margin-top:20px;flex-wrap:wrap;}
+.filter-btn{font-size:12px;font-weight:500;letter-spacing:.03em;padding:8px 16px;border-radius:100px;border:1.5px solid var(--border);transition:border-color var(--t),background var(--t),color var(--t);cursor:pointer;background:var(--white);}
+.filter-btn:hover{border-color:var(--text);}
+.filter-btn.active{background:var(--text);color:var(--white);border-color:var(--text);}
+.shop-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:24px;padding:40px 40px 80px;max-width:1280px;margin:0 auto;}
+.pdp-wrap{max-width:1280px;margin:0 auto;padding:36px 40px 80px;}
+.breadcrumb{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);margin-bottom:36px;}
+.breadcrumb span{color:var(--light);}
+.breadcrumb a,.breadcrumb button{color:var(--muted);cursor:pointer;background:none;border:none;font:inherit;transition:color var(--t);}
+.breadcrumb a:hover,.breadcrumb button:hover{color:var(--text);}
+.pdp-grid{display:grid;grid-template-columns:1fr 1fr;gap:72px;align-items:start;}
+.pdp-gallery-col{display:flex;gap:12px;}
+.pdp-thumbs-col{display:flex;flex-direction:column;gap:10px;width:76px;flex-shrink:0;}
+.pdp-thumb{width:76px;height:96px;border-radius:var(--radius-sm);overflow:hidden;background:var(--off);cursor:pointer;border:2px solid transparent;transition:border-color var(--t);flex-shrink:0;}
+.pdp-thumb.active{border-color:var(--text);}
+.pdp-thumb img{width:100%;height:100%;object-fit:cover;}
+.pdp-main-col{flex:1;}
+.pdp-main-img{border-radius:var(--radius);overflow:hidden;aspect-ratio:4/5;background:var(--off);cursor:zoom-in;}
+.pdp-main-img img{width:100%;height:100%;object-fit:cover;transition:transform .4s ease;}
+.pdp-main-img:hover img{transform:scale(1.03);}
+.pdp-info-col{position:sticky;top:80px;}
+.pdp-category{font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:10px;}
+.pdp-h1{font-family:"DM Serif Display",serif;font-size:clamp(26px,2.8vw,38px);line-height:1.08;letter-spacing:-.02em;margin-bottom:14px;}
+.pdp-rating{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);margin-bottom:22px;cursor:pointer;}
+.pdp-rating-stars{font-size:11px;color:var(--text);letter-spacing:1px;}
+.pdp-price-row{display:flex;align-items:baseline;gap:10px;margin-bottom:28px;padding-bottom:28px;border-bottom:1px solid var(--border);}
+.pdp-price-now{font-size:28px;font-weight:600;letter-spacing:-.01em;}
+.pdp-price-was{font-size:15px;color:var(--light);text-decoration:line-through;font-weight:400;}
+.pdp-save-badge{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;background:var(--off);color:var(--text);padding:4px 10px;border-radius:100px;}
+.tier-label{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:14px;}
+.tier-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:28px;}
+.tier-card{border:2px solid var(--border);border-radius:var(--radius);padding:14px 10px;cursor:pointer;text-align:center;transition:border-color var(--t),background var(--t);position:relative;background:var(--white);}
+.tier-card:hover{border-color:var(--text);}
+.tier-card.active{border-color:var(--text);background:#fafaf9;}
+.tier-pieces{font-family:"DM Serif Display",serif;font-size:26px;line-height:1;letter-spacing:-.02em;margin-bottom:4px;}
+.tier-name{font-size:11px;font-weight:600;color:var(--muted);letter-spacing:.05em;text-transform:uppercase;margin-bottom:10px;}
+.tier-price{font-size:15px;font-weight:700;margin-bottom:6px;}
+.tier-free{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;background:var(--green);color:var(--white);padding:3px 8px;border-radius:100px;margin-bottom:6px;}
+.tier-bonus{font-size:11px;color:var(--muted);line-height:1.4;}
+.tier-per{font-size:10px;color:var(--light);margin-top:4px;}
+.tier-best{position:absolute;top:-11px;left:50%;transform:translateX(-50%);font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;background:var(--text);color:var(--white);padding:3px 10px;border-radius:100px;white-space:nowrap;}
+.pdp-divider{height:1px;background:var(--border);margin-bottom:24px;}
+.variant-label{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:10px;}
+.variants{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:24px;}
+.var-btn{font-size:13px;font-weight:500;padding:9px 18px;border-radius:100px;border:1.5px solid var(--border);transition:border-color var(--t),background var(--t),color var(--t);cursor:pointer;background:var(--white);}
+.var-btn:hover,.var-btn.active{border-color:var(--text);}
+.var-btn.active{background:var(--text);color:var(--white);}
+.atc-btn{width:100%;display:flex;align-items:center;justify-content:center;gap:9px;font-size:15px;font-weight:600;background:var(--text);color:var(--white);padding:17px 24px;border-radius:100px;margin-bottom:12px;transition:opacity var(--t),transform var(--t),background var(--t);cursor:pointer;border:none;}
+.atc-btn:hover{opacity:.85;transform:translateY(-1px);}
+.atc-btn.ok{background:#16a34a;}
+.trust-row{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:16px;padding-top:16px;border-top:1px solid var(--border);}
+.trust-chip-v{display:flex;flex-direction:column;align-items:center;gap:5px;padding:14px 8px;background:var(--off);border-radius:var(--radius-sm);text-align:center;}
+.trust-ico{font-size:17px;}
+.trust-lbl{font-size:11px;font-weight:500;color:var(--muted);line-height:1.4;}
+.acc{margin-top:24px;}
+.acc-item{border-top:1px solid var(--border);}
+.acc-item:last-child{border-bottom:1px solid var(--border);}
+.acc-hd{width:100%;display:flex;align-items:center;justify-content:space-between;padding:15px 0;font-size:13px;font-weight:600;cursor:pointer;text-align:left;}
+.acc-hd svg{width:15px;height:15px;flex-shrink:0;transition:transform var(--t);color:var(--muted);}
+.acc-item.open .acc-hd svg{transform:rotate(45deg);}
+.acc-body{max-height:0;overflow:hidden;transition:max-height .38s ease;}
+.acc-item.open .acc-body{max-height:600px;}
+.acc-inner{padding-bottom:18px;font-size:13px;color:var(--muted);line-height:1.75;}
+.acc-inner ul{padding-left:16px;list-style:disc;display:flex;flex-direction:column;gap:5px;}
+#looxReviews{margin-top:32px;padding-top:32px;border-top:1px solid var(--border);}
+.loox-placeholder{padding:24px;background:var(--off);border-radius:var(--radius);text-align:center;font-size:13px;color:var(--muted);}
+.loox-placeholder strong{color:var(--text);}
+.pdp-related{max-width:1280px;margin:64px auto 0;padding:64px 40px 80px;border-top:1px solid var(--border);}
+footer{border-top:1px solid var(--border);padding:60px 40px 32px;}
+.footer-in{max-width:1280px;margin:0 auto;}
+.footer-top{display:grid;grid-template-columns:220px 1fr;gap:60px;margin-bottom:48px;}
+.footer-brand{}
+.footer-tag{font-size:13px;color:var(--muted);line-height:1.65;max-width:180px;margin-top:10px;}
+.footer-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:32px;}
+.fc-head{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text);margin-bottom:16px;}
+.footer-col ul{display:flex;flex-direction:column;gap:10px;}
+.footer-col a,.footer-col button{font-size:13px;color:var(--muted);background:none;border:none;cursor:pointer;font:inherit;text-align:left;transition:color var(--t);}
+.footer-col a:hover,.footer-col button:hover{color:var(--text);}
+.footer-bottom{border-top:1px solid var(--border);padding-top:22px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;}
+.footer-copy{font-size:12px;color:var(--light);}
+.footer-links-r{display:flex;gap:18px;}
+.footer-links-r a{font-size:12px;color:var(--muted);transition:color var(--t);}
+.footer-links-r a:hover{color:var(--text);}
+@media(max-width:1024px){.footer-grid{grid-template-columns:repeat(2,1fr);}}
+@media(max-width:860px){
+  .nav-l{display:none;}.burger{display:flex;}
+  .hero{grid-template-columns:1fr;padding:40px 24px 56px;min-height:auto;gap:32px;}
+  .hero-img-col{order:-1;}.hero-main-img{aspect-ratio:3/2;}.hero-card{display:none;}
+  .home-sec{padding:60px 24px;}
+  .callout-in{grid-template-columns:1fr;padding:60px 24px;gap:40px;}.callout-img{display:none;}
+  .how-in{padding:60px 24px;}.how-grid{grid-template-columns:1fr;gap:28px;margin-top:36px;padding-top:36px;}
+  .stats-row{grid-template-columns:1fr 1fr;}
+  .stat:nth-child(2){border-right:none;}.stat:nth-child(1),.stat:nth-child(2){border-bottom:1px solid var(--border);}
+  .reviews{grid-template-columns:1fr;}
+  .cta-band{padding:64px 24px;}
+  .shop-header{padding:40px 24px 32px;}.shop-grid{grid-template-columns:1fr 1fr;padding:32px 24px 60px;gap:16px;}
+  .pdp-wrap{padding:24px 24px 60px;}
+  .pdp-grid{grid-template-columns:1fr;gap:32px;}
+  .pdp-info-col{position:static;}
+  .pdp-gallery-col{flex-direction:column-reverse;}
+  .pdp-thumbs-col{flex-direction:row;width:100%;}.pdp-thumb{width:64px;height:80px;}
+  .pdp-related{padding:48px 24px 60px;margin-top:40px;}
+  footer{padding:48px 24px 28px;}.footer-top{grid-template-columns:1fr;}.footer-grid{grid-template-columns:repeat(2,1fr);}
+  .wrap{padding:0 24px;}
+  .unboxing-header{padding:48px 24px 0;}.unboxing-grid{padding:0 24px;}.unboxing-more{padding:12px 24px 48px;grid-template-columns:repeat(2,1fr);}
+  .loved-section{padding:60px 0;}
 }
-
-*,*::before,*::after { box-sizing: border-box; margin: 0; padding: 0; }
-html { height: 100%; }
-body {
-  height: 100%;
-  background: var(--bg);
-  color: var(--ink);
-  font-family: var(--sans);
-  font-size: 14px;
-  overflow: hidden;
-  -webkit-font-smoothing: antialiased;
+@media(max-width:520px){
+  .shop-grid{grid-template-columns:1fr 1fr;gap:12px;}
+  .footer-grid{grid-template-columns:1fr 1fr;}
 }
-
-/* Ambient background */
-body::before {
-  content: '';
-  position: fixed;
-  width: 600px; height: 600px;
-  background: radial-gradient(circle, rgba(0,229,160,0.06) 0%, transparent 70%);
-  top: -200px; left: -200px;
-  pointer-events: none; z-index: 0;
-  animation: drift1 20s ease-in-out infinite alternate;
-}
-body::after {
-  content: '';
-  position: fixed;
-  width: 500px; height: 500px;
-  background: radial-gradient(circle, rgba(167,139,250,0.05) 0%, transparent 70%);
-  bottom: -150px; right: -150px;
-  pointer-events: none; z-index: 0;
-  animation: drift2 25s ease-in-out infinite alternate;
-}
-@keyframes drift1 { to { transform: translate(100px,80px); } }
-@keyframes drift2 { to { transform: translate(-80px,-60px); } }
-
-.shell { display: flex; height: 100vh; position: relative; z-index: 1; }
-
-/* ── SIDEBAR ── */
-.sidebar {
-  width: var(--sidebar);
-  background: linear-gradient(180deg, rgba(255,255,255,0.035) 0%, rgba(255,255,255,0.02) 100%);
-  border-right: 1px solid var(--glass-border);
-  display: flex; flex-direction: column;
-  flex-shrink: 0;
-  backdrop-filter: blur(20px);
-  position: relative; z-index: 10;
-}
-
-.sb-brand {
-  padding: 22px 16px 18px;
-  border-bottom: 1px solid var(--glass-border);
-  display: flex; align-items: center; gap: 10px;
-}
-.sb-logo {
-  width: 32px; height: 32px;
-  background: linear-gradient(135deg, var(--green), #00b37e);
-  border-radius: 9px;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 16px;
-  box-shadow: 0 0 20px var(--green-glow);
-  flex-shrink: 0;
-}
-.sb-title { font-size: 14px; font-weight: 700; letter-spacing: -0.02em; }
-.sb-version { font-size: 10px; color: var(--ink-3); font-family: var(--mono); }
-
-.sb-nav { padding: 12px 8px; flex: 1; overflow-y: auto; }
-.sb-nav::-webkit-scrollbar { width: 0; }
-
-.sb-label {
-  font-size: 9px; font-weight: 600; letter-spacing: 0.12em;
-  text-transform: uppercase; color: var(--ink-4);
-  padding: 10px 10px 4px; margin-top: 6px;
-}
-
-.sb-item {
-  display: flex; align-items: center; gap: 9px;
-  padding: 8px 10px; border-radius: var(--r-sm);
-  cursor: pointer; font-size: 13px; font-weight: 500;
-  color: var(--ink-3); transition: all var(--transition);
-  border: 1px solid transparent; margin-bottom: 1px;
-}
-.sb-item:hover { background: var(--glass-hover); color: var(--ink-2); border-color: var(--glass-border); }
-.sb-item.active {
-  background: linear-gradient(135deg, rgba(0,229,160,0.1), rgba(0,229,160,0.05));
-  color: var(--green); border-color: rgba(0,229,160,0.2);
-}
-.sb-item .ico { font-size: 14px; width: 18px; text-align: center; flex-shrink: 0; }
-
-.sb-set-item {
-  display: flex; align-items: center; gap: 8px;
-  padding: 6px 10px; border-radius: 8px;
-  cursor: pointer; font-size: 12px; color: var(--ink-3);
-  transition: all var(--transition); margin-bottom: 1px;
-}
-.sb-set-item:hover { background: var(--glass-hover); color: var(--ink-2); }
-.sb-set-item.active { color: var(--ink); background: var(--glass); }
-.set-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--ink-4); flex-shrink: 0; transition: background 0.3s; }
-.set-dot.deployed { background: var(--green); box-shadow: 0 0 6px var(--green); }
-.set-dot.deploying { background: var(--amber); box-shadow: 0 0 6px var(--amber); }
-.set-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-.sb-add {
-  display: flex; align-items: center; gap: 8px;
-  padding: 7px 10px; border-radius: 8px;
-  cursor: pointer; font-size: 12px; color: var(--green);
-  transition: all var(--transition); margin-top: 6px; opacity: 0.7;
-}
-.sb-add:hover { opacity: 1; background: var(--green-dim); }
-
-.sb-bottom {
-  padding: 12px;
-  border-top: 1px solid var(--glass-border);
-  display: flex; flex-direction: column; gap: 6px;
-}
-.status-pill {
-  display: flex; align-items: center; gap: 8px;
-  padding: 7px 10px; border-radius: 8px;
-  background: var(--glass); border: 1px solid var(--glass-border);
-  font-size: 11px; color: var(--ink-3); font-family: var(--mono);
-  transition: all var(--transition);
-}
-.status-pill .dot {
-  width: 6px; height: 6px; border-radius: 50%;
-  background: var(--ink-4); flex-shrink: 0; transition: all 0.4s;
-}
-.status-pill.active-run .dot { background: var(--violet); box-shadow: 0 0 8px var(--violet); }
-.status-pill.active-run { color: var(--violet); border-color: rgba(167,139,250,0.2); }
-.status-pill.active-daemon .dot { background: var(--green); box-shadow: 0 0 8px var(--green); }
-.status-pill.active-daemon { color: var(--green); border-color: rgba(0,229,160,0.2); }
-
-.drive-pill {
-  display: flex; align-items: center; gap: 8px;
-  padding: 7px 10px; border-radius: 8px;
-  background: var(--glass); border: 1px solid var(--glass-border);
-  font-size: 11px; color: var(--ink-3); cursor: pointer;
-  transition: all var(--transition);
-}
-.drive-pill:hover { border-color: rgba(0,229,160,0.3); color: var(--green); }
-.drive-pill.connected { color: var(--green); border-color: rgba(0,229,160,0.25); }
-
-/* ── MAIN ── */
-.main { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
-
-/* ── TOPBAR ── */
-.topbar {
-  padding: 0 28px;
-  height: 60px;
-  border-bottom: 1px solid var(--glass-border);
-  display: flex; align-items: center; justify-content: space-between;
-  flex-shrink: 0;
-  backdrop-filter: blur(10px);
-}
-.topbar-left { display: flex; flex-direction: column; }
-.page-title { font-size: 17px; font-weight: 700; letter-spacing: -0.03em; }
-.page-sub { font-size: 11px; color: var(--ink-3); font-family: var(--mono); }
-.topbar-right { display: flex; gap: 8px; align-items: center; }
-
-/* ── CONTENT ── */
-.page-content { flex: 1; overflow-y: auto; padding: 24px 28px; }
-.page-content::-webkit-scrollbar { width: 4px; }
-.page-content::-webkit-scrollbar-track { background: transparent; }
-.page-content::-webkit-scrollbar-thumb { background: var(--ink-4); border-radius: 2px; }
-
-/* ── BUTTONS ── */
-.btn {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 8px 16px; border-radius: 9px; font-size: 13px;
-  font-weight: 600; font-family: var(--sans);
-  cursor: pointer; border: 1px solid var(--glass-border);
-  background: var(--glass); color: var(--ink-2);
-  transition: all var(--transition); white-space: nowrap;
-  letter-spacing: -0.01em;
-}
-.btn:hover:not(:disabled) { background: var(--glass-hover); color: var(--ink); border-color: rgba(255,255,255,0.12); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
-.btn:active:not(:disabled) { transform: translateY(0); }
-.btn:disabled { opacity: 0.3; cursor: not-allowed; }
-.btn.primary { background: linear-gradient(135deg, var(--green), #00c98a); color: #001a10; border-color: transparent; box-shadow: 0 0 20px var(--green-glow); }
-.btn.primary:hover:not(:disabled) { box-shadow: 0 0 30px var(--green-glow), 0 4px 16px rgba(0,0,0,0.3); }
-.btn.ghost { background: transparent; border-color: var(--glass-border); }
-.btn.ghost:hover:not(:disabled) { background: var(--glass); }
-.btn.danger { background: var(--red-dim); color: var(--red); border-color: rgba(248,113,113,0.2); }
-.btn.sm { padding: 5px 12px; font-size: 12px; border-radius: 8px; }
-.btn.xs { padding: 4px 9px; font-size: 11px; border-radius: 7px; }
-
-/* ── STATS ── */
-.stats-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; margin-bottom: 20px; }
-.stat-card {
-  background: var(--glass);
-  border: 1px solid var(--glass-border);
-  border-radius: var(--r); padding: 16px 18px;
-  transition: all var(--transition); position: relative; overflow: hidden;
-}
-.stat-card::before {
-  content: ''; position: absolute; inset: 0;
-  background: linear-gradient(135deg, rgba(255,255,255,0.02), transparent);
-  pointer-events: none;
-}
-.stat-card:hover { border-color: rgba(255,255,255,0.1); transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.3); }
-.stat-n { font-size: 28px; font-weight: 800; line-height: 1; letter-spacing: -0.04em; }
-.stat-n.g { color: var(--green); }
-.stat-n.v { color: var(--violet); }
-.stat-n.a { color: var(--amber); }
-.stat-lbl { font-size: 11px; color: var(--ink-3); margin-top: 5px; font-family: var(--mono); }
-
-/* ── GLASS CARD ── */
-.card {
-  background: var(--glass);
-  border: 1px solid var(--glass-border);
-  border-radius: var(--r); padding: 20px 22px;
-  margin-bottom: 14px; position: relative;
-  transition: border-color var(--transition);
-}
-.card:hover { border-color: rgba(255,255,255,0.09); }
-.card-title {
-  font-size: 10px; font-weight: 700; letter-spacing: 0.1em;
-  text-transform: uppercase; color: var(--ink-3); margin-bottom: 16px;
-}
-
-/* ── LOG BOX ── */
-.log-box {
-  background: rgba(0,0,0,0.3);
-  border: 1px solid var(--glass-border);
-  border-radius: 10px; padding: 12px 14px;
-  height: 120px; overflow-y: auto;
-  font-family: var(--mono); font-size: 11px;
-  display: flex; flex-direction: column; gap: 3px;
-}
-.log-box::-webkit-scrollbar { width: 3px; }
-.log-box::-webkit-scrollbar-thumb { background: var(--ink-4); }
-.log-line { color: var(--ink-3); animation: fadeIn 0.2s ease; }
-.log-line.ok { color: var(--green); }
-.log-line.err { color: var(--red); }
-.log-line.hi { color: var(--ink); }
-@keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
-
-/* ── PROGRESS ── */
-.prog-wrap { margin-bottom: 14px; }
-.prog-lbl { font-family: var(--mono); font-size: 11px; color: var(--ink-3); margin-bottom: 8px; }
-.prog-track { height: 2px; background: rgba(255,255,255,0.05); border-radius: 2px; overflow: hidden; }
-.prog-fill { height: 100%; background: linear-gradient(90deg, var(--green), var(--violet)); border-radius: 2px; width: 0%; transition: width 0.4s ease; box-shadow: 0 0 8px var(--green); }
-
-/* ── CAT TABS ── */
-.cat-tabs { display: flex; gap: 4px; margin-bottom: 18px; padding: 3px; background: var(--glass); border: 1px solid var(--glass-border); border-radius: 11px; width: fit-content; }
-.cat-tab { padding: 6px 16px; border-radius: 9px; font-size: 12px; font-weight: 600; cursor: pointer; color: var(--ink-3); transition: all var(--transition); }
-.cat-tab:hover { color: var(--ink-2); }
-.cat-tab.active { background: rgba(255,255,255,0.07); color: var(--ink); }
-.cat-tab.active.rugpull { background: var(--green-dim); color: var(--green); }
-.cat-tab.active.riptag { background: var(--violet-dim); color: var(--violet); }
-
-/* ── SET CARDS ── */
-.set-card {
-  background: var(--glass); border: 1px solid var(--glass-border);
-  border-radius: var(--r); padding: 16px 20px;
-  margin-bottom: 8px; display: flex; align-items: center; gap: 16px;
-  cursor: pointer; transition: all var(--transition);
-}
-.set-card:hover { background: var(--glass-hover); border-color: rgba(255,255,255,0.1); transform: translateX(2px); }
-.set-card-ico { width: 42px; height: 42px; border-radius: 11px; background: rgba(255,255,255,0.04); display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0; border: 1px solid var(--glass-border); }
-.set-card-info { flex: 1; min-width: 0; }
-.set-card-name { font-weight: 700; font-size: 14px; letter-spacing: -0.02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.set-card-meta { font-size: 11px; color: var(--ink-3); margin-top: 3px; font-family: var(--mono); }
-.set-card-actions { display: flex; gap: 8px; flex-shrink: 0; align-items: center; }
-
-/* ── BADGES ── */
-.badge {
-  display: inline-flex; align-items: center; gap: 4px;
-  padding: 3px 9px; border-radius: 5px;
-  font-family: var(--mono); font-size: 10px; font-weight: 600;
-  letter-spacing: 0.03em;
-}
-.badge-draft { background: var(--glass); color: var(--ink-3); border: 1px solid var(--glass-border); }
-.badge-deployed { background: var(--green-dim); color: var(--green); border: 1px solid rgba(0,229,160,0.2); }
-.badge-deploying { background: var(--amber-dim); color: var(--amber); border: 1px solid rgba(251,191,36,0.2); }
-.badge-rugpull { background: var(--green-dim); color: var(--green); border: 1px solid rgba(0,229,160,0.2); }
-.badge-riptag { background: var(--violet-dim); color: var(--violet); border: 1px solid rgba(167,139,250,0.2); }
-.status-live { background: var(--green-dim); color: var(--green); border: 1px solid rgba(0,229,160,0.2); }
-.status-banned { background: var(--red-dim); color: var(--red); border: 1px solid rgba(248,113,113,0.2); }
-.status-unknown { background: var(--glass); color: var(--ink-3); border: 1px solid var(--glass-border); }
-
-/* ── FORM ELEMENTS ── */
-.field { margin-bottom: 16px; }
-.field label { display: block; font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 7px; }
-.input {
-  width: 100%; background: rgba(0,0,0,0.3);
-  border: 1px solid var(--glass-border); border-radius: 9px;
-  padding: 9px 13px; color: var(--ink);
-  font-family: var(--sans); font-size: 13px; outline: none;
-  transition: border-color var(--transition);
-}
-.input:focus { border-color: rgba(0,229,160,0.4); box-shadow: 0 0 0 3px rgba(0,229,160,0.08); }
-.input::placeholder { color: var(--ink-4); }
-textarea.input { resize: vertical; min-height: 90px; font-family: var(--mono); font-size: 12px; line-height: 1.6; }
-select.input { cursor: pointer; }
-
-/* ── CHIPS ── */
-.chips { display: flex; gap: 6px; flex-wrap: wrap; }
-.chip {
-  padding: 5px 13px; border-radius: 7px;
-  border: 1px solid var(--glass-border); background: var(--glass);
-  font-family: var(--mono); font-size: 12px; cursor: pointer;
-  color: var(--ink-3); transition: all var(--transition);
-}
-.chip:hover { color: var(--ink-2); border-color: rgba(255,255,255,0.1); }
-.chip.on { background: var(--green-dim); border-color: rgba(0,229,160,0.3); color: var(--green); }
-.day-chip.on { background: var(--violet-dim); border-color: rgba(167,139,250,0.3); color: var(--violet); }
-
-/* ── TABLE ── */
-table { width: 100%; border-collapse: collapse; }
-th { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--glass-border); font-family: var(--mono); }
-td { padding: 10px 12px; font-size: 13px; border-bottom: 1px solid rgba(255,255,255,0.03); vertical-align: middle; transition: background var(--transition); }
-tr:last-child td { border-bottom: none; }
-tr:hover td { background: rgba(255,255,255,0.015); }
-
-/* ── TOGGLE ── */
-.toggle { width: 38px; height: 21px; background: rgba(255,255,255,0.08); border-radius: 11px; cursor: pointer; position: relative; border: 1px solid var(--glass-border); transition: all 0.25s; }
-.toggle.on { background: linear-gradient(135deg, var(--green), #00c98a); border-color: transparent; box-shadow: 0 0 12px var(--green-glow); }
-.toggle::after { content: ''; position: absolute; width: 15px; height: 15px; background: white; border-radius: 50%; top: 2px; left: 2px; transition: left 0.25s cubic-bezier(0.4,0,0.2,1); box-shadow: 0 1px 4px rgba(0,0,0,0.3); }
-.toggle.on::after { left: 19px; }
-
-/* ── MODALS ── */
-.modal-overlay {
-  position: fixed; inset: 0;
-  background: rgba(0,0,0,0.6);
-  backdrop-filter: blur(8px);
-  z-index: 100; display: flex; align-items: center; justify-content: center; padding: 20px;
-  animation: fadeOverlay 0.15s ease;
-}
-@keyframes fadeOverlay { from { opacity: 0; } to { opacity: 1; } }
-.modal {
-  background: linear-gradient(135deg, rgba(255,255,255,0.05), rgba(255,255,255,0.02));
-  border: 1px solid rgba(255,255,255,0.1);
-  border-radius: 18px; padding: 28px;
-  width: 100%; max-width: 560px; max-height: 90vh; overflow-y: auto;
-  box-shadow: 0 24px 80px rgba(0,0,0,0.6);
-  animation: slideModal 0.2s cubic-bezier(0.4,0,0.2,1);
-}
-@keyframes slideModal { from { opacity: 0; transform: translateY(16px) scale(0.98); } to { opacity: 1; transform: none; } }
-.modal::-webkit-scrollbar { width: 0; }
-.modal-title { font-size: 17px; font-weight: 700; letter-spacing: -0.03em; margin-bottom: 22px; }
-.modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--glass-border); }
-
-/* ── FOLDER LIST ── */
-.folder-list { max-height: 220px; overflow-y: auto; background: rgba(0,0,0,0.3); border: 1px solid var(--glass-border); border-radius: 10px; }
-.folder-list::-webkit-scrollbar { width: 3px; }
-.folder-list::-webkit-scrollbar-thumb { background: var(--ink-4); }
-.folder-item { padding: 9px 14px; cursor: pointer; font-size: 13px; border-bottom: 1px solid rgba(255,255,255,0.03); display: flex; align-items: center; gap: 8px; transition: all var(--transition); }
-.folder-item:last-child { border-bottom: none; }
-.folder-item:hover { background: var(--glass); }
-.folder-item.selected { background: var(--green-dim); color: var(--green); }
-
-/* ── ACCOUNT CARDS ── */
-.acct-card {
-  background: var(--glass); border: 1px solid var(--glass-border);
-  border-radius: var(--r); padding: 18px 20px;
-  margin-bottom: 10px; transition: all var(--transition);
-}
-.acct-card:hover { border-color: rgba(255,255,255,0.09); }
-.acct-header { display: flex; align-items: center; gap: 14px; cursor: pointer; }
-.acct-avatar {
-  width: 38px; height: 38px; border-radius: 50%;
-  background: linear-gradient(135deg, var(--green-dim), var(--violet-dim));
-  border: 1px solid rgba(0,229,160,0.2);
-  display: flex; align-items: center; justify-content: center;
-  font-size: 13px; font-weight: 700; color: var(--green); flex-shrink: 0;
-}
-.acct-info { flex: 1; min-width: 0; }
-.acct-name { font-weight: 700; font-size: 14px; letter-spacing: -0.02em; }
-.acct-meta { font-size: 11px; color: var(--ink-3); font-family: var(--mono); margin-top: 2px; }
-.acct-actions { display: flex; gap: 6px; flex-shrink: 0; }
-
-/* ── DROPDOWN ── */
-.account-dropdown {
-  display: grid;
-  grid-template-rows: 0fr;
-  transition: grid-template-rows 0.35s cubic-bezier(0.4,0,0.2,1),
-              margin-top 0.35s cubic-bezier(0.4,0,0.2,1),
-              padding-top 0.35s cubic-bezier(0.4,0,0.2,1),
-              border-top-width 0.35s cubic-bezier(0.4,0,0.2,1);
-  margin-top: 0;
-  padding-top: 0;
-  border-top: 0px solid var(--glass-border);
-}
-.account-dropdown > div { overflow: hidden; }
-.account-dropdown.open {
-  grid-template-rows: 1fr;
-  margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px solid var(--glass-border);
-}
-
-/* ── SCHED GRID ── */
-.sched-row { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid rgba(255,255,255,0.04); }
-.sched-row:last-child { border-bottom: none; }
-.sched-day { width: 86px; font-size: 13px; font-weight: 600; letter-spacing: -0.01em; }
-
-/* ── SOLD PAGE ── */
-.sold-stats { display: grid; grid-template-columns: repeat(6,1fr); gap: 10px; margin-bottom: 18px; }
-
-/* ── LABEL PRINT ── */
-@media print {
-  body { background: white; }
-  .label { page-break-after: always; }
-}
-
-/* ── ANIMATIONS ── */
-.page-enter { animation: pageEnter 0.25s cubic-bezier(0.4,0,0.2,1); }
-@keyframes pageEnter { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
-
-.hidden { display: none !important; }
-
-/* ── EMPTY STATE ── */
-.empty { text-align: center; padding: 48px 20px; color: var(--ink-3); font-size: 13px; }
-.empty-ico { font-size: 36px; margin-bottom: 12px; opacity: 0.5; }
-.empty-title { font-size: 14px; font-weight: 600; color: var(--ink-2); margin-bottom: 6px; }
-
-/* ── PHASE TAGS ── */
-.phase-launch { background: var(--amber-dim); color: var(--amber); border: 1px solid rgba(251,191,36,0.2); padding: 2px 8px; border-radius: 5px; font-family: var(--mono); font-size: 10px; }
-.phase-evergreen { background: var(--green-dim); color: var(--green); border: 1px solid rgba(0,229,160,0.2); padding: 2px 8px; border-radius: 5px; font-family: var(--mono); font-size: 10px; }
-
-/* ── GRID LAYOUTS ── */
-.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
 </style>
 </head>
 <body>
-<div class="shell">
 
-<!-- SIDEBAR -->
-<div class="sidebar">
-  <div class="sb-brand">
-    <div class="sb-logo">🏄</div>
+<div id="announce">Free US shipping on 3-pack bundles &nbsp;·&nbsp; 4.8★ rated &nbsp;·&nbsp; <a href="javascript:nav('shop')">Shop the sale →</a></div>
+
+<header id="header">
+  <div class="wrap nav">
+    <nav class="nav-l">
+      <button class="nl" onclick="nav('shop')">Shop All</button>
+      <button class="nl" onclick="scrollToHow()">How It Works</button>
+      <a class="nl" href="https://riptag.co/pages/vintage-wholesale" target="_blank">Wholesale</a>
+    </nav>
+    <div class="logo" onclick="nav('home')"><img src="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSUNDX1BST0ZJTEUAAQEAAAHIAAAAAAQwAABtbnRyUkdCIFhZWiAH4AABAAEAAAAAAABhY3NwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAA9tYAAQAAAADTLQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAlkZXNjAAAA8AAAACRyWFlaAAABFAAAABRnWFlaAAABKAAAABRiWFlaAAABPAAAABR3dHB0AAABUAAAABRyVFJDAAABZAAAAChnVFJDAAABZAAAAChiVFJDAAABZAAAAChjcHJ0AAABjAAAADxtbHVjAAAAAAAAAAEAAAAMZW5VUwAAAAgAAAAcAHMAUgBHAEJYWVogAAAAAAAAb6IAADj1AAADkFhZWiAAAAAAAABimQAAt4UAABjaWFlaIAAAAAAAACSgAAAPhAAAts9YWVogAAAAAAAA9tYAAQAAAADTLXBhcmEAAAAAAAQAAAACZmYAAPKnAAANWQAAE9AAAApbAAAAAAAAAABtbHVjAAAAAAAAAAEAAAAMZW5VUwAAACAAAAAcAEcAbwBvAGcAbABlACAASQBuAGMALgAgADIAMAAxADb/2wBDAAUDBAQEAwUEBAQFBQUGBwwIBwcHBw8LCwkMEQ8SEhEPERETFhwXExQaFRERGCEYGh0dHx8fExciJCIeJBweHx7/2wBDAQUFBQcGBw4ICA4eFBEUHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh7/wAARCAMgAyADASIAAhEBAxEB/8QAGgABAAMBAQEAAAAAAAAAAAAAAAMEBQECCP/EADgQAQACAQMCBAQFAwMEAgMAAAABAhEDBCESMQVBUWETInHwgZGhscEyQtEUIzNSU3LhYoIkQ5L/xAAUAQEAAAAAAAAAAAAAAAAAAAAA/8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAwDAQACEQMRAD8A+MgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB2Ime0HTbGemceuAcHumne8TNa5x6PcbbWmM/DtH/wBZBCLX+h1sRPyznyiY/l5ttNaK56fwjmf0BXHbVms4mMOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADsRMziOZWNHZ6l46p+WPfzBWGlXY6eJibT7TCSu10OmKzTPvkGS7FbT2rM/g2K6OlXtSI/GXqaUmYmaUmY8+mAY01tE4mMT7vfwNbj/btOfSMtj83AZddprz/bj68PddlqZ+aYj8paIChGxt1c2jHtnP7PcbCsW51Jmvp0/wDtcAVo2Wj1Znr+mYSV22jETHw4n69/0SgPEaWnFenpiY9J5/d6rSlY+Wla59Iw6A7y464AADxraNNWuLRGfXzZe40Z0r4nt5NdFutKNTRmMZmIzAMgdmMTiXAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAiMziGjsdr041NSMzPMQDuy20Ur16kZt5RPktOuADrgAAAAOuAAOuAAAAASAAAAdoyAMfc4+PfEYiJmIhGl3UxOvea9pnP58ogAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAXdltc/7mrHHlUHdhtuI1b9vKPVfcdBwAAAAAAAAAB15tMVjMzER7q2pvtOs4rWbes9gWhQnf2z/x1mPfP+Xqu/8A+rTj8Jx/kF0RaO40tXEVti3pKUDzAAAAdiYrOZ7Ry4861unRvPpWf2Bj6n/JMek4eXZnMzLgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAALWz2s6k9V+K/uDux282n4l4xWP1aMdsYwRERGI4iPKAAAAAB1wAAAAAeNfVrpac3tz6R6vbK3mr8XV7z0xxAPGvrX1bZtP0hGAAAOxMxOYX9luptjT1J58pnzZ5HE5BuCHZ6nxdGJnvHdMAAAj3Vujb2tjt/lIg39unbzH/Vx/P8AAMoAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB6rS1piIrPPZc2e1rNfiamfaOy7WIrnERGe+PMGbp7PVtGZjp+vC1pbLSrzbNp/RZAZm/rWmrFa16cR2zlWS7u3VuLTx34mPNEAAAAAAAAACxtNvOrbM8UjzA2m3tq26p4rHm1KRFaxWIxEOVrWtYrWMRHZ0AACQAAAAAAAAARbq3ToX7dvNkNTxDP+n49f4llgAAAAAAu+F2mL2rmMT+efvK/5szw6JncRPlHf8pafmAAAreI2iNv047z9/usqXik/LSPr/AKAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADtIzaI9ZcS7avXrVrjMZ5j2Bq0zFIiYxMRGY9/N6ABy89NZntiOHUG/t07a3fnEcfn/AMu05tM4xmXAAAAAAAAB70a1teOu3TXzkEm02861s9qx3alK1rWK1jEQj0tXQiuKXiIj14/dLExaM1mJj1icgA6DgAAOg4AAAAeYZgDzJOAEe4rNtG9Y84Y7cZm+0fh6nVWPlkFYAAAAHrTpbUvFKxmZBd8M08RbUmJ5jELrxo0jT04rHl3ewAIAZ/ilp+LWvl0/wAy0GZ4jaba8xPaO35QCsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAt+GUidWbT3rGY/b+VRo+FxMadp4xnj7/ACBbAAU/E7fJWsTOZ7x9/RcZviVs6+MTHTGAVQAAAAAB2Ime0O9F4jM1mI9Z4B5ElNDVvWbVr1RHo78DW/7V/wD+ZBE9Vvas5iZiXudvrRWZnTtER3zGP3eJraIzMTj18gWNHeatJxaeuPfuvaGtTWjNZ584nux3rTvalotWcTANoQ7TXjWpzjqjvCYActaK1m1pxCnr77GY0Y/+0wC7PEZnsh1N1o0/u6v/AB5Zl9XUvbNrzM/V4Boam/pHFK59JlDffasxGMVn2j/KqAntutabdUWms/8AxmYdnebj/uSrgJ43WtEzPXMzPrOf3S6W+tHF6xPvHEqYDY0dfT1eKTz6T3e70rqUmtozEsWJmJzE4Xtnu8409WefK0gg3O1vpTM1ibU9fRXbko76GjbHVpx+HAMcadtjozOYm8e3H+Hqm10axxWZmPOZBnaWjqalsVrLR2uhGjXnm095TRWI7REfR0AAAABlb6023Fs/2/L+UtX2ZG6v17i9/WcgiAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB2sZtETOPcHHYrM9omfpDT0trpRpxFq5mcTPsm+HpxOY0659cAyaaOpecVrz6Z5e67TWmszFZ48pjH7taZnHdwGRqaGpp16r1xCJf8AE7R01r5/x9woAAAAAAAAAAAAAAANfaU6NCsYxM8z+38MrSrNrxERnls0jprFczOIxmfMHQAGRupi2vaazmJnMfjy13iNDRiZn4cZt38wZEUvP9sl6WpOLRhtViKxisRWPSOGf4p/zV/8Y/eQU17R2MTETqWmM+ilTHVGZxGeW1pxMUrFpzMRETIK8bHSivMzM+scf5e422jmPkzj3wmAeY09OOIpX8Yz+71XiMRxHpB5gEAAOWrW39VYt9YdAU9xsqzE20+J9FCYmJxMYmG2peI6PHxaxz5gp6V7aepF6zzDUjcafwfizMY9PdkO5nGPIEu43F9a3PFc8R6IRLoaGprT8sces9gRJNPR1L9qy0dLaadMZjqn3T9oiMceUegM7T2OpaIm01r7TKeuxpExMzMx5xj+crYCtXZ6MRiazb6z/hLGjpRXHw4ewEN9to2/s/HMq+rseJ+HOZ9JXgGLelqW6bRiXlr7rQjWpjtaO0sm1ZraazGJgGl4frTqafRac2r5+yyyNtedPWraM9+3q2JjHoDgAAAAAAAE8csS2cznu2dbPwr9PfpnH5MWeZyAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAk21evWrE4xnlGteGxnXzxxANIeZ1KYn56cd/mjhHO60InE3/ACiQTCrO+0sTitpn0nh4tv4x8unz78wCHxG/VuMccccKzt7Te02tOZnvLgAOxEz2jIOD1NLxGZrMRPrw912+taYiKT9ccAiFrT2WrafnxT8pS12HM9V4x5TAKA0o2OnFcWtMznvHCSm20a/2Z+s/4BlREz2gmJjvEw2Y09OK9MUrMekxn93Phacxj4dIj2jH7Axhf3GyjE20pnj+1RmMSDunWb3isd5aOnstKuJtM2n9FLZxnXr7TE/rDW8geaadKTmlIh6AAAB1wgBneJWmdWKz2iOPyhoXtWtc2npj1ZO51Pia1reWePoDm2r1a9K4zmWwzPDudzEYznMfpM/w0ptWszE2rEx5Z5/IHRDbc6Nc/PEzEZ7SitvtOOa0mfaZx/kFsUb7/n5KRj/5PE7/AFM8UrANEU9Pf1mYi9MfRciYmMxOYAAAR7qJnQvETjOP3hIh3sxG3tnPPEfXv/AMkEmhpzq6kVj8QSbPbzrWzPFI7y06VrSsVrEREehSsUpFa8RDoAAEOucuTelf6tSlfraAenHmt6WnFb0tPpFol6AAAZniNencT7xn7/Vps7xP/nr/AOOAVYnE5hs6Noto0mO2MflwxWvtImNrSJ9/3kEoAAAAAAAI91No0LzXyiP3hjtXfW6dvbHnxLKAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADEuzExOJgHHYmY7TMOLehs51KRabxESCrMzPeZlxpU2WlHeZn37f5SRtdHERNc48+37AysSTW0Rmazj6NiNLSic/DrM+8ZQeJdFdCIiIiZnjH37gzUu20/i61aeUzyiXfDK/Na34ff6gsV2mhWIzWbY85n/CWNPTiMdFZj3jP7vQBXFYxXiPSOAAAAAACAAZ/iWlFbxqR2t3+v3+7QU/FM9Gn6fN/AK+wnG5rHrw1GPt9T4WrF8Zx5L+hu51tSKRp4458wWQACO48a9unRvOccYz6Ao6291JtMacxWPplFfc69pzOpaPpKGeZyA9Ta05zPfu8gA7MzPeXAAAAABr7OZnbUmZzPP7yyaxm0R6tjQr06NIxjjkHsABS8UvHTWkfWf4/ldlm+I36tfpzxX7kFVp7DS+HpdUxzZn6FevVrX1ls1rFaxWvaOIAAAQbvcRo1xHNp7QmvaKUm09ohj6t51NSbz3kHb62pe3Va058vZ4m1p72n83AHYtaJzEy2NKZtSJmczjlj17xmcNnTia6dYmczFYyD0AB5Mreznc37x5NS9orWbT2iMyxrzm0zM59wKV6rxX1nDZpGNOsTHMRGY92TtKdevWuMx5/Rr5AAAAAAAABV8Sn/APHiM+bNXvFJjNI59fv8lEAAAAAAAAAAAAAAAAAAAAAAAHqlLXtFaxmZB5eq0vacRWZnvjDR2+0pTm/zSsxERGIiIj0jiAZdNnr2jPTj2nh7jYas1zmIn0n/ANNF3IKUeH14mdT6xhLTaaFcfLMz7pwHiujpVjEadZ+sZ/dD4hONvPHecdllS8UtHTSuZz39vvgFGsZmI7NjRr06dazjtz9WXtaxfXrE9s8tf3AAAZ3id86sV/6Y7NJj7u/xNe1onMeX0BE0/DqY0OqYjme/t95ZsRMzER3lsaERXRpEdsZ/kHsdcAcmYiOePq72jlm7zczqWmtZmKwC1fd6NfObfRBff2z8mnWI9+VIBf09/EzEalMe8LsTmsTE5iWG1tl1f6WnV7/uCYABQ8Tvm1dOJ4jmY9JX2TvLdW5vPHfy8/QEK14bGdfPPEf+v5VWj4ZSa6VrznFp4+/yBbAA8lff36NtOJ5tx9Y+8LCh4pbNqV8ojPf79gUgAAABLoaF9WeIxHrLQ0dppacZtE2sDMilpmIxPPZJXba0zj4do/CWrWK1jFYisZ8ow7IMz/Ra2MxET7ZxP6vcbC/Hz198tABV0tlSluq1ur0jC0AAAGccz2YurM21LTMYmZ5+rX3FopoXtaOMYx9eGMC14bGdeZ9I9Pv2aSp4bSY0Zv5T9/4WwAAVvEb9OjFYnm0sxc8TtnVrWJ7RzHpKmAACXa1i+vWs9s8tee+fVneGRnWmc9o+/wB2jIAAId3bo0JnMxPaGS0PE7zFK0jz5lngt+GUidWbT3iOP2/mGiqeGRjStOYxM/l98LYAAAAAADlpitZtM4iI5JmIiZniIZu83E6tums/LAItxqTq6s2n8EYAAAAAAAAAAAAAAAAAAAAAAA9UrN7RWO8tXa6NdGmMR1T3lV8MpE3tee9V8AACQRam40dPvfM+kAlFO3iFYmenTn65RW32rNcYrE+sf+waOWZ4hqdev0+VeIedTd614x1Yj24QAteHVzr554jP3+bSVPDKY05tjv2n7/BbAAB51bdOla2YjEcZ9WNPM5afiF+nbTEf3Tj8PvDLB70KzfWrWMxmcZjybLO8MrnWm3pH3/DRAABDu7dO3vieZjEMlo+JWxoxXicz+X3yzgAAdrHVaKx5zhs6URGnWMY45j0ZGhTr1a1xMxM4ls9wAALW6aTb0jLEvObTMRiM8NXfWmu2t35nGY8vvDJAa+0r07esdMxM8z+38MrTjN4jy821WIpWKR2rEQAAAyt9eL7m2PKcflw1LWitZtPaIyxtSZm8zM557g8gALG020605nivqi0aTqakUjza+lSNPTikeQO1rWlYrWMRDpIAEItTcaOnOLXz9OQSipO+047Vmfxef9fGf+LEf+QLvkItrq/G0uqYxOcSlAABV8St06MVzMTM5+/zZq74pac1pnjzj3+5VNOJteIiMg1dpXp0KxjGeePP7iISuREViKx2jh0DzBy1ums2/wCmJkGXvr9e5tPlHEIHbTm08zLgAANHwysxpzbyt2+/yW0Ozr07evGM8z+38JgAPMGZ4jbOvjMTiPv9cqz3rW69W1ueZy5pRnUriOrnt6g1ttT4ehWvn5/f0wkIrFaxWO0RiAAAAAAnERMzxHnJ2jOcQzt5ueuejTmeiPP1BzebmbzNKcVj9VUAAAAAAAAAAAAAAAAAAAAAAAAdrGZiPUGnsKzXbxnznP3+qw8aUY06xjE45j0nzewBx0FPf6/TnSrPM9/8M9JuLdWtaee/mjAAAB2kRNoie2eQauyp06FeMTPM/f4JnKV6KRX0jH5OgAAoeKT81K8YjmPv8lJPvbxfcWx5Tj8uEANDwys/DtbjEziPv8lxHtq9GhWuMT5pAAPMGb4lbOtFYn+mOY/X+VVLurdWvaczMeSIAAFvw2udebccR9/w0VLwuvy2viPSJ+/wXQAAU/FL4rWkTzPMx7fcM9Z8Qt1biYzExHCsCfYxnc15xhqqPhlJza/l2+/1XgAAR7m3RoWtnE44z5/cMdo+J2xo1rieZzn7+rOAAjmcAv8AhunEVnUnv2jn7+5XUe2p0aFaxzxnP1SAA5a3TWbccRnkFPf7ia50qTifOf4UHq9uq82znMvIAPejEzqVxGZz29Qau3pNNCtZSOREVrER2jiHQActbpra3pGQZW9t1bm8zHnh62EZ3NeZifuUN5ibzjtnj6LnhlObXzx2+/1BeHHQJR7mcaF56sTjhJKHfRM7efbn7/MGSAA9UjN4h5T7GvVua+3PYGpWsUrFI/tjDoAPGtMRpXmZmIx3jyzw9q2/vNdvMVn+qcT9PvAM2ZzMz6p9jSL7iufLn8uf4V17wuObzx27ff4gveQ64AAAcRGZnEHaM5xHuzt7ufiTOnSfkjz9QN7ufiT0aczFY7z6qgAAAAAAAAAAAAAAAAAAAAAAAAAJNtTr1q1xmJnlGt+GxnWmc4mI/MGj3AAeNe3Ro3tnHHD2r+IW6dvjOMz29fvgGZMzMzM95cAAABNs69W4pHHfz/X9EK54ZTN7WmO0cfUGgAAWnFZnEziM4gRbu3Rt7WicT5Ayrzm8zmZ58zSiZ1KxEZ57PKfY1i24rnynMfuDUpWK0iseUYdAB51LdGna2YzEcZ9XpBvrdO3ntz9/4Bl2nMzLgAA7WMzANXZUiu2rjz5n69v4TOUjppFc5mIiJdAI/QR7i3ToXnEzx5fkDK1rdera095n0eB2IzOIBp+HV6dDM1xM/rH3MrDxoV6NGlYx2z+fL2ASAM/xO0TetczmI5j7+qmm3turc3mPKcfkhAe9GJnVrEYznjPq8LHh9ercRMxmI5BqRERxHER5AT2AQ7zM7a8Zx95TPGvSdTRtSJxMwDGEltHVrOLUxPu9f6bWxn4dsesRn9gQrGwpFtxXMcRz/P8ADsbLWm0RMRj1zC3tNt8HM2tE2n0BYAAQ7y/Rt7TE4meIz9+yZU8TtjSrXMczzH3+IM5p+HxEaGcYn9/P+ZZjV2PO1pn3/cE4ABMRMYnmJAFS2xpM5i0/sTsKcYvPvmMrYCtGz0YtE/N9M8JtLR09KPkrEPYAAAo+KTzSuPeJz9+y8y9/aLbm2JzEcfwCu1dhSabeJnvM5/D7yy4jMxEebY0Y6dKkYxxnHpnkHsdcAJxEZmYxHc8s+TO3u5+JPRpzPT5+4G93XX/t6c/J5z6qgAAAAAAAAAAAAAAAAAAAAAAAAAAANHwymNK18957M5r7WsV29YxiccglAAUPFL5tSnlHK/Hsyt9OdzbMYmOAQAAAANLwyuNGZ5jM/f7s1s7avRoUrnPGe4PYACp4nb/brWMd+3n991tm+JXzrdGP6Y+/5BVXfC683t6Rj7/VSauxr07ePf8Ab7yCcABR8Ut/RXntn2++F5meIzE7icZ9/r2/gFYABZ8P0+vX6sZivKHS0r6tsUrMtXb6UaOnFY7+c+4JAAFXxG/To9OcTaePv8VvEszxDU69bpieK8AqvejE21axExE54z6vCxsK9W5rmImI5BqR7RiAADzAGdvNtf40306zNbTlB8HV/wC3afpGWxl2ZnzkGHetqW6bRMT6SueFT/uXjymv8wi39+vcTx24/J78NvFdaYn+6MZ+/wAAaIAOuOuA7+LmHXAdcdcAAA82d4nbq14rz8sYaPnwx9zaL61rRnEzxkEbT8Ov1aM1zmasxLt9a2jqdUc+seoNceNLVpq1i1Jz+8PeQAI9QB5m9IiZm9OO/wA0PFtzoROJ1OfpIJRXpu9K2pFI6szOInHCwB5DoDza3TE2ntHMsbVmZ1LTM5nPM+rX3N509C9o5xGMMYEm3pGprVrPETOGxlneGVzrzOe0NLgBziOZOI58mfvd1N5nT05+X19QN7uuvOnp8V859VMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAeqRNrRERn2bUVisRWO1eIZewiJ3Nc+XLUAABy1orWbT2iMsW85tM5y1t5bo29picT2hkAAAAA96UTOpWIxM54y2axERERHERiGZ4fXq3NZnGI5agOAA7Hdi69urVtbExmc4nya2vaK6N7T6Y/PhjzOZmZ8wI5nDY0a9GlWuMTjmPdl7asX1qxOcZ5w1wAAFfc7WutbqicW88rAClXYc/NeMe0/8Ap6rsdOM9Vpn0xGFsBzTpTTjFKxD04ABLzq6ldOk3vOI/cHjda3wdKZz808QyZnMzPq97jVtranVP0iPRGAteGTHx5j1iVV607207xes4mAbQ8aOrTVp1UmPePOEgOA6Dhj1djntyi3l66ejaLTiZjER5gytW031JtPeXmszW0THeHAGttdeutWO0X84TsOszWc1mYn2Wqb7VrXE4t6ZBoyM7/X6uf6dP8p/y5bfavVmuIj0xkGkRLJvude3/AOy0fScI7Xta3VMzM+oNj4mnM46659OqMvM6+jWcTqRH5sjM+suA1bbvbxEzF5n6QjtvtOOa0mfaZwzgFzX3s2pNaV6cxiVMAAAdraazE1nExymjda8ViI1J+vdAAmvuda3fUtH0mYeLal7X65t83q8AOzMz3mZ+rgk0dK+rbprAJvDtPq1eue1Wk8aGlXRpFI7+cvYAAKnidsaNa+s+v37s5Y3+p8TXmI7V4hXBo+GUxpTb1n7/AIW5mIjM8Qi2tejbVziMxmcfv+WFTebrr/29Ofl859QN7uer/b05+Xzn1UwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABd8Lr81788RhfV/D69O3jMYmZ/OPvKwAeYAqeJ2mNOtPWcz9/mzlrxK2deIxjEY+v3yqgAAAAv+FV/rtz6e0/eF6VfYU6NtHOeqcpwAAVvEbTG3xExGZ7esfeGYveKX5rp+kZ+/yhRBb8MrnX6ueIn7/Vo+ap4bXGjNuOZ/GPvhbAAAD2hybVicWtWJ9JnAOiO+40aTETqRMz6cobb7SiJxFpmPKeMgtHmo6m/nPyUjHur6m51r5ibzifIF/X3OlpxOJi1vSJZ2tq31bZvP4IwAAAAHrTvaluqkzE+yxTe6sf1fN+iqAtX32rP9OK/q823mvauOrHvHE/orgJb7jWt/VqWn6o5mZ7y4AAAAAAAAAAAAAAAO9NsxGJzPZa8N063vM3rmIjzjMffLRrEVjFYiI9gZEaGtM8adp+kPddnr2j+mI+vH7tX6uAza7HVmOZrWfSZ/wlrsI46tT6xELwCCm00K/wBuePOfv90tK1rGK1iPo6AOuACHd60aWlPla0Yh71dSulTqtOP5ZWvq21dSb2/CPQHiZzOZdp/XGXkBa3W56qxpaeYpH6qoAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOxGZiI7y4k29erWrGcZnv6A1dCvRo0rjHHb6vbs8zLgAPGvaKaVrZmOPIGVuL9eta2cxM8I3ZnMzM+bgAADsYzGezhHE5BtadZrStZxmI5emfbfXnTiIri0d7Z7o7bzXtGOvH04Bq4l4m9Kzi1q1n3tEMi+pqXjFrzb6zlybWmczaZ/EE2/v17i2LZiOPorj3o1m2rWIjM54j1BqbWs129InzjKUxERER2jiAAwOXmYpMx3xx9QZW61Jvr2nqiYzx9EdrWt3tM/i5aYm0zHEZcAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABpeGRjRmczzPb7+q2i21OjQrX2SgDjoA5aYrGbTER6zOHi2tpRHVOpWY7Zjn9ge3UFt1oVx8+c+iK+/08fLS0z78AuINxudPSjGeq3pCjrbvV1K9OemPZXBJrat9W/VafwRgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAsbCaxr9VrRXEec4hXAa9txoxzOpXHtz+zxbeaNcxmZ9MdpZYC9ffcT0UjPlMzlX19xfV4niM9kIAAAAAAAAAAAseH16txHGYjn6K6/4ZXFbX59Pr94BdAAQ723TtrTnE8RGfv2TKnidv8AarXjEz+Pt/IM4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAB2s4tE+kuAL876la4ppzPGI+bt+jxO+v1cUrj9VMBYnea0xjq/HGJ/R4vr6t4xa8z9ZRAO5n1cAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABrbGnRtq8YzMzP7fwy6Rm8ZiZj2bVY6axWZziIjPqAAAzfEr9WtFcf0xjPr98tH8fxZG4t1a1rdsz2z2BGAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACfZU69xXviOWticZYmne2nbqpaYn1Lal7TmbTMg2LalKzi16xP1RzudHpmfiZx5YxP6srM+rgL+53lJ05rpxObRic+SgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/9k=" alt="Riptag" style="height:30px;filter:invert(1);mix-blend-mode:multiply;"/></div>
+    <div class="nav-r">
+      <a class="nl" href="https://riptag.co/pages/contact" target="_blank">Contact</a>
+      <button class="cart-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 01-8 0"/></svg>
+        Bag <span class="cart-n" id="cart-count">0</span>
+      </button>
+      <button class="burger" onclick="openMob()"><span></span><span></span><span></span></button>
+    </div>
+  </div>
+</header>
+
+<div class="mob-nav" id="mob-nav">
+  <button class="mob-nav-close" onclick="closeMob()">✕</button>
+  <div class="mob-link" onclick="nav('shop');closeMob()">Shop <em>All</em></div>
+  <div class="mob-link" onclick="scrollToHow();closeMob()">How It <em>Works</em></div>
+  <a class="mob-link" href="https://riptag.co/pages/vintage-wholesale" target="_blank">Wholesale</a>
+  <a class="mob-link" href="https://riptag.co/pages/contact" target="_blank">Contact</a>
+</div>
+
+<div class="page active" id="page-home">
+  <div class="hero">
     <div>
-      <div class="sb-title">Riptag</div>
-      <div class="sb-version">v2.3 · Set Manager</div>
-    </div>
-  </div>
-  <div class="sb-nav">
-    <div class="sb-item active" id="nav-overview" onclick="showPage('overview')"><span class="ico">◈</span>Overview</div>
-    <div class="sb-item" id="nav-active" onclick="showPage('active')"><span class="ico">◉</span>Active Accounts</div>
-    <div class="sb-item" id="nav-accounts" onclick="showPage('accounts')"><span class="ico">◎</span>Accounts</div>
-    <div class="sb-item" id="nav-schedule" onclick="showPage('schedule')"><span class="ico">◷</span>Schedule</div>
-    <div class="sb-item" id="nav-sold" onclick="showPage('sold')"><span class="ico">◫</span>Sold & Labels</div>
-    <div class="sb-label">Rugpull</div>
-    <div id="sb-rugpull"></div>
-    <div class="sb-label">Riptag.co</div>
-    <div id="sb-riptag"></div>
-    <div class="sb-add" onclick="openNewSetModal()"><span>＋</span>New Set</div>
-  </div>
-  <div class="sb-bottom">
-    <div class="status-pill" id="run-pill"><span class="dot"></span><span id="run-label">RUN.bat offline</span></div>
-    <div class="status-pill" id="daemon-pill"><span class="dot"></span><span id="daemon-label">Daemon offline</span></div>
-    <div class="drive-pill" id="drive-btn" onclick="connectDrive()"><span>◫</span><span id="drive-label">Connect Drive</span></div>
-  </div>
-</div>
-
-<!-- MAIN -->
-<div class="main">
-
-<!-- OVERVIEW -->
-<div id="page-overview" class="page-enter">
-  <div class="topbar">
-    <div class="topbar-left">
-      <div class="page-title">Overview</div>
-      <div class="page-sub">Riptag Rugpuller Dashboard</div>
-    </div>
-    <div class="topbar-right">
-      <button class="btn primary" onclick="openNewSetModal()">＋ New Set</button>
-    </div>
-  </div>
-  <div class="page-content">
-    <div class="stats-grid">
-      <div class="stat-card"><div class="stat-n" id="ov-sets">0</div><div class="stat-lbl">total sets</div></div>
-      <div class="stat-card"><div class="stat-n g" id="ov-deployed">0</div><div class="stat-lbl">deployed</div></div>
-      <div class="stat-card"><div class="stat-n v" id="ov-listings">0</div><div class="stat-lbl">listings</div></div>
-      <div class="stat-card"><div class="stat-n a" id="ov-accounts">0</div><div class="stat-lbl">accounts</div></div>
-    </div>
-    <div class="card">
-      <div class="card-title">Deploy Log</div>
-      <div class="prog-wrap" id="ov-prog" style="display:none;"><div class="prog-lbl" id="ov-prog-lbl">—</div><div class="prog-track"><div class="prog-fill" id="ov-prog-fill"></div></div></div>
-      <div class="log-box" id="global-log"><div class="log-line hi">Ready.</div></div>
-    </div>
-    <div class="cat-tabs">
-      <div class="cat-tab active rugpull" id="tab-rugpull" onclick="switchTab('rugpull')">🎯 Rugpull</div>
-      <div class="cat-tab riptag" id="tab-riptag" onclick="switchTab('riptag')">🌐 Riptag.co</div>
-      <div class="cat-tab" id="tab-all" onclick="switchTab('all')">All</div>
-    </div>
-    <div id="sets-list-overview"></div>
-  </div>
-</div>
-
-<!-- ACTIVE ACCOUNTS -->
-<div id="page-active" class="hidden">
-  <div class="topbar">
-    <div class="topbar-left">
-      <div class="page-title">Active Accounts</div>
-      <div class="page-sub" id="active-sub">All connected accounts</div>
-    </div>
-    <div class="topbar-right">
-      <button class="btn ghost sm" onclick="checkAllStatuses()">◉ Check All Statuses</button>
-      <button class="btn ghost sm" onclick="renderActiveThisWeek()">↻ Refresh</button>
-    </div>
-  </div>
-  <div class="page-content"><div id="active-list"></div></div>
-</div>
-
-<!-- ACCOUNTS -->
-<div id="page-accounts" class="hidden">
-  <div class="topbar">
-    <div class="topbar-left">
-      <div class="page-title">Accounts</div>
-      <div class="page-sub">Connected Depop accounts</div>
-    </div>
-  </div>
-  <div class="page-content">
-    <div class="card">
-      <div class="card-title">Connected via Chrome Extension</div>
-      <p style="font-size:13px;color:var(--ink-3);line-height:1.7;margin-bottom:16px;">Log into Depop in Chrome → open the extension → Connect. Accounts appear here automatically.</p>
-      <div id="accounts-list"></div>
-    </div>
-  </div>
-</div>
-
-<!-- SCHEDULE -->
-<div id="page-schedule" class="hidden">
-  <div class="topbar">
-    <div class="topbar-left">
-      <div class="page-title">Deploy Schedule</div>
-      <div class="page-sub">MST timezone · Run DAEMON.bat to activate</div>
-    </div>
-  </div>
-  <div class="page-content">
-    <div class="card">
-      <div class="card-title">How it works</div>
-      <p style="font-size:13px;color:var(--ink-3);line-height:1.8;">Double-click <code style="font-family:var(--mono);font-size:11px;background:rgba(0,0,0,0.3);padding:2px 7px;border-radius:5px;color:var(--violet);">DAEMON.bat</code> to start the scheduler. It checks every minute and auto-deploys sets at their scheduled time. Keep the window open.</p>
-    </div>
-    <div id="schedule-list"></div>
-  </div>
-</div>
-
-<!-- SOLD & LABELS -->
-<div id="page-sold" class="hidden">
-  <div class="topbar">
-    <div class="topbar-left">
-      <div class="page-title">Sold & Labels</div>
-      <div class="page-sub">4×6 label printing by size</div>
-    </div>
-    <div class="topbar-right">
-      <select class="input" id="sold-account-select" style="width:180px;padding:7px 12px;" onchange="loadOrders()">
-        <option value="">— Select account —</option>
-      </select>
-      <button class="btn ghost sm" onclick="scrapeOrders()">↓ Scrape Orders</button>
-    </div>
-  </div>
-  <div class="page-content">
-    <div class="sold-stats hidden" id="sold-stats"></div>
-    <div id="sold-content"></div>
-  </div>
-</div>
-
-<!-- SET DETAIL -->
-<div id="page-set" class="hidden">
-  <div class="topbar">
-    <div class="topbar-left">
-      <div class="page-title" id="set-detail-title">Set</div>
-      <div class="page-sub" id="set-detail-sub"></div>
-    </div>
-    <div class="topbar-right">
-      <button class="btn ghost sm" onclick="openEditSetModal()">✏ Edit</button>
-      <button class="btn ghost sm" onclick="buildListings()">⚙ Build Listings</button>
-      <button class="btn primary" onclick="deploySet()">▶ Deploy</button>
-    </div>
-  </div>
-  <div class="page-content">
-    <div class="grid-2">
-      <div class="card" style="margin:0;"><div class="card-title">Set Info</div><div id="set-info-panel"></div></div>
-      <div class="card" style="margin:0;">
-        <div class="card-title">Deploy Status</div>
-        <div class="prog-wrap" id="deploy-prog" style="display:none;"><div class="prog-lbl" id="deploy-prog-lbl">—</div><div class="prog-track"><div class="prog-fill" id="deploy-prog-fill"></div></div></div>
-        <div class="log-box" id="set-log"><div class="log-line hi">Run agent.js to deploy.</div></div>
+      <div class="hero-kicker sr"><span class="kicker-live"></span>New drops live</div>
+      <h1 class="hero-h1 sr d1">Curated Vintage.<br/><em>No Digging</em><br/>Required.</h1>
+      <p class="hero-body sr d2">Hand-picked mystery boxes for resellers and style-first buyers. Pick 3, 5, or 10 pieces — more pieces, more free extras.</p>
+      <div class="hero-actions sr d3">
+        <button class="btn" onclick="nav('shop')">Shop All Boxes<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14M12 5l7 7-7 7"/></svg></button>
+        <a class="btn-secondary" href="https://riptag.co/pages/vintage-wholesale" target="_blank">Shop Wholesale</a>
+        <button class="btn-ghost" onclick="scrollToHow()">How it works</button>
+      </div>
+      <div class="hero-trust sr d4">
+        <span class="trust-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>4.8★ Rated</span>
+        <span class="trust-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>1,800+ boxes shipped</span>
+        <span class="trust-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>Free US shipping</span>
+        <span class="trust-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>Authenticity guaranteed</span>
       </div>
     </div>
-    <div class="card">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
-        <div class="card-title" style="margin:0;">Listings</div>
-        <span id="listing-count" style="font-size:11px;color:var(--ink-3);font-family:var(--mono);"></span>
+    <div class="hero-img-col sr d2">
+      <div class="hero-main-img">
+        <img id="heroImg" src="hero-banner.jpg" alt="Riptag vintage mystery box"/>
       </div>
-      <div id="listings-table-wrap"><div class="empty"><div class="empty-ico">◈</div><div class="empty-title">No listings yet</div>Click Build Listings to start.</div></div>
+      <div class="hero-card">
+        <div><div class="hc-name">The Hype Drop Box</div><div class="hc-sub">5 curated pieces · Free shipping</div></div>
+        <div class="hc-rating"><span class="hc-stars">★★★★★</span> 4.8</div>
+      </div>
     </div>
   </div>
-</div>
 
-</div><!-- /main -->
-</div><!-- /shell -->
-
-<!-- SET MODAL -->
-<div class="modal-overlay hidden" id="set-modal">
-  <div class="modal">
-    <div class="modal-title" id="set-modal-title">New Set</div>
-    <div class="grid-2">
-      <div class="field"><label>Set Name</label><input class="input" id="fm-name" placeholder="e.g. Set 4 — Vintage"/></div>
-      <div class="field"><label>Category</label><select class="input" id="fm-category"><option value="rugpull">🎯 Rugpull</option><option value="riptag">🌐 Riptag.co</option></select></div>
+  <div class="marquee-bar">
+    <div class="marquee-track">
+      <span class="mq-item">Free Shipping on 3–5 Packs<span class="mq-dot"></span>4.8★ · 214 Verified Reviews<span class="mq-dot"></span>1,800+ Boxes Shipped<span class="mq-dot"></span>More Pieces = Free Extras<span class="mq-dot"></span>Reseller-Friendly Pricing<span class="mq-dot"></span>Seen on TikTok &amp; Instagram<span class="mq-dot"></span>No Filler. Ever.<span class="mq-dot"></span></span>
+      <span class="mq-item">Free Shipping on 3–5 Packs<span class="mq-dot"></span>4.8★ · 214 Verified Reviews<span class="mq-dot"></span>1,800+ Boxes Shipped<span class="mq-dot"></span>More Pieces = Free Extras<span class="mq-dot"></span>Reseller-Friendly Pricing<span class="mq-dot"></span>Seen on TikTok &amp; Instagram<span class="mq-dot"></span>No Filler. Ever.<span class="mq-dot"></span></span>
     </div>
-    <div class="grid-2">
-      <div class="field"><label>Price ($)</label><input class="input" id="fm-price" placeholder="20" type="number"/></div>
-      <div class="field"><label>Photos per group</label><select class="input" id="fm-groupsize"><option value="4">4 photos</option><option value="5">5 photos</option></select></div>
-    </div>
-    <div class="field"><label>Sizes</label><div class="chips" id="fm-sizes"><div class="chip on" data-size="S">S</div><div class="chip on" data-size="M">M</div><div class="chip on" data-size="L">L</div><div class="chip on" data-size="XL">XL</div><div class="chip" data-size="XXL">XXL</div></div></div>
-    <div class="field"><label>Description Template</label><textarea class="input" id="fm-desc" rows="4">🌴 New Y2K &amp; Vintage Drops 🌴
+  </div>
 
-⦾ Curated Bundles &amp; Sick Pieces
-⦾ DM me for Bundle Info
-
-#vintage #y2k #thrift #streetwear</textarea></div>
-    <div class="field">
-      <label>Google Drive Folder</label>
-      <div id="fm-folder-status" style="font-size:12px;color:var(--ink-3);margin-bottom:8px;">No folder selected</div>
-      <div style="font-size:11px;color:var(--ink-4);margin-bottom:8px;font-family:var(--mono);">Set → Group 1, 2... → S, M, L, XL → photos</div>
-      <button class="btn ghost sm" onclick="openFolderPicker()">◫ Pick Drive Folder</button>
-      <input type="hidden" id="fm-folder-id"/><input type="hidden" id="fm-folder-name"/>
+  <div class="home-sec">
+    <div class="sec-header sr">
+      <div><span class="sec-kicker">Our Boxes</span><h2 class="sec-title">Shop the <em>collection</em></h2></div>
+      <button class="see-all" onclick="nav('shop')">View all</button>
     </div>
-    <div class="field"><label>Target Account</label><select class="input" id="fm-account"><option value="">— Select account —</option></select></div>
-    <div class="field">
-      <label>Schedule</label>
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
-        <div class="toggle" id="fm-sched-toggle" onclick="toggleSchedule()"></div>
-        <span style="font-size:13px;color:var(--ink-3);" id="fm-sched-label">Disabled</span>
-      </div>
-      <div id="fm-sched-options" class="hidden">
-        <div class="chips" id="fm-days" style="margin-bottom:12px;">
-          <div class="chip day-chip" data-day="monday">Mon</div><div class="chip day-chip" data-day="tuesday">Tue</div><div class="chip day-chip" data-day="wednesday">Wed</div><div class="chip day-chip" data-day="thursday">Thu</div><div class="chip day-chip" data-day="friday">Fri</div><div class="chip day-chip" data-day="saturday">Sat</div><div class="chip day-chip" data-day="sunday">Sun</div>
+    <div class="shop-grid" id="home-featured-grid"></div>
+    <div style="text-align:center;margin-top:40px;" class="sr">
+      <button class="btn-full" style="max-width:300px;margin:0 auto;" onclick="nav('shop')">Browse All Bundles</button>
+    </div>
+  </div>
+
+  <div class="loved-section">
+    <h2 class="loved-heading sr">Loved by Hundreds</h2>
+    <div id="loox-ugc-gallery"></div>
+    <div class="carousel-outer wrap sr d1">
+      <button class="carousel-btn carousel-prev" onclick="carouselMove(-1)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg></button>
+      <div class="carousel-track-wrap"><div class="carousel-track" id="carousel-track"></div></div>
+      <button class="carousel-btn carousel-next" onclick="carouselMove(1)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg></button>
+      <div class="carousel-stat-card"><div class="csc-num">1,800+</div><div class="csc-label">Boxes Shipped</div></div>
+    </div>
+    <div class="carousel-dots" id="carousel-dots"></div>
+    <div class="loved-cta sr d2"><a href="https://riptag.co/pages/contact" class="loved-view-btn">Read All Reviews →</a></div>
+  </div>
+
+  <div class="callout">
+    <div class="callout-in">
+      <div class="callout-img sr"><img src="https://riptag.co/cdn/shop/files/DSC_7646.jpg?v=1774757485&width=700" alt="Vintage sourcing" loading="lazy"/></div>
+      <div>
+        <span class="sec-kicker sr">Why Riptag</span>
+        <h2 class="sec-title sr d1">Built different.<br/><em>Curated on purpose.</em></h2>
+        <p class="sec-sub sr d2" style="margin-top:14px;">We're not pulling from random bins. Every Riptag bundle is sourced, sorted, and selected by people who actually know vintage.</p>
+        <div class="pillars sr d3">
+          <div class="pillar"><div class="p-n">01</div><div><div class="p-title">Curated, not random</div><div class="p-desc">Every piece hand-selected. We skip the trash so you never have to.</div></div></div>
+          <div class="pillar"><div class="p-n">02</div><div><div class="p-title">Zero filler policy</div><div class="p-desc">If it wouldn't resell, it doesn't go in the box. No exceptions.</div></div></div>
+          <div class="pillar"><div class="p-n">03</div><div><div class="p-title">More pieces, more rewards</div><div class="p-desc">Buy 5 pieces, get a free cap. Buy 10, get a cap + free tee. No code needed.</div></div></div>
+          <div class="pillar"><div class="p-n">04</div><div><div class="p-title">Authenticity guaranteed</div><div class="p-desc">Every branded piece is vetted. We stand fully behind what we sell.</div></div></div>
         </div>
-        <div class="field" style="margin:0;"><label>Deploy Time (MST)</label><input class="input" id="fm-time" type="time" value="09:00"/></div>
+        <div class="sr d4" style="margin-top:32px;"><button class="btn" onclick="nav('shop')">Shop All Bundles</button></div>
       </div>
     </div>
-    <div class="modal-actions"><button class="btn ghost" onclick="closeModal('set-modal')">Cancel</button><button class="btn primary" onclick="saveSet()">Save Set</button></div>
   </div>
+
+  <div class="how-bg" id="how-anchor">
+    <div class="how-in">
+      <div class="sr"><span class="sec-kicker">The Process</span><h2 class="sec-title">Three steps. <em>All heat.</em></h2></div>
+      <div class="how-grid">
+        <div class="sr d1"><span class="step-n">01</span><span class="step-ico">🧩</span><div class="step-title">Pick your bundle</div><div class="step-desc">Choose 3, 5, or 10 pieces. More pieces unlock free extras — automatically added to your order.</div></div>
+        <div class="sr d2"><span class="step-n">02</span><span class="step-ico">✂️</span><div class="step-title">We curate it</div><div class="step-desc">Every piece hand-selected. No filler, no damage — just pieces worth wearing or flipping.</div></div>
+        <div class="sr d3"><span class="step-n">03</span><span class="step-ico">📦</span><div class="step-title">You receive heat</div><div class="step-desc">Fast shipping. Clean pieces. Your free extras packed in. Exactly what you ordered, every time.</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="strip-wrap"><div class="strip-track" id="strip-track"></div></div>
+
+  <div class="unboxing-section">
+    <div class="unboxing-header sr">
+      <h2 class="unboxing-title">Unboxing Videos</h2>
+      <p class="unboxing-sub">Real customers, real reactions — see what's inside every Riptag box.</p>
+    </div>
+    <div class="unboxing-grid sr d1" style="margin-bottom:0;">
+      <div class="unboxing-item" onclick="window.open('https://www.tiktok.com/@riptag','_blank')">
+        <img src="https://riptag.co/cdn/shop/files/DSC_7629.jpg?v=1774757297&width=600" alt="Unboxing" loading="lazy"/>
+        <div class="unboxing-overlay"><div class="unboxing-play"><svg viewBox="0 0 24 24" fill="var(--text)"><polygon points="5 3 19 12 5 21 5 3"/></svg></div><div class="unboxing-label">"I can't believe what's in here 😭"</div><div class="unboxing-handle">@riptag · TikTok</div></div>
+      </div>
+      <div class="unboxing-item" onclick="window.open('https://www.tiktok.com/@riptag','_blank')">
+        <img src="https://riptag.co/cdn/shop/files/DSC_7523.jpg?v=1774757108&width=600" alt="Unboxing" loading="lazy"/>
+        <div class="unboxing-overlay"><div class="unboxing-play"><svg viewBox="0 0 24 24" fill="var(--text)"><polygon points="5 3 19 12 5 21 5 3"/></svg></div><div class="unboxing-label">"The Reseller Kit is insane value 🔥"</div><div class="unboxing-handle">@riptag · TikTok</div></div>
+      </div>
+    </div>
+    <div class="unboxing-more sr d2">
+      <div class="unboxing-mini" onclick="window.open('https://www.tiktok.com/@riptag','_blank')"><img src="https://riptag.co/cdn/shop/files/DSC_7548.jpg?v=1774757343&width=400" loading="lazy" alt=""/><div class="unboxing-mini-play"><div class="unboxing-mini-ico"><svg viewBox="0 0 24 24" fill="var(--text)"><polygon points="5 3 19 12 5 21 5 3"/></svg></div></div></div>
+      <div class="unboxing-mini" onclick="window.open('https://www.tiktok.com/@riptag','_blank')"><img src="https://riptag.co/cdn/shop/files/DSC_7471.jpg?v=1774756420&width=400" loading="lazy" alt=""/><div class="unboxing-mini-play"><div class="unboxing-mini-ico"><svg viewBox="0 0 24 24" fill="var(--text)"><polygon points="5 3 19 12 5 21 5 3"/></svg></div></div></div>
+      <div class="unboxing-mini" onclick="window.open('https://www.tiktok.com/@riptag','_blank')"><img src="https://riptag.co/cdn/shop/files/DSC_7610.jpg?v=1774754982&width=400" loading="lazy" alt=""/><div class="unboxing-mini-play"><div class="unboxing-mini-ico"><svg viewBox="0 0 24 24" fill="var(--text)"><polygon points="5 3 19 12 5 21 5 3"/></svg></div></div></div>
+      <div class="unboxing-mini" onclick="window.open('https://www.tiktok.com/@riptag','_blank')"><img src="https://riptag.co/cdn/shop/files/DSC_7661.jpg?v=1774753821&width=400" loading="lazy" alt=""/><div class="unboxing-mini-play"><div class="unboxing-mini-ico"><svg viewBox="0 0 24 24" fill="var(--text)"><polygon points="5 3 19 12 5 21 5 3"/></svg></div></div></div>
+    </div>
+    <div style="text-align:center;padding:0 0 60px;"><a href="https://www.tiktok.com/@riptag" target="_blank" class="loved-view-btn">Watch More on TikTok →</a></div>
+  </div>
+
+  <div class="home-sec">
+    <div class="sr" style="margin-bottom:40px;"><span class="sec-kicker">Trusted by hundreds</span><h2 class="sec-title">The numbers <em>speak for themselves</em></h2></div>
+    <div class="stats-row sr">
+      <div class="stat"><div class="stat-n">4.8</div><div class="stat-l">Average rating</div></div>
+      <div class="stat"><div class="stat-n">214</div><div class="stat-l">5-star reviews</div></div>
+      <div class="stat"><div class="stat-n">1.8K</div><div class="stat-l">Boxes shipped</div></div>
+      <div class="stat"><div class="stat-n">4.3K</div><div class="stat-l">Loyal followers</div></div>
+    </div>
+    <div style="margin-top:48px;"><loox-video-slider-widget show-rating show-reviewer-name hide-arrows-mobile auto-play></loox-video-slider-widget></div>
+    <div class="reviews" id="static-review-cards">
+      <div class="review sr"><div class="rev-stars">★★★★★</div><p class="rev-text">"Flipped the reseller kit in two weeks. Made back triple what I paid. Riptag is the real plug."</p><div class="rev-author"><div class="rev-avi">🧢</div><div><div class="rev-name">Marcus T.</div><div class="rev-handle">@marcusresells · Verified buyer</div></div></div></div>
+      <div class="review sr d2"><div class="rev-stars">★★★★★</div><p class="rev-text">"Every piece was clean, no damage at all. The Hype Drop Box delivered exactly what I expected."</p><div class="rev-author"><div class="rev-avi">✨</div><div><div class="rev-name">Jordan L.</div><div class="rev-handle">@jordanvintage · Los Angeles</div></div></div></div>
+      <div class="review sr d3"><div class="rev-stars">★★★★★</div><p class="rev-text">"Not like other mystery boxes — you can tell each piece was picked with care. 10/10."</p><div class="rev-author"><div class="rev-avi">🌟</div><div><div class="rev-name">Aaliyah M.</div><div class="rev-handle">@aaliyahthrifts · New York</div></div></div></div>
+    </div>
+    <script>document.addEventListener("loox:reviews:ready",function(){var e=document.getElementById("static-review-cards");if(e)e.style.display="none";});</script>
+  </div>
+
+  <div class="cta-band">
+    <div class="cta-in">
+      <h2 class="cta-h2 sr">Stop thrifting.<br/><em>Start winning.</em></h2>
+      <p class="cta-body sr d2">Join hundreds of buyers who skipped the dig and went straight to the heat.</p>
+      <div class="cta-acts sr d3">
+        <button class="btn-white" onclick="nav('shop')">Shop All Bundles</button>
+        <a class="cta-link" href="https://riptag.co/pages/contact" target="_blank">Get in touch →</a>
+      </div>
+    </div>
+  </div>
+  <footer id="home-footer"></footer>
 </div>
 
-<!-- FOLDER PICKER -->
-<div class="modal-overlay hidden" id="folder-modal">
-  <div class="modal">
-    <div class="modal-title">Pick Drive Folder</div>
-    <div class="field"><input class="input" id="folder-search" placeholder="Search folders..." oninput="filterFolders()"/></div>
-    <div class="folder-list" id="folder-list-items"></div>
-    <div class="modal-actions"><button class="btn ghost" onclick="closeModal('folder-modal')">Cancel</button><button class="btn primary" onclick="confirmFolder()">Select Folder</button></div>
+<div class="page" id="page-shop">
+  <div class="shop-header">
+    <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:20px;flex-wrap:wrap;">
+      <div><h1 class="shop-h1">All <em>Bundles</em></h1><div class="shop-count" id="shop-count">10 products</div></div>
+    </div>
+    <div class="filter-row">
+      <button class="filter-btn active" onclick="filterShop('all',this)">All</button>
+      <button class="filter-btn" onclick="filterShop('mystery',this)">Mystery Boxes</button>
+      <button class="filter-btn" onclick="filterShop('reseller',this)">Reseller Packs</button>
+      <button class="filter-btn" onclick="filterShop('wholesale',this)">By The Pound</button>
+      <button class="filter-btn" onclick="filterShop('sale',this)">On Sale</button>
+    </div>
   </div>
+  <div class="shop-grid" id="shop-grid"></div>
+  <footer id="shop-footer"></footer>
 </div>
 
-<!-- LISTING MODAL -->
-<div class="modal-overlay hidden" id="listing-modal">
-  <div class="modal">
-    <div class="modal-title">Override Listing</div>
-    <input type="hidden" id="lm-id"/>
-    <div class="field"><label>Custom Price</label><input class="input" id="lm-price" type="number" placeholder="Leave blank for set default"/></div>
-    <div class="field"><label>Custom Description</label><textarea class="input" id="lm-desc" rows="5" placeholder="Leave blank for set default"></textarea></div>
-    <div class="modal-actions"><button class="btn ghost" onclick="closeModal('listing-modal')">Cancel</button><button class="btn primary" onclick="saveListing()">Save</button></div>
+<div class="page" id="page-pdp">
+  <div class="pdp-wrap">
+    <div class="breadcrumb">
+      <button onclick="nav('home')">Home</button><span>/</span>
+      <button onclick="nav('shop')">Shop</button><span>/</span>
+      <span id="pdp-bc">Product</span>
+    </div>
+    <div class="pdp-grid">
+      <div class="pdp-gallery-col">
+        <div class="pdp-thumbs-col" id="pdp-thumbs"></div>
+        <div class="pdp-main-col"><div class="pdp-main-img"><img id="pdp-main-img" src="" alt="Product"/></div></div>
+      </div>
+      <div class="pdp-info-col">
+        <div class="pdp-category" id="pdp-cat">Mystery Box</div>
+        <h1 class="pdp-h1" id="pdp-name"></h1>
+        <div class="pdp-rating">
+          <a href="#looxReviews" style="display:flex;align-items:center;gap:8px;color:inherit;">
+            <div class="loox-rating" id="loox-pdp-stars" data-id="LOOX_PRODUCT_ID" data-rating="4.8" data-raters="214"></div>
+            <span id="pdp-rating-fallback"><span class="pdp-rating-stars">★★★★★</span> 4.8 · 214 reviews</span>
+          </a>
+          <span>·</span><span style="color:var(--muted);font-size:13px;">In stock</span>
+        </div>
+        <div class="pdp-price-row">
+          <span class="pdp-price-now" id="pdp-price"></span>
+          <span class="pdp-price-was" id="pdp-was"></span>
+          <span class="pdp-save-badge" id="pdp-save"></span>
+        </div>
+        <span class="tier-label">How many pieces?</span>
+        <div class="tier-grid" id="tier-grid">
+          <div class="tier-card" onclick="selectTier(this,0)">
+            <div class="tier-pieces">3</div><div class="tier-name">Pieces</div>
+            <div class="tier-price" id="tp0"></div><div class="tier-per" id="tper0"></div>
+          </div>
+          <div class="tier-card active" onclick="selectTier(this,1)">
+            <div class="tier-best">Most Popular</div>
+            <div class="tier-pieces">5</div><div class="tier-name">Pieces</div>
+            <div class="tier-price" id="tp1"></div>
+            <span class="tier-free">★ Free Gift</span>
+            <div class="tier-bonus" id="tb1"></div><div class="tier-per" id="tper1"></div>
+          </div>
+          <div class="tier-card" onclick="selectTier(this,2)">
+            <div class="tier-pieces">10</div><div class="tier-name">Pieces</div>
+            <div class="tier-price" id="tp2"></div>
+            <span class="tier-free">★ Free Gifts</span>
+            <div class="tier-bonus" id="tb2"></div><div class="tier-per" id="tper2"></div>
+          </div>
+        </div>
+        <div class="pdp-divider"></div>
+        <span class="variant-label" id="size-label">Size</span>
+        <div class="variants" id="pdp-variants">
+          <button class="var-btn active" onclick="selVar(this)">S</button>
+          <button class="var-btn" onclick="selVar(this)">M</button>
+          <button class="var-btn" onclick="selVar(this)">L</button>
+          <button class="var-btn" onclick="selVar(this)">XL</button>
+          <button class="var-btn" onclick="selVar(this)">XXL</button>
+        </div>
+        <div style="margin-bottom:16px;">
+          <button class="atc-btn" id="atc-btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 01-8 0"/></svg>
+            Add to Cart
+          </button>
+          <a class="btn-full" id="buy-now-link" href="https://riptag.co/collections/all" target="_blank">Buy it now</a>
+        </div>
+        <div class="trust-row">
+          <div class="trust-chip-v"><div class="trust-ico">🚚</div><div class="trust-lbl">Free US Shipping</div></div>
+          <div class="trust-chip-v"><div class="trust-ico">🔐</div><div class="trust-lbl">Authenticity Guaranteed</div></div>
+          <div class="trust-chip-v"><div class="trust-ico">↩️</div><div class="trust-lbl">Easy Returns</div></div>
+        </div>
+        <div class="acc">
+          <div class="acc-item open">
+            <button class="acc-hd" onclick="toggleAcc(this)">What's in the box<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
+            <div class="acc-body"><div class="acc-inner"><ul id="pdp-box-items"></ul></div></div>
+          </div>
+          <div class="acc-item">
+            <button class="acc-hd" onclick="toggleAcc(this)">Free gifts explained<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
+            <div class="acc-body"><div class="acc-inner"><ul>
+              <li>3 pieces — no gift, just great value</li>
+              <li>5 pieces — free Riptag branded cap ($25 value)</li>
+              <li>10 pieces — free cap + free vintage tee ($45 value)</li>
+              <li>Free gifts added automatically — no code needed</li>
+            </ul></div></div>
+          </div>
+          <div class="acc-item">
+            <button class="acc-hd" onclick="toggleAcc(this)">Sizing &amp; Condition<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
+            <div class="acc-body"><div class="acc-inner"><ul id="pdp-sizing"></ul></div></div>
+          </div>
+          <div class="acc-item">
+            <button class="acc-hd" onclick="toggleAcc(this)">Shipping<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
+            <div class="acc-body"><div class="acc-inner"><ul><li>Ships within 2–4 business days</li><li>Free shipping on 3-pack bundles and above</li><li>Standard delivery: 5–8 business days</li><li>Tracking provided via email</li></ul></div></div>
+          </div>
+          <div class="acc-item">
+            <button class="acc-hd" onclick="toggleAcc(this)">Returns &amp; Exchanges<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
+            <div class="acc-body"><div class="acc-inner"><ul><li>30-day return window on all orders</li><li>Items must be unworn, in original condition</li><li>Email support@riptag.co to initiate</li><li>Refunds processed within 5–7 business days</li></ul></div></div>
+          </div>
+        </div>
+        <div id="looxReviews" data-product-id="LOOX_PRODUCT_ID">
+          <div class="loox-placeholder">Reviews powered by <strong>Loox</strong> — install the Loox app on Shopify to display reviews here.</div>
+        </div>
+      </div>
+    </div>
   </div>
+  <div class="pdp-related">
+    <div style="margin-bottom:32px;"><span class="sec-kicker">You might also like</span><h2 class="sec-title">More from <em>Riptag</em></h2></div>
+    <div class="shop-grid" id="pdp-related-grid"></div>
+  </div>
+  <footer id="pdp-footer"></footer>
 </div>
 
-<!-- PROXY MODAL -->
-<div class="modal-overlay hidden" id="proxy-modal">
-  <div class="modal">
-    <div class="modal-title">Proxy Settings</div>
-    <input type="hidden" id="pm-account-id"/>
-    <div class="field"><label>Proxy URL</label><input class="input" id="pm-proxy" placeholder="http://user:pass@host:port"/></div>
-    <p style="font-size:12px;color:var(--ink-3);line-height:1.7;margin-top:8px;">Get proxies at <strong>webshare.io</strong> (~$3/mo). Format: <code style="font-family:var(--mono);font-size:11px;">http://user:pass@host:port</code></p>
-    <div class="modal-actions"><button class="btn ghost" onclick="closeModal('proxy-modal')">Cancel</button><button class="btn primary" onclick="saveProxy()">Save Proxy</button></div>
+<template id="footer-tpl">
+  <div class="footer-in">
+    <div class="footer-top">
+      <div class="footer-brand"><img src="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSUNDX1BST0ZJTEUAAQEAAAHIAAAAAAQwAABtbnRyUkdCIFhZWiAH4AABAAEAAAAAAABhY3NwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAA9tYAAQAAAADTLQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAlkZXNjAAAA8AAAACRyWFlaAAABFAAAABRnWFlaAAABKAAAABRiWFlaAAABPAAAABR3dHB0AAABUAAAABRyVFJDAAABZAAAAChnVFJDAAABZAAAAChiVFJDAAABZAAAAChjcHJ0AAABjAAAADxtbHVjAAAAAAAAAAEAAAAMZW5VUwAAAAgAAAAcAHMAUgBHAEJYWVogAAAAAAAAb6IAADj1AAADkFhZWiAAAAAAAABimQAAt4UAABjaWFlaIAAAAAAAACSgAAAPhAAAts9YWVogAAAAAAAA9tYAAQAAAADTLXBhcmEAAAAAAAQAAAACZmYAAPKnAAANWQAAE9AAAApbAAAAAAAAAABtbHVjAAAAAAAAAAEAAAAMZW5VUwAAACAAAAAcAEcAbwBvAGcAbABlACAASQBuAGMALgAgADIAMAAxADb/2wBDAAUDBAQEAwUEBAQFBQUGBwwIBwcHBw8LCwkMEQ8SEhEPERETFhwXExQaFRERGCEYGh0dHx8fExciJCIeJBweHx7/2wBDAQUFBQcGBw4ICA4eFBEUHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh7/wAARCAMgAyADASIAAhEBAxEB/8QAGgABAAMBAQEAAAAAAAAAAAAAAAMEBQECCP/EADgQAQACAQMCBAQFAwMEAgMAAAABAhEDBCESMQVBUWETInHwgZGhscEyQtEUIzNSU3LhYoIkQ5L/xAAUAQEAAAAAAAAAAAAAAAAAAAAA/8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAwDAQACEQMRAD8A+MgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA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" alt="Riptag" style="height:24px;filter:invert(1);mix-blend-mode:multiply;display:block;margin-bottom:12px;"/><p class="footer-tag">Curated vintage bundles for resellers and style-first buyers.</p></div>
+      <div class="footer-grid">
+        <div class="footer-col"><div class="fc-head">Shop</div><ul><li><button onclick="nav('shop')">All Bundles</button></li><li><button onclick="navPdp('hype-drop')">Hype Drop Box</button></li><li><button onclick="navPdp('reseller-kit')">Reseller Kit</button></li><li><a href="https://riptag.co/pages/vintage-wholesale" target="_blank">Wholesale</a></li></ul></div>
+        <div class="footer-col"><div class="fc-head">Info</div><ul><li><a href="https://riptag.co/pages/authenticity" target="_blank">Authenticity</a></li><li><a href="https://riptag.co/pages/sizing-condition-2" target="_blank">Sizing &amp; Condition</a></li><li><a href="https://riptag.co/pages/returns" target="_blank">Returns</a></li><li><a href="https://riptag.co/pages/contact" target="_blank">Support</a></li></ul></div>
+        <div class="footer-col"><div class="fc-head">Follow</div><ul><li><a href="https://www.tiktok.com/@riptag" target="_blank">TikTok</a></li><li><a href="#" target="_blank">Instagram</a></li></ul></div>
+        <div class="footer-col"><div class="fc-head">Legal</div><ul><li><a href="https://riptag.co/pages/returns" target="_blank">Returns Policy</a></li><li><a href="#" target="_blank">Privacy Policy</a></li><li><a href="#" target="_blank">Terms of Service</a></li></ul></div>
+      </div>
+    </div>
+    <div class="footer-bottom"><p class="footer-copy">© 2025 Riptag LLC — All rights reserved.</p><div class="footer-links-r"><a href="https://www.tiktok.com/@riptag" target="_blank">TikTok</a><a href="#" target="_blank">Instagram</a><a href="https://riptag.co/pages/contact" target="_blank">Contact</a></div></div>
   </div>
-</div>
-
-<!-- MASS EDIT MODAL -->
-<div class="modal-overlay hidden" id="mass-edit-modal">
-  <div class="modal">
-    <div class="modal-title">Mass Edit Descriptions</div>
-    <input type="hidden" id="me-account-id"/>
-    <input type="hidden" id="me-set-id"/>
-    <div style="font-size:13px;color:var(--ink-3);margin-bottom:18px;" id="me-account-label"></div>
-    <div class="field"><label>New Description — replaces ALL listings on this account</label><textarea class="input" id="me-description" rows="6"></textarea></div>
-    <div class="modal-actions"><button class="btn ghost" onclick="closeModal('mass-edit-modal')">Cancel</button><button class="btn primary" onclick="confirmMassEdit()">▶ Update All Listings</button></div>
-  </div>
-</div>
-
-<!-- DESC SCHEDULE MODAL -->
-<div class="modal-overlay hidden" id="desc-sched-modal">
-  <div class="modal">
-    <div class="modal-title">Description Schedule</div>
-    <input type="hidden" id="ds-set-id"/>
-    <div class="field"><label>🚀 Launch Description — first 24 hours</label><textarea class="input" id="ds-launch" rows="5" placeholder="Hype description for launch day..."></textarea></div>
-    <div class="field"><label>🌿 Evergreen Description — after 24h, stays until banned</label><textarea class="input" id="ds-evergreen" rows="5" placeholder="Long-term description..."></textarea></div>
-    <p style="font-size:12px;color:var(--ink-3);line-height:1.7;">Agent auto-switches to evergreen at the 24h mark while daemon is running.</p>
-    <div class="modal-actions"><button class="btn ghost" onclick="closeModal('desc-sched-modal')">Cancel</button><button class="btn primary" onclick="saveDescSchedule()">Save</button></div>
-  </div>
-</div>
-
+</template>
 
 <script>
+const PRODUCTS=[
+  {id:"hype-drop",name:"The Hype Drop Box",cat:"Mystery Box",price:"$49.99",was:"$119.99",save:"Save 58%",badge:"Best Seller",bs:"b-dark",meta:"5 curated pieces · Free shipping",tags:["mystery","sale"],looxId:"LOOX_PRODUCT_ID",shopUrl:"https://riptag.co/products/5-piece-holiday-mystery-box",images:["https://riptag.co/cdn/shop/files/DSC_7629.jpg?v=1774757297&width=800","https://riptag.co/cdn/shop/files/DSC_7579.jpg?v=1774756718&width=800","https://riptag.co/cdn/shop/files/DSC_7548.jpg?v=1774757343&width=800","https://riptag.co/cdn/shop/files/DSC_7471.jpg?v=1774756420&width=800"],box:["5 hand-picked vintage pieces","Mix of graphics, outerwear & bottoms","Brands may include: Nike, Adidas, Tommy, Ralph Lauren","All pieces inspected — no damage, no stains","Ready to resell or wear immediately"],sizing:["Select your size at checkout (S · M · L · XL · XXL)","Grade A — minimal to no visible wear","Vintage sizing runs 1–2 sizes larger than modern","Pre-washed and odor-free"],tiers:[{p:3,price:"$49.99",per:"~$16.66/pc",bonus:null},{p:5,price:"$79.99",per:"~$16.00/pc",bonus:"+ Free Riptag Cap"},{p:10,price:"$149.99",per:"~$15.00/pc",bonus:"+ Cap + Vintage Tee"}]},
+  {id:"retro-nike",name:"The Retro Nike Box",cat:"Mystery Box",price:"$74.99",was:"$79.99",save:"Save 6%",badge:"Sale",bs:"b-sale",meta:"Guaranteed Nike · Verified authentic",tags:["mystery","sale"],looxId:"LOOX_PRODUCT_ID",shopUrl:"https://riptag.co/products/2-piece-nike-holiday-mystery-bundle",images:["https://riptag.co/cdn/shop/files/DSC_7471.jpg?v=1774756420&width=800","https://riptag.co/cdn/shop/files/DSC_7629.jpg?v=1774757297&width=800","https://riptag.co/cdn/shop/files/DSC_7523.jpg?v=1774757108&width=800"],box:["Guaranteed authentic vintage Nike pieces","Tees, hoodies, or jackets — curated for condition","All swoosh logos intact, verified authentic","Grade A condition"],sizing:["Select your size at checkout","Nike vintage runs true to size or slightly large","Grade A — no major flaws","Pre-washed, clean, odor-free"],tiers:[{p:3,price:"$74.99",per:"~$25.00/pc",bonus:null},{p:5,price:"$119.99",per:"~$24.00/pc",bonus:"+ Free Riptag Cap"},{p:10,price:"$229.99",per:"~$23.00/pc",bonus:"+ Cap + Vintage Tee"}]},
+  {id:"old-money",name:"The Old Money Box",cat:"Mystery Box",price:"$49.99",was:"$74.99",save:"Save 33%",badge:"New",bs:"b-light",meta:"Quiet luxury vintage · 3 pieces",tags:["mystery","sale"],looxId:"LOOX_PRODUCT_ID",shopUrl:"https://riptag.co/products/3-pack-vintage-nike-mystery-bundle",images:["https://riptag.co/cdn/shop/files/DSC_7523.jpg?v=1774757108&width=800","https://riptag.co/cdn/shop/files/DSC_7579.jpg?v=1774756718&width=800","https://riptag.co/cdn/shop/files/DSC_7471.jpg?v=1774756420&width=800"],box:["3 quiet luxury vintage pieces","Ralph Lauren, Brooks Brothers, J.Crew era","Polo shirts, chinos, oxford shirts, knitwear","Grade A condition"],sizing:["Select your size at checkout","Old money pieces may run larger — vintage cut","Grade A — minimal visible wear","Pre-washed, clean, odor-free"],tiers:[{p:3,price:"$49.99",per:"~$16.66/pc",bonus:null},{p:5,price:"$79.99",per:"~$16.00/pc",bonus:"+ Free Riptag Cap"},{p:10,price:"$149.99",per:"~$15.00/pc",bonus:"+ Cap + Vintage Tee"}]},
+  {id:"y2k-skate",name:"The Y2K Skate Box",cat:"Mystery Box",price:"$24.99",was:"$39.99",save:"Save 37%",badge:"Sale",bs:"b-sale",meta:"Early 2000s graphics · 3–4 pieces",tags:["mystery","sale"],looxId:"LOOX_PRODUCT_ID",shopUrl:"https://riptag.co/products/5-piece-holiday-mystery-box-copy",images:["https://riptag.co/cdn/shop/files/DSC_7548.jpg?v=1774757343&width=800","https://riptag.co/cdn/shop/files/DSC_7629.jpg?v=1774757297&width=800","https://riptag.co/cdn/shop/files/DSC_7646.jpg?v=1774757485&width=800"],box:["3–4 Y2K era skate graphic tees","Brands: Thrasher, Independent, Vision era","Early 2000s skate culture pieces","Grade B+ — some light vintage wear expected"],sizing:["Select your size at checkout","Y2K sizing runs slightly boxy — vintage cut","Grade B+ — light wear adds to aesthetic","Pre-washed, clean, no odors"],tiers:[{p:3,price:"$24.99",per:"~$8.33/pc",bonus:null},{p:5,price:"$39.99",per:"~$8.00/pc",bonus:"+ Free Riptag Cap"},{p:10,price:"$74.99",per:"~$7.50/pc",bonus:"+ Cap + Vintage Tee"}]},
+  {id:"classic-box",name:"The Classic Box",cat:"Mystery Box",price:"$19.99",was:"$39.99",save:"Save 50%",badge:"Best Value",bs:"b-dark",meta:"Everyday vintage · Best entry price",tags:["mystery","sale"],looxId:"LOOX_PRODUCT_ID",shopUrl:"https://riptag.co/products/3-pack-t-shirt-mystery-bundle",images:["https://riptag.co/cdn/shop/files/DSC_7579.jpg?v=1774756718&width=800","https://riptag.co/cdn/shop/files/DSC_7548.jpg?v=1774757343&width=800","https://riptag.co/cdn/shop/files/DSC_7629.jpg?v=1774757297&width=800"],box:["3 vintage graphic or branded tees","Mix of single-stitch, graphic, and vintage basics","Grade A/B condition","Great entry point for new resellers"],sizing:["Select your size at checkout","Vintage sizing — may run 1 size larger","Grade A/B — light wear typical","Pre-washed, clean, odor-free"],tiers:[{p:3,price:"$19.99",per:"~$6.66/pc",bonus:null},{p:5,price:"$32.99",per:"~$6.60/pc",bonus:"+ Free Riptag Cap"},{p:10,price:"$59.99",per:"~$6.00/pc",bonus:"+ Cap + Vintage Tee"}]},
+  {id:"winter-hoodie",name:"The Winter Hoodie Bundle",cat:"Mystery Box",price:"$29.99",was:"$74.99",save:"Save 60%",badge:"60% Off",bs:"b-sale",meta:"3 vintage hoodies · Winter ready",tags:["mystery","sale"],looxId:"LOOX_PRODUCT_ID",shopUrl:"https://riptag.co/products/2-piece-holiday-mystery-bundle-copy",images:["https://riptag.co/cdn/shop/files/3hoodiepic.png?v=1766479446&width=800","https://riptag.co/cdn/shop/files/DSC_7579.jpg?v=1774756718&width=800","https://riptag.co/cdn/shop/files/DSC_7523.jpg?v=1774757108&width=800"],box:["3 vintage hoodies — mix of styles","Graphic, branded, and solid vintage cuts","Brands may include: Nike, Champion, Adidas","Grade A — no holes, no heavy fading"],sizing:["Select your size at checkout","Hoodies may run larger — vintage cut","Grade A — all in great shape","Pre-washed, clean, odor-free"],tiers:[{p:3,price:"$29.99",per:"~$10.00/pc",bonus:null},{p:5,price:"$49.99",per:"~$10.00/pc",bonus:"+ Free Riptag Cap"},{p:10,price:"$94.99",per:"~$9.50/pc",bonus:"+ Cap + Vintage Tee"}]},
+  {id:"reseller-kit",name:"The Reseller Kit",cat:"Reseller Pack",price:"$124.99",was:"$299.99",save:"Save 58%",badge:"Reseller Pick",bs:"b-dark",meta:"Volume pack · Built to flip",tags:["mystery","reseller","sale"],looxId:"LOOX_PRODUCT_ID",shopUrl:"https://riptag.co/products/3-pack-vintage-guranteed-nike-t-shirt-mystery-bundle-copy",images:["https://riptag.co/cdn/shop/files/DSC_7610.jpg?v=1774754982&width=800","https://riptag.co/cdn/shop/files/DSC_7629.jpg?v=1774757297&width=800","https://riptag.co/cdn/shop/files/DSC_7471.jpg?v=1774756420&width=800","https://riptag.co/cdn/shop/files/DSC_7646.jpg?v=1774757485&width=800"],box:["Large volume pack — curated for resell value","Mix: Nike, Adidas, Tommy, vintage graphics, hoodies","All pieces vetted for condition and resell potential","Includes Riptag reseller guide"],sizing:["Select your size at checkout","Mix of sizes within range — great for listings","Grade A — all items inspected","Pre-washed, clean, odor-free"],tiers:[{p:3,price:"$124.99",per:"~$41.66/pc",bonus:null},{p:5,price:"$199.99",per:"~$40.00/pc",bonus:"+ Free Riptag Cap"},{p:10,price:"$374.99",per:"~$37.50/pc",bonus:"+ Cap + Vintage Tee"}]},
+  {id:"hawaii-surf",name:"The Hawaii & Surf Box",cat:"Mystery Box",price:"$49.99",was:null,save:null,badge:null,bs:null,meta:"Hawaiian shirts · Surf tees · 3 pieces",tags:["mystery"],looxId:"LOOX_PRODUCT_ID",shopUrl:"https://riptag.co/products/3-pack-t-shirt-mystery-bundle-copy",images:["https://riptag.co/cdn/shop/files/DSC_7661.jpg?v=1774753821&width=800","https://riptag.co/cdn/shop/files/DSC_7523.jpg?v=1774757108&width=800","https://riptag.co/cdn/shop/files/DSC_7629.jpg?v=1774757297&width=800"],box:["3 vintage Hawaiian and surf tees","Authentic button-up Aloha shirts included","Surf brands: Quiksilver, Billabong, O'Neill era","Grade A — vibrant colors, no damage"],sizing:["Select your size at checkout","Hawaiian shirts run true to vintage sizing","Grade A — no damage","Pre-washed, clean, odor-free"],tiers:[{p:3,price:"$49.99",per:"~$16.66/pc",bonus:null},{p:5,price:"$79.99",per:"~$16.00/pc",bonus:"+ Free Riptag Cap"},{p:10,price:"$149.99",per:"~$15.00/pc",bonus:"+ Cap + Vintage Tee"}]},
+  {id:"pound-bulk",name:"Vintage By The Pound (Bulk)",cat:"Wholesale",price:"$19.99",was:null,save:null,badge:"Wholesale",bs:"b-light",meta:"Per pound · Mix of styles",tags:["wholesale"],looxId:"LOOX_PRODUCT_ID",shopUrl:"https://riptag.co/products/vintage-clothing-sold-by-the-pound-bulk",images:["https://riptag.co/cdn/shop/files/DSC_7646.jpg?v=1774757485&width=800","https://riptag.co/cdn/shop/files/DSC_7610.jpg?v=1774754982&width=800"],box:["Priced per pound — bulk purchase","Mix of styles, brands, and eras","No size selection — random mix","All items in wearable condition"],sizing:["Bulk mix — no size guarantee","Condition varies — all wearable","Clean and odor-free"],tiers:null},
+  {id:"pound-sized",name:"Vintage By The Pound (Sized)",cat:"Wholesale",price:"$39.99",was:null,save:null,badge:"Wholesale",bs:"b-light",meta:"Per pound · Size sorted",tags:["wholesale"],looxId:"LOOX_PRODUCT_ID",shopUrl:"https://riptag.co/products/vintage-clothing-sold-by-the-pound-sized",images:["https://riptag.co/cdn/shop/files/DSC_7653_1.jpg?v=1774757608&width=800","https://riptag.co/cdn/shop/files/DSC_7646.jpg?v=1774757485&width=800"],box:["Priced per pound — bulk purchase","Sorted by size range — choose at checkout","Consistent sizing for listings","All items in wearable condition"],sizing:["Select your size at checkout","Sorted for consistency","Condition varies — all wearable","Clean and odor-free"],tiers:null},
+];
+const CAROUSEL=["https://riptag.co/cdn/shop/files/DSC_7629.jpg?v=1774757297&width=600","https://riptag.co/cdn/shop/files/DSC_7471.jpg?v=1774756420&width=600","https://riptag.co/cdn/shop/files/DSC_7523.jpg?v=1774757108&width=600","https://riptag.co/cdn/shop/files/DSC_7548.jpg?v=1774757343&width=600","https://riptag.co/cdn/shop/files/DSC_7579.jpg?v=1774756718&width=600","https://riptag.co/cdn/shop/files/DSC_7610.jpg?v=1774754982&width=600","https://riptag.co/cdn/shop/files/DSC_7661.jpg?v=1774753821&width=600","https://riptag.co/cdn/shop/files/DSC_7646.jpg?v=1774757485&width=600"];
+const STRIP=["https://riptag.co/cdn/shop/files/DSC_7629.jpg?v=1774757297&width=400","https://riptag.co/cdn/shop/files/DSC_7471.jpg?v=1774756420&width=400","https://riptag.co/cdn/shop/files/DSC_7523.jpg?v=1774757108&width=400","https://riptag.co/cdn/shop/files/DSC_7548.jpg?v=1774757343&width=400","https://riptag.co/cdn/shop/files/DSC_7579.jpg?v=1774756718&width=400","https://riptag.co/cdn/shop/files/DSC_7610.jpg?v=1774754982&width=400","https://riptag.co/cdn/shop/files/DSC_7646.jpg?v=1774757485&width=400","https://riptag.co/cdn/shop/files/DSC_7661.jpg?v=1774753821&width=400","https://riptag.co/cdn/shop/files/3hoodiepic.png?v=1766479446&width=400"];
 
-let sets=[],accounts=[],currentSetId=null,currentPage='overview',folders=[],selectedFolder=null,editingSetId=null,schedEnabled=false,currentTab='rugpull';
-
-// ─── ACTIVE THIS WEEK ────────────────────────────────────────
-let expandedAccounts = new Set();
-
-async function renderActiveThisWeek(){
-  const el=document.getElementById('active-list');
-  el.innerHTML='<div class="empty"><div class="empty-icon">⏳</div>Loading...</div>';
-  try{
-    const r=await fetch('/api/active-this-week');
-    const d=await r.json();
-    const active=d.active||[];
-    if(!active.length){
-      el.innerHTML='<div class="empty"><div class="empty-icon">📡</div>No accounts connected. Use the Chrome extension to connect accounts.</div>';
-      return;
-    }
-    activeCache=active;
-    el.innerHTML=active.map(a=>{
-      const statusClass=a.accountStatus==='live'?'status-live':a.accountStatus==='banned'?'status-banned':'status-unknown';
-      const statusText=a.accountStatus==='live'?'● Live':a.accountStatus==='banned'?'✕ Banned':'? Unknown';
-      const deployedText=a.deployedAt?'Deployed '+a.hoursLive+'h ago':'Connected '+new Date(a.connectedAt).toLocaleDateString();
-      const isExpanded=expandedAccounts.has(a.accountId);
-      const orders=a.orders||[];
-      
-      const ordersHtml='';
-
-      return '<div class="active-card" id="card-'+a.accountId+'">'
-        +'<div class="active-card-header" data-acid="'+a.accountId+'" onclick="toggleAccount(this.dataset.acid)" style="cursor:pointer;">'
-          +'<div style="flex:1;">'
-            +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">'
-              +'<div class="expand-arrow" style="font-size:18px;transition:transform 0.2s;">'+(isExpanded?'▾':'▸')+'</div>'
-              +'<div style="font-weight:700;font-size:16px;">@'+a.username+'</div>'
-              +'<span class="badge '+statusClass+'">'+statusText+'</span>'
-              +(a.category&&a.category!=='null'?'<span class="badge badge-'+a.category+'">'+(a.category==='riptag'?'riptag.co':'rugpull')+'</span>':'')
-            +'</div>'
-            +'<div style="display:flex;gap:20px;font-size:12px;">'
-              +'<div><span style="color:var(--muted);">Set: </span>'+a.setName+'</div>'
-              +'<div><span style="color:var(--muted);">Posted: </span>'+a.posted+'/'+a.listings+'</div>'
-              +'<div style="color:var(--green);font-weight:600;"><span style="color:var(--muted);">Sold: </span>'+a.soldCount+'</div>'
-              +'<div style="color:var(--muted);font-family:var(--mono);font-size:11px;">'+deployedText+'</div>'
-            +'</div>'
-          +'</div>'
-          +'<div class="active-card-actions" onclick="event.stopPropagation();">'
-            +(a.setId&&a.setId!=='null'?'<button class="btn sm" onclick="openDescSchedule(this)" data-setid="'+a.setId+'">📝 Desc</button>':'')
-            +(a.setId&&a.setId!=='null'?'<button class="btn sm" onclick="openMassEditBtn(this)" data-accountid="'+a.accountId+'" data-setid="'+a.setId+'" data-username="'+a.username+'">✏️ Edit</button>':'')
-            +'<button class="btn sm" id="chk-'+a.accountId+'" data-acid="'+a.accountId+'" data-uname="'+a.username+'" onclick="checkOneStatus(this.dataset.acid,this.dataset.uname,this)">🔍</button>'
-            +'<button class="btn sm primary" onclick="printAllLabelsForAccount(this)" data-accountid="'+a.accountId+'" data-username="'+a.username+'">🖨️ Print</button>'
-          +'</div>'
-        +'</div>'
-        +ordersHtml
-        +'</div>';
-    }).join('');
-  }catch(err){el.innerHTML='<div class="empty">Error: '+err.message+'</div>';}
+function prodCard(p){
+  const badge=p.badge?`<span class="prod-badge ${p.bs}">${p.badge}</span>`:"";
+  const del_=p.was?`<del>${p.was}</del>`:"";
+  const stars=`<div class="prod-stars">★★★★★ <span>4.8</span></div>`;
+  return `<div class="prod-card" onclick="navPdp('${p.id}')"><div class="prod-thumb">${badge}<img src="${p.images[0]}" alt="${p.name}" loading="lazy"/></div><div class="prod-name">${p.name}</div>${stars}<div class="prod-meta">${p.meta}</div><div class="prod-price">${p.price} ${del_}</div></div>`;
 }
+function renderHomeFeatured(){const el=document.getElementById("home-featured-grid");if(el)el.innerHTML=PRODUCTS.slice(0,6).map(prodCard).join("");}
+function renderShopGrid(f){const el=document.getElementById("shop-grid");if(!el)return;const list=f==="all"?PRODUCTS:PRODUCTS.filter(p=>p.tags.includes(f));el.innerHTML=list.map(prodCard).join("");document.getElementById("shop-count").textContent=list.length+" product"+(list.length!==1?"s":"");}
+function filterShop(t,b){document.querySelectorAll(".filter-btn").forEach(x=>x.classList.remove("active"));b.classList.add("active");renderShopGrid(t);}
+function renderStrip(){const t=document.getElementById("strip-track");if(!t)return;t.innerHTML=[...STRIP,...STRIP].map(s=>`<div class="strip-item"><img src="${s}" loading="lazy" alt=""/></div>`).join("");}
+function injectFooters(){const tpl=document.getElementById("footer-tpl");["home-footer","shop-footer","pdp-footer"].forEach(id=>{const el=document.getElementById(id);if(el)el.innerHTML=tpl.innerHTML;});}
 
-function toggleAccount(accountId){
-  const card=document.getElementById('card-'+accountId);
-  if(!card)return;
-  
-  if(expandedAccounts.has(accountId)){
-    expandedAccounts.delete(accountId);
-    const dropdown=card.querySelector('.account-dropdown');
-    if(dropdown) dropdown.classList.remove('open');
-    const arrow=card.querySelector('.expand-arrow');
-    if(arrow) arrow.textContent='▸';
-  } else {
-    expandedAccounts.add(accountId);
-    const arrow=card.querySelector('.expand-arrow');
-    if(arrow) arrow.textContent='▾';
-    
-    // Check if dropdown already exists
-    let dropdown=card.querySelector('.account-dropdown');
-    if(!dropdown){
-      const accountData=activeCache.find(a=>a.accountId===accountId);
-      if(!accountData) return;
-      const orders=accountData.orders||[];
-      dropdown=document.createElement('div');
-      dropdown.className='account-dropdown';
-      let inner='';
-      if(!orders.length){
-        inner='<div style="font-size:13px;color:var(--muted);padding:8px 0;">No orders yet. Run <code>node agent.js</code> → option 4.</div>';
-      } else {
-        inner='<div style="font-size:12px;color:var(--muted);font-family:var(--mono);margin-bottom:10px;">'+orders.length+' orders scraped</div>';
-        inner+='<table><thead><tr><th>Buyer</th><th>Item</th><th>SKU</th><th>Order #</th><th>Date</th></tr></thead><tbody>';
-        orders.forEach(o=>{
-          const sku=o.size&&o.size!=='Unknown'?'RUG-'+o.size:'—';
-          inner+='<tr><td>'+o.buyer+'</td><td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+o.item+'</td><td style="font-family:var(--mono);font-size:11px;">'+sku+'</td><td style="font-family:var(--mono);font-size:11px;">'+o.orderId+'</td><td style="font-size:11px;color:var(--muted);">'+new Date(o.date||Date.now()).toLocaleDateString()+'</td></tr>';
-        });
-        inner+='</tbody></table>';
-      }
-      const wrapper=document.createElement('div');
-      wrapper.innerHTML=inner;
-      dropdown.appendChild(wrapper);
-      card.appendChild(dropdown);
-    }
-    requestAnimationFrame(()=>{ requestAnimationFrame(()=>{ dropdown.classList.add('open'); }); });
-  }
+let _pdp=null;
+function renderPdp(id){
+  const p=PRODUCTS.find(x=>x.id===id);if(!p)return;_pdp=p;
+  document.getElementById("pdp-bc").textContent=p.name;
+  document.getElementById("pdp-cat").textContent=p.cat;
+  document.getElementById("pdp-name").innerHTML=p.name;
+  document.getElementById("pdp-main-img").src=p.images[0];
+  const wEl=document.getElementById("pdp-was");wEl.textContent=p.was||"";wEl.style.display=p.was?"":"none";
+  const sEl=document.getElementById("pdp-save");sEl.textContent=p.save||"";sEl.style.display=p.save?"":"none";
+  document.getElementById("pdp-price").textContent=p.tiers?p.tiers[1].price:p.price;
+  document.getElementById("pdp-thumbs").innerHTML=p.images.map((s,i)=>`<div class="pdp-thumb${i===0?" active":""}" onclick="setThumb(${i})"><img src="${s}" loading="lazy" alt=""/></div>`).join("");
+  document.getElementById("pdp-box-items").innerHTML=p.box.map(b=>`<li>${b}</li>`).join("");
+  document.getElementById("pdp-sizing").innerHTML=p.sizing.map(s=>`<li>${s}</li>`).join("");
+  const tg=document.getElementById("tier-grid"),tl=document.querySelector(".tier-label");
+  if(p.tiers){tg.style.display="grid";tl.style.display="block";p.tiers.forEach((t,i)=>{document.getElementById("tp"+i).textContent=t.price;document.getElementById("tper"+i).textContent=t.per;const bEl=document.getElementById("tb"+i);if(bEl)bEl.textContent=t.bonus||"";});document.querySelectorAll(".tier-card").forEach((c,i)=>c.classList.toggle("active",i===1));}else{tg.style.display="none";tl.style.display="none";}
+  const showSize=!p.tags.includes("wholesale");
+  document.getElementById("pdp-variants").style.display=showSize?"flex":"none";
+  document.getElementById("size-label").style.display=showSize?"block":"none";
+  document.getElementById("buy-now-link").href=p.shopUrl;
+  document.getElementById("atc-btn").onclick=()=>addToCart(p.name);
+  const lr=document.getElementById("loox-pdp-stars"),lw=document.getElementById("looxReviews");
+  if(lr)lr.setAttribute("data-id",p.looxId);
+  if(lw)lw.setAttribute("data-product-id",p.looxId);
+  if(window.loox&&window.loox.refresh)window.loox.refresh();
+  document.getElementById("pdp-related-grid").innerHTML=PRODUCTS.filter(x=>x.id!==id).slice(0,4).map(prodCard).join("");
+  document.querySelectorAll("#page-pdp .acc-item").forEach((el,i)=>el.classList.toggle("open",i===0));
+  document.querySelectorAll(".var-btn").forEach((b,i)=>b.classList.toggle("active",i===0));
 }
+function setThumb(i){if(!_pdp)return;document.getElementById("pdp-main-img").src=_pdp.images[i]||_pdp.images[0];document.querySelectorAll(".pdp-thumb").forEach((t,j)=>t.classList.toggle("active",j===i));}
+function selectTier(el,i){document.querySelectorAll(".tier-card").forEach(c=>c.classList.remove("active"));el.classList.add("active");if(_pdp&&_pdp.tiers)document.getElementById("pdp-price").textContent=_pdp.tiers[i].price;}
 
-let activeCache=[];
+let cartCount=0;
+function addToCart(name){cartCount++;document.getElementById("cart-count").textContent=cartCount;const btn=document.getElementById("atc-btn");const orig=btn.innerHTML;btn.classList.add("ok");btn.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Added!`;setTimeout(()=>{btn.innerHTML=orig;btn.classList.remove("ok");},2000);}
 
-async function checkOneStatus(accountId, username, btn){
-  if(btn){btn.textContent='...';btn.disabled=true;}
-  try{
-    glog('Queued status check for @'+username+' — run node agent.js → option 3','hi');
-    await fetch('/api/accounts/'+accountId+'/check-status');
-  }catch(e){glog('Error: '+e.message,'err');}
-  if(btn){btn.textContent='🔍';btn.disabled=false;}
-}
+function nav(page){document.querySelectorAll(".page").forEach(p=>p.classList.remove("active"));document.getElementById("page-"+page)?.classList.add("active");window.scrollTo({top:0,behavior:"instant"});closeMob();setTimeout(initReveal,50);}
+function navPdp(id){renderPdp(id);nav("pdp");}
+function scrollToHow(){nav("home");setTimeout(()=>document.getElementById("how-anchor")?.scrollIntoView({behavior:"smooth"}),200);}
+function toggleAcc(btn){const item=btn.closest(".acc-item");const was=item.classList.contains("open");item.closest(".acc").querySelectorAll(".acc-item").forEach(i=>i.classList.remove("open"));if(!was)item.classList.add("open");}
+function selVar(btn){document.querySelectorAll(".var-btn").forEach(b=>b.classList.remove("active"));btn.classList.add("active");}
+function openMob(){document.getElementById("mob-nav").classList.add("open");}
+function closeMob(){document.getElementById("mob-nav").classList.remove("open");}
 
-async function checkAllStatuses(){
-  glog('Run node agent.js → option 3 to check all statuses','hi');
-  alert('To check account statuses:\n\n1. Open Command Prompt\n2. Run: node agent.js\n3. Select option 3 (Check account statuses)\n\nThe agent will open each profile in a real browser and accurately detect live vs banned.');
-}
+let carIdx=0,carTimer=null,carTotal=0;
+function buildCarousel(){const track=document.getElementById("carousel-track");const dots=document.getElementById("carousel-dots");if(!track)return;track.innerHTML=[...CAROUSEL,...CAROUSEL].map(s=>`<div class="carousel-slide"><img src="${s}" loading="lazy" alt="customer photo"/></div>`).join("");carTotal=CAROUSEL.length;dots.innerHTML=CAROUSEL.map((_,i)=>`<button class="carousel-dot${i===0?" active":""}" onclick="carouselGo(${i})"></button>`).join("");carouselGo(0,false);startAuto();const cc=document.querySelector(".carousel-outer");if(cc){cc.addEventListener("mouseenter",()=>clearInterval(carTimer));cc.addEventListener("mouseleave",startAuto);}}
+function startAuto(){clearInterval(carTimer);carTimer=setInterval(()=>carouselMove(1),3400);}
+function carouselMove(dir){carouselGo((carIdx+dir+carTotal)%carTotal);}
+function carouselGo(idx,animate=true){carIdx=idx;const track=document.getElementById("carousel-track");if(!track)return;const cols=window.innerWidth>860?4:window.innerWidth>520?2:1;const w=track.parentElement.offsetWidth/cols;track.style.transition=animate?"transform .45s cubic-bezier(.25,.46,.45,.94)":"none";track.style.transform=`translateX(-${idx*(w+16)}px)`;document.querySelectorAll(".carousel-dot").forEach((d,i)=>d.classList.toggle("active",i===idx));}
+window.addEventListener("resize",()=>carouselGo(carIdx,false));
 
-async function checkDaemon(){
-  try{
-    const r=await fetch('/api/daemon/status');
-    const d=await r.json();
-    updateDaemonStatus(d.alive,d.lastSeen);
-    updateRunStatus(d.runAlive);
-  }catch{}
-}
+let ro;
+function initReveal(){if(ro)ro.disconnect();ro=new IntersectionObserver(entries=>{entries.forEach(e=>{if(e.isIntersecting){e.target.classList.add("in");ro.unobserve(e.target);}});},{threshold:.08});document.querySelectorAll(".page.active .sr:not(.in)").forEach(el=>ro.observe(el));}
+window.addEventListener("scroll",()=>document.getElementById("header").classList.toggle("sh",window.scrollY>10));
 
-function updateDaemonStatus(alive,lastSeen){
-  const dot=document.getElementById('daemon-dot');
-  const lbl=document.getElementById('daemon-label');
-  if(alive){
-    dot.style.background='var(--green)';dot.style.boxShadow='0 0 6px var(--green)';
-    lbl.style.color='var(--green)';lbl.textContent='Daemon active';
-  }else{
-    dot.style.background='var(--faint)';dot.style.boxShadow='none';
-    lbl.style.color='var(--muted)';lbl.textContent='Daemon offline';
-  }
-}
-
-function updateRunStatus(alive){
-  const pill=document.getElementById('run-pill');
-  const lbl=document.getElementById('run-label');
-  if(!pill)return;
-  if(alive){pill.className='status-pill active-run';lbl.textContent='RUN.bat active';}
-  else{pill.className='status-pill';lbl.textContent='RUN.bat offline';}
-}
-
-async function init(){await Promise.all([loadSets(),loadAccounts(),checkDrive(),checkDaemon()]);connectSSE();renderOverview();setInterval(checkDaemon,30000);}
-
-function connectSSE(){
-  const es=new EventSource('/api/stream');
-  es.onerror=()=>setTimeout(connectSSE,3000);
-  es.onmessage=(e)=>{
-    const d=JSON.parse(e.data);
-    if(d.type==='account')loadAccounts();
-    if(d.type==='daemon'){updateDaemonStatus(d.status==='alive',d.lastSeen);}
-    if(d.type==='account-status'){
-      const card=document.getElementById('card-'+d.accountId);
-      if(card){
-        const badge=card.querySelector('.badge.status-live,.badge.status-banned,.badge.status-unknown');
-        if(badge){
-          const s=d.status;
-          badge.className='badge '+(s==='live'?'status-live':s==='banned'?'status-banned':'status-unknown');
-          badge.textContent=s==='live'?'● Live':s==='banned'?'✕ Banned':'? Unknown';
-        }
-      }
-      glog('@'+d.username+': '+d.status,(d.status==='live'?'ok':'err'));
-      loadAccounts();
-    }
-    if(d.type==='deploy'&&d.message){
-      glog(d.message,d.status==='error'?'err':d.status==='done'||d.status==='posted'?'ok':'');
-      if(d.progress!==undefined){
-        document.getElementById('ov-prog').style.display='block';
-        document.getElementById('ov-prog-fill').style.width=d.progress+'%';
-        document.getElementById('ov-prog-lbl').textContent=d.message;
-        if(d.setId===currentSetId){
-          document.getElementById('deploy-prog').style.display='block';
-          document.getElementById('deploy-prog-fill').style.width=d.progress+'%';
-          document.getElementById('deploy-prog-lbl').textContent=d.message;
-        }
-      }
-      if(d.setId===currentSetId&&d.listingId&&d.status==='posted'){
-        const s=sets.find(x=>x.id===currentSetId);
-        if(s){const l=s.listings?.find(x=>x.id===d.listingId);if(l){l.posted=true;renderListingsTable(s);}}
-      }
-      if(d.status==='done')loadSets().then(()=>{renderSidebarSets();if(currentPage==='set')renderCurrentSet();});
-    }
-  };
-}
-
-async function loadSets(){const r=await fetch('/api/sets').catch(()=>({json:()=>[]}));sets=await r.json().catch(()=>[]);renderSidebarSets();return sets;}
-async function loadAccounts(){const r=await fetch('/api/accounts').catch(()=>({json:()=>[]}));accounts=await r.json().catch(()=>[]);renderAccounts();return accounts;}
-async function checkDrive(){const r=await fetch('/api/drive/status').catch(()=>({json:()=>({})}));const d=await r.json().catch(()=>({}));const btn=document.getElementById('drive-btn');const lbl=document.getElementById('drive-label');if(d.connected){btn.classList.add('connected');lbl.textContent='Drive Connected ✓';}else{btn.className='drive-pill';lbl.textContent='Connect Drive';}}
-
-function showPage(page,setId){
-  ['overview','accounts','schedule','active','sold','set'].forEach(p=>{document.getElementById('page-'+p).classList.toggle('hidden',p!==page);const nav=document.getElementById('nav-'+p);if(nav)nav.classList.toggle('active',p===page);});
-  currentPage=page;
-  document.querySelectorAll('#page-'+page).forEach(el=>el.classList.add('page-enter'));
-  if(page==='set'&&setId){currentSetId=setId;renderCurrentSet();}
-  if(page==='overview')renderOverview();
-  if(page==='accounts')renderAccounts();
-  if(page==='schedule')renderSchedule();
-  if(page==='active')renderActiveThisWeek();
-  if(page==='sold')initSoldPage();
-  document.querySelectorAll('.sb-set').forEach(el=>el.classList.toggle('active',el.dataset.id===setId));
-}
-
-function switchTab(tab){
-  currentTab=tab;
-  var tabs=['rugpull','riptag','all'];
-  for(var i=0;i<tabs.length;i++){
-    var t=tabs[i];
-    var el=document.getElementById('tab-'+t);
-    if(!el)continue;
-    if(t===tab){
-      el.className='cat-tab active '+t;
-    }else{
-      el.className='cat-tab';
-    }
-  }
-  renderOverviewSets();
-}
-
-function renderOverview(){
-  document.getElementById('ov-sets').textContent=sets.length;
-  document.getElementById('ov-deployed').textContent=sets.filter(s=>s.status==='deployed').length;
-  document.getElementById('ov-listings').textContent=sets.reduce((a,s)=>a+(s.listings?.length||0),0);
-  document.getElementById('ov-accounts').textContent=accounts.length;
-  renderOverviewSets();
-}
-
-function renderOverviewSets(){
-  let filtered=[];
-  if(currentTab==='all'){
-    filtered=[...sets];
-  }else if(currentTab==='riptag'){
-    filtered=sets.filter(function(s){return s.category==='riptag';});
-  }else{
-    filtered=sets.filter(function(s){return s.category==='rugpull'||!s.category;});
-  }
-  const el=document.getElementById('sets-list-overview');
-  if(!el)return;
-  if(!filtered.length){el.innerHTML='<div class="empty"><div class="empty-icon">📦</div>No sets in this category yet.</div>';return;}
-  el.innerHTML=filtered.map(s=>{
-    const icon=s.category==='riptag'?'🌐':'🎯';
-    const catBadge=s.category==='riptag'?'riptag.co':'rugpull';
-    const sub=(s.listings?.length||0)+' listings · '+(s.driveFolderName||'No folder')+' · '+getAccountName(s.accountId);
-    return '<div class="set-card" onclick="showPage(\'set\',\''+s.id+'\')">'
-      +'<div class="set-card-ico">'+icon+'</div>'
-      +'<div class="set-card-info"><div class="set-card-name">'+s.name+'</div><div class="set-card-sub">'+sub+'</div></div>'
-      +'<div class="set-card-actions">'
-      +'<span class="badge badge-'+s.category+'">'+catBadge+'</span>'
-      +'<span class="badge badge-'+s.status+'">'+s.status+'</span>'
-      +'<button class="btn sm danger" onclick="event.stopPropagation();deleteSet(\''+s.id+'\')">🗑</button>'
-      +'</div></div>';
-  }).join('');
-}
-
-function renderSidebarSets(){
-  ['rugpull','riptag'].forEach(cat=>{
-    const el=document.getElementById('sb-'+cat);
-    el.innerHTML=sets.filter(s=>s.category===cat).map(s=>`<div class="sb-set" data-id="${s.id}" onclick="showPage('set','${s.id}')"><span class="sb-set-dot ${s.status}"></span><span class="sb-set-name">${s.name}</span></div>`).join('');
-  });
-}
-
-function renderAccounts(){
-  const el=document.getElementById('accounts-list');
-  if(!accounts.length){el.innerHTML='<div class="empty" style="padding:20px;">No accounts connected yet.</div>';return;}
-  el.innerHTML=accounts.map(a=>`
-    <div class="acct-card">
-      <div class="acct-header">
-        <div class="acct-avatar">${a.username.substring(0,2).toUpperCase()}</div>
-        <div style="flex:1;"><div style="font-weight:600;font-size:13px;">@${a.username}</div><div style="font-size:11px;color:var(--muted);font-family:var(--mono);">${new Date(a.connectedAt).toLocaleDateString()}${a.proxy?' · 🔒 Proxy set':''}</div></div>
-        <button class="btn sm" onclick="openProxyModal('${a.id}','${a.proxy||''}')">🔒 ${a.proxy?'Edit':'Add'} Proxy</button>
-        <button class="btn sm" style="color:var(--red);" onclick="deleteAccount('${a.id}')">Remove</button>
-      </div>
-    </div>`).join('');
-}
-
-function renderSchedule(){
-  const el=document.getElementById('schedule-list');
-  const days=['monday','tuesday','wednesday','thursday','friday','saturday','sunday'];
-  const dayLabels={'monday':'Monday','tuesday':'Tuesday','wednesday':'Wednesday','thursday':'Thursday','friday':'Friday','saturday':'Saturday','sunday':'Sunday'};
-
-  // Load saved schedule from localStorage
-  let sched={};
-  try{sched=JSON.parse(localStorage.getItem('riptag_schedule')||'{}');}catch{}
-
-  const setOptions='<option value="">— No deploy —</option>'+sets.map(s=>'<option value="'+s.id+'">'+s.name+'</option>').join('');
-  const acctOptions='<option value="">— Select account —</option>'+accounts.map(a=>'<option value="'+a.id+'">@'+a.username+'</option>').join('');
-
-  el.innerHTML='<div class="card"><div class="card-title">Weekly Deploy Schedule (MST)</div>'
-    +days.map(day=>{
-      const d=sched[day]||{};
-      return '<div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--border);">'
-        +'<div style="width:90px;font-size:13px;font-weight:600;">'+dayLabels[day]+'</div>'
-        +'<select class="input" style="flex:1;" id="sched-set-'+day+'" onchange="saveScheduleDay(\''+day+'\')">'
-          +setOptions
-        +'</select>'
-        +'<select class="input" style="flex:1;" id="sched-acct-'+day+'" onchange="saveScheduleDay(\''+day+'\')">'
-          +acctOptions
-        +'</select>'
-        +'<input type="time" class="input" style="width:120px;" id="sched-time-'+day+'" value="'+(d.time||'09:00')+'" onchange="saveScheduleDay(\''+day+'\')" />'
-        +'<span style="font-size:11px;color:var(--muted);font-family:var(--mono);">MST</span>'
-        +'</div>';
-    }).join('')
-    +'</div>';
-
-  // Restore saved values
-  days.forEach(day=>{
-    const d=sched[day]||{};
-    const setEl=document.getElementById('sched-set-'+day);
-    const acctEl=document.getElementById('sched-acct-'+day);
-    if(setEl&&d.setId)setEl.value=d.setId;
-    if(acctEl&&d.accountId)acctEl.value=d.accountId;
-  });
-}
-
-function saveScheduleDay(day){
-  let sched={};
-  try{sched=JSON.parse(localStorage.getItem('riptag_schedule')||'{}');}catch{}
-  const setId=document.getElementById('sched-set-'+day)?.value||'';
-  const accountId=document.getElementById('sched-acct-'+day)?.value||'';
-  const time=document.getElementById('sched-time-'+day)?.value||'09:00';
-  sched[day]={setId,accountId,time};
-  localStorage.setItem('riptag_schedule',JSON.stringify(sched));
-  // Also update the set's schedule on server
-  if(setId){
-    const existingDays=Object.entries(sched).filter(([d,v])=>v.setId===setId).map(([d])=>d);
-    fetch('/api/sets/'+setId,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({schedule:{enabled:true,days:existingDays,time,accountId}})});
-  }
-}
-
-function renderCurrentSet(){
-  const set=sets.find(s=>s.id===currentSetId);
-  if(!set)return;
-  document.getElementById('set-detail-title').textContent=set.name;
-  document.getElementById('set-detail-sub').textContent=(set.category==='riptag'?'riptag.co':'rugpull')+' · '+(set.listings?.length||0)+' listings · '+set.status;
-  document.getElementById('set-info-panel').innerHTML=`<div style="display:flex;flex-direction:column;gap:8px;font-size:13px;">
-    <div style="display:flex;justify-content:space-between;"><span style="color:var(--muted);">Category</span><span class="badge badge-${set.category}">${set.category==='riptag'?'riptag.co':'rugpull'}</span></div>
-    <div style="display:flex;justify-content:space-between;"><span style="color:var(--muted);">Price</span><span>$${set.price}</span></div>
-    <div style="display:flex;justify-content:space-between;"><span style="color:var(--muted);">Sizes</span><span>${(set.sizes||[]).join(', ')}</span></div>
-    <div style="display:flex;justify-content:space-between;"><span style="color:var(--muted);">Drive folder</span><span>${set.driveFolderName||'—'}</span></div>
-    <div style="display:flex;justify-content:space-between;"><span style="color:var(--muted);">Account</span><span>${getAccountName(set.accountId)}</span></div>
-    <div style="display:flex;justify-content:space-between;"><span style="color:var(--muted);">Schedule</span><span>${set.schedule?.enabled?'📅 '+set.schedule.days.join(', ')+' @ '+set.schedule.time:'Off'}</span></div>
-    <div style="display:flex;justify-content:space-between;"><span style="color:var(--muted);">Status</span><span class="badge badge-${set.status}">${set.status}</span></div>
-  </div>`;
-  renderListingsTable(set);
-}
-
-function renderListingsTable(set){
-  const el=document.getElementById('listings-table-wrap');
-  const listings=set.listings||[];
-  document.getElementById('listing-count').textContent=listings.length+' listings ('+listings.filter(l=>l.posted).length+' posted)';
-  if(!listings.length){el.innerHTML='<div class="empty"><div class="empty-icon">📋</div>No listings yet.</div>';return;}
-  const groups={};
-  listings.forEach(l=>{if(!groups[l.groupId])groups[l.groupId]=[];groups[l.groupId].push(l);});
-  let rows='';
-  Object.values(groups).forEach((group,gi)=>{
-    rows+=`<tr style="background:rgba(255,255,255,0.01);"><td colspan="6" style="padding:6px 12px;font-size:11px;color:var(--faint);font-family:var(--mono);">GROUP ${gi+1}</td></tr>`;
-    group.forEach(l=>{rows+=`<tr onclick="openListingModal('${l.id}')">
-      <td><div class="thumb">${l.photos?.[0]?.thumb?'<img src="'+l.photos[0].thumb+'" alt=""/>':'👕'}</div></td>
-      <td><span style="font-family:var(--mono);font-size:12px;background:var(--s3);padding:2px 8px;border-radius:4px;">${l.size}</span></td>
-      <td style="font-family:var(--mono);">$${l.customPrice||l.price}</td>
-      <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:12px;">${(l.customDescription||l.description||'').substring(0,50)}…</td>
-      <td><span class="badge2 ${l.posted?'badge-done':'badge-pend'}">${l.posted?'✓ posted':'pending'}</span></td>
-      <td><button class="btn sm" onclick="event.stopPropagation();openListingModal('${l.id}')">Edit</button></td>
-    </tr>`;});
-  });
-  el.innerHTML=`<table><thead><tr><th>Photo</th><th>Size</th><th>Price</th><th>Description</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
-}
-
-async function buildListings(){
-  const set=sets.find(s=>s.id===currentSetId);
-  if(!set?.driveFolder){alert('Set a Drive folder first.');return;}
-  glog('Building listings for '+set.name+'…','hi');
-  const r=await fetch('/api/sets/'+currentSetId+'/build-listings',{method:'POST'});
-  const d=await r.json();
-  if(d.error){glog('Error: '+d.error,'err');return;}
-  glog('Built '+d.count+' listings from '+d.groups+' groups ('+d.mode+')','ok');
-  await loadSets();renderCurrentSet();
-}
-
-async function deploySet(){
-  const set=sets.find(s=>s.id===currentSetId);
-  if(!set?.accountId){alert('Assign an account first.');return;}
-  if(!set?.listings?.length){alert('Build listings first.');return;}
-  glog('Run agent.js and select "'+set.name+'" to deploy.','hi');
-  alert('Open Command Prompt and run:\n\nnode agent.js\n\nThen select this set.');
-}
-
-async function openNewSetModal(){
-  editingSetId=null;
-  document.getElementById('set-modal-title').textContent='New Set';
-  document.getElementById('fm-name').value='';
-  document.getElementById('fm-price').value='20';
-  document.getElementById('fm-groupsize').value='4';
-  document.getElementById('fm-category').value='rugpull';
-  document.getElementById('fm-desc').value='🌴 New Y2K & Vintage Drops 🌴\n\n⦾ Curated Bundles & Sick Pieces\n⦾ Promotional Post\n⦾ DM me for Bundle Info\n\n#vintage #y2k #thrift #streetwear';
-  document.getElementById('fm-folder-id').value='';
-  document.getElementById('fm-folder-name').value='';
-  document.getElementById('fm-folder-status').textContent='No folder selected';
-  document.querySelectorAll('.size-chip').forEach(c=>c.classList.toggle('on',['S','M','L','XL'].includes(c.dataset.size)));
-  document.querySelectorAll('.day-chip').forEach(c=>c.classList.remove('on'));
-  schedEnabled=false;
-  document.getElementById('fm-sched-toggle').classList.remove('on');
-  document.getElementById('fm-sched-label').textContent='Disabled';
-  document.getElementById('fm-sched-options').classList.add('hidden');
-  document.getElementById('fm-time').value='09:00';
-  populateAccountDropdown();
-  document.getElementById('fm-account').value='';
-  document.getElementById('set-modal').classList.remove('hidden');
-}
-
-async function openEditSetModal(){
-  const set=sets.find(s=>s.id===currentSetId);if(!set)return;
-  editingSetId=set.id;
-  document.getElementById('set-modal-title').textContent='Edit Set';
-  document.getElementById('fm-name').value=set.name;
-  document.getElementById('fm-price').value=set.price;
-  document.getElementById('fm-groupsize').value=set.groupSize||4;
-  document.getElementById('fm-category').value=set.category||'rugpull';
-  document.getElementById('fm-desc').value=set.description;
-  document.getElementById('fm-folder-id').value=set.driveFolder||'';
-  document.getElementById('fm-folder-name').value=set.driveFolderName||'';
-  document.getElementById('fm-folder-status').textContent=set.driveFolderName?'📁 '+set.driveFolderName:'No folder selected';
-  document.querySelectorAll('#fm-sizes .chip').forEach(c=>c.classList.toggle('on',(set.sizes||[]).includes(c.dataset.size)));
-  schedEnabled=set.schedule?.enabled||false;
-  document.getElementById('fm-sched-toggle').classList.toggle('on',schedEnabled);
-  document.getElementById('fm-sched-label').textContent=schedEnabled?'Enabled':'Disabled';
-  document.getElementById('fm-sched-options').classList.toggle('hidden',!schedEnabled);
-  document.querySelectorAll('.day-chip').forEach(c=>c.classList.toggle('on',(set.schedule?.days||[]).includes(c.dataset.day)));
-  document.getElementById('fm-time').value=set.schedule?.time||'09:00';
-  populateAccountDropdown();
-  document.getElementById('fm-account').value=set.accountId||'';
-  document.getElementById('set-modal').classList.remove('hidden');
-}
-
-function toggleSchedule(){schedEnabled=!schedEnabled;document.getElementById('fm-sched-toggle').classList.toggle('on',schedEnabled);document.getElementById('fm-sched-label').textContent=schedEnabled?'Enabled':'Disabled';document.getElementById('fm-sched-options').classList.toggle('hidden',!schedEnabled);}
-function populateAccountDropdown(){const sel=document.getElementById('fm-account');sel.innerHTML='<option value="">— Select account —</option>'+accounts.map(a=>'<option value="'+a.id+'">@'+a.username+'</option>').join('');}
-
-async function saveSet(){
-  const sizes=[...document.querySelectorAll('#fm-sizes .chip.on')].map(c=>c.dataset.size);
-  const days=[...document.querySelectorAll('.day-chip.on')].map(c=>c.dataset.day);
-  const body={name:document.getElementById('fm-name').value.trim()||'Unnamed Set',category:document.getElementById('fm-category').value,price:document.getElementById('fm-price').value||'20',groupSize:parseInt(document.getElementById('fm-groupsize').value),description:document.getElementById('fm-desc').value,sizes,driveFolder:document.getElementById('fm-folder-id').value||null,driveFolderName:document.getElementById('fm-folder-name').value||null,accountId:document.getElementById('fm-account').value||null,schedule:{enabled:schedEnabled,days,time:document.getElementById('fm-time').value}};
-  if(editingSetId)await fetch('/api/sets/'+editingSetId,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  else await fetch('/api/sets',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  closeModal('set-modal');await loadSets();renderOverview();if(editingSetId)renderCurrentSet();
-}
-
-async function deleteSet(id){if(!confirm('Delete this set?'))return;await fetch('/api/sets/'+id,{method:'DELETE'});await loadSets();renderOverview();if(currentSetId===id)showPage('overview');}
-async function deleteAccount(id){if(!confirm('Remove this account?'))return;await fetch('/api/accounts/'+id,{method:'DELETE'});await loadAccounts();}
-function openProxyModal(accountId,currentProxy){document.getElementById('pm-account-id').value=accountId;document.getElementById('pm-proxy').value=currentProxy||'';document.getElementById('proxy-modal').classList.remove('hidden');}
-async function saveProxy(){const id=document.getElementById('pm-account-id').value;const proxy=document.getElementById('pm-proxy').value.trim();await fetch('/api/accounts/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({proxy})});closeModal('proxy-modal');await loadAccounts();}
-
-async function openFolderPicker(){const r=await fetch('/api/drive/folders');if(r.status===401){alert('Connect Google Drive first.');return;}const d=await r.json();folders=d.folders||[];renderFolderList(folders);selectedFolder=null;document.getElementById('folder-search').value='';document.getElementById('folder-modal').classList.remove('hidden');}
-function renderFolderList(list){
-  const el=document.getElementById('folder-list-items');
-  if(!list.length){el.innerHTML='<div style="padding:14px;color:var(--muted);font-size:13px;">No folders found.</div>';return;}
-  el.innerHTML=list.map(f=>{
-    const sel=selectedFolder&&selectedFolder.id===f.id;
-    const div=document.createElement('div');
-    div.className='folder-item'+(sel?' selected':'');
-    div.textContent='📁 '+f.name;
-    div.onclick=()=>selectFolder(f.id,f.name);
-    return div.outerHTML;
-  }).join('');
-  // Re-attach click handlers
-  document.querySelectorAll('.folder-item').forEach((el,idx)=>{
-    el.onclick=()=>selectFolder(list[idx].id,list[idx].name);
-  });
-}
-function filterFolders(){const q=document.getElementById('folder-search').value.toLowerCase();renderFolderList(folders.filter(f=>f.name.toLowerCase().includes(q)));}
-function selectFolder(id,name){selectedFolder={id,name};document.querySelectorAll('.folder-item').forEach(el=>el.classList.toggle('selected',el.textContent.trim().slice(2)===name));}
-function confirmFolder(){if(!selectedFolder){alert('Select a folder first.');return;}document.getElementById('fm-folder-id').value=selectedFolder.id;document.getElementById('fm-folder-name').value=selectedFolder.name;document.getElementById('fm-folder-status').textContent='📁 '+selectedFolder.name;closeModal('folder-modal');}
-
-function openListingModal(listingId){const set=sets.find(s=>s.id===currentSetId);const listing=set?.listings?.find(l=>l.id===listingId);if(!listing)return;document.getElementById('lm-id').value=listingId;document.getElementById('lm-price').value=listing.customPrice||'';document.getElementById('lm-desc').value=listing.customDescription||'';document.getElementById('listing-modal').classList.remove('hidden');}
-async function saveListing(){const id=document.getElementById('lm-id').value;const price=document.getElementById('lm-price').value.trim();const desc=document.getElementById('lm-desc').value.trim();await fetch('/api/sets/'+currentSetId+'/listings/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({customPrice:price||null,customDescription:desc||null})});closeModal('listing-modal');await loadSets();renderCurrentSet();}
-
-function getAccountName(id){const a=accounts.find(x=>x.id===id);return a?'@'+a.username:'—';}
-function closeModal(id){document.getElementById(id).classList.add('hidden');}
-function connectDrive(){window.location.href='/auth/google';}
-
-function glog(msg,type=''){
-  if(!msg)return;
-  ['global-log','set-log'].forEach(boxId=>{
-    const box=document.getElementById(boxId);if(!box)return;
-    const el=document.createElement('div');el.className='log-line '+type;
-    el.textContent='['+new Date().toLocaleTimeString()+'] '+msg;
-    box.appendChild(el);box.scrollTop=box.scrollHeight;
-  });
-}
-
-document.addEventListener('DOMContentLoaded',()=>{
-  document.querySelectorAll('#fm-sizes .chip').forEach(c=>c.addEventListener('click',()=>c.classList.toggle('on')));
-  document.querySelectorAll('.day-chip').forEach(c=>c.addEventListener('click',()=>c.classList.toggle('on')));
-  document.querySelectorAll('.modal-overlay').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)o.classList.add('hidden');}));
+document.addEventListener("DOMContentLoaded",()=>{
+  injectFooters();
+  renderHomeFeatured();
+  renderShopGrid("all");
+  renderStrip();
+  buildCarousel();
+  const img=document.getElementById("heroImg");
+  if(img){const go=()=>img.classList.add("kb");img.complete?go():img.addEventListener("load",go);}
+  initReveal();
 });
-
-init();
-
 </script>
 </body>
-</html> 
+</html>
