@@ -343,24 +343,61 @@ async function runStatusCheck() {
   
   console.log('\nChecking account statuses...\n');
   
+  const browser = await chromium.launch({ headless: false, slowMo: 100 });
+  
   for (const account of accounts) {
     process.stdout.write(`@${account.username}... `);
     try {
-      const browser = await chromium.launch({ headless: true });
       const page = await browser.newPage();
-      const r = await page.goto('https://www.depop.com/' + account.username + '/', { waitUntil: 'networkidle', timeout: 10000 });
-      const title = await page.title();
-      const isBanned = title.toLowerCase().includes('not found') || title.toLowerCase().includes('404') || r.status() === 404;
-      const status = isBanned ? 'banned' : 'live';
-      await browser.close();
       
-      await apiPost('/api/accounts/' + account.id + '/status', { status });
-      console.log(status === 'live' ? '✓ Live' : '✕ BANNED');
+      let httpStatus = 200;
+      page.on('response', response => {
+        if (response.url().includes('depop.com/' + account.username)) {
+          httpStatus = response.status();
+        }
+      });
+
+      await page.goto('https://www.depop.com/' + account.username + '/', { 
+        waitUntil: 'domcontentloaded', 
+        timeout: 15000 
+      });
+      await page.waitForTimeout(2000);
+
+      const pageContent = await page.evaluate(() => {
+        return {
+          title: document.title,
+          body: document.body?.innerText?.substring(0, 500) || '',
+          url: window.location.href
+        };
+      });
+
+      await page.close();
+
+      const title = pageContent.title.toLowerCase();
+      const body = pageContent.body.toLowerCase();
+
+      const isBanned = httpStatus === 404
+        || title.includes('not found')
+        || title.includes('404')
+        || title.includes("doesn't exist")
+        || body.includes("that page doesn't exist")
+        || body.includes('404 page not found')
+        || body.includes("sorry, that page");
+
+      const status = isBanned ? 'banned' : 'live';
+
+      // Post result back to dashboard
+      await apiPost('/api/accounts/' + account.id + '/check-status', { status });
+      console.log(status === 'live' ? '✓ Live' : '✕ BANNED', '(HTTP ' + httpStatus + ')');
+
     } catch (err) {
-      console.log('? Could not check - ' + err.message.substring(0, 40));
+      console.log('? Error - ' + err.message.substring(0, 50));
     }
+    await new Promise(r => setTimeout(r, 1000));
   }
-  console.log('\nDone. Check dashboard for updated statuses.');
+
+  await browser.close();
+  console.log('\n✓ Done. Dashboard updated with statuses.');
 }
 
 async function runScrapeOrders() {
@@ -527,6 +564,17 @@ function normalizeSize(s) {
 function browser_close_placeholder() { return Promise.resolve(); }
 
 async function main() {
+  // Send heartbeat to dashboard so it shows RUN.bat as active
+  function sendRunHeartbeat() {
+    const urlObj = new URL(DASHBOARD_URL + '/api/run/heartbeat');
+    const mod = urlObj.protocol === 'https:' ? require('https') : require('http');
+    const req = mod.request({ hostname: urlObj.hostname, path: urlObj.pathname, method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': 2, 'x-api-key': '1010' } }, () => {});
+    req.on('error', () => {});
+    req.write('{}'); req.end();
+  }
+  sendRunHeartbeat();
+  const _hbInterval = setInterval(sendRunHeartbeat, 30000);
+  process.on('exit', () => clearInterval(_hbInterval));
   console.log('\n🏄  Riptag Rugpuller — Local Deploy Agent v5');
   console.log(`    Dashboard: ${DASHBOARD_URL}\n`);
 

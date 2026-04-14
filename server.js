@@ -475,45 +475,35 @@ app.post('/api/sets/:id/mark-switched', async (req, res) => {
 });
 
 
-// ─── SERVER-SIDE STATUS CHECK ────────────────────────────────
+// ─── STATUS CHECK (agent-based) ──────────────────────────────
+// Dashboard queues a check, agent picks it up and posts result back
+let statusCheckQueue = [];
+app.post('/api/accounts/check-queue', (req, res) => {
+  const pending = statusCheckQueue.splice(0);
+  res.json({ pending });
+});
+app.post('/api/accounts/:id/check-status', async (req, res) => {
+  try {
+    const r = await pool.query('SELECT data FROM accounts WHERE id=$1', [req.params.id]);
+    if (!r.rows.length) return res.status(404).json({ error: 'Not found' });
+    const account = r.rows[0].data;
+    const { status } = req.body;
+    account.status = status;
+    account.statusCheckedAt = new Date().toISOString();
+    await pool.query('UPDATE accounts SET data=$1 WHERE id=$2', [JSON.stringify(account), account.id]);
+    broadcast({ type: 'account-status', accountId: account.id, username: account.username, status });
+    res.json({ ok: true, status });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+// Dashboard calls this to queue a check - agent.js does the actual Playwright check
 app.get('/api/accounts/:id/check-status', async (req, res) => {
   try {
     const r = await pool.query('SELECT data FROM accounts WHERE id=$1', [req.params.id]);
     if (!r.rows.length) return res.status(404).json({ error: 'Not found' });
     const account = r.rows[0].data;
-    
-    // Check if Depop profile exists from server side (no CORS)
-    const https = require('https');
-    const checkUrl = `https://www.depop.com/${account.username}/`;
-    
-    const status = await new Promise((resolve) => {
-      const req2 = https.get(checkUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
-          'Accept': 'text/html'
-        }
-      }, (res2) => {
-        let body = '';
-        res2.on('data', chunk => { body += chunk; if (body.length > 2000) res2.destroy(); });
-        res2.on('end', () => {
-          const is404 = res2.statusCode === 404 || body.includes("doesn't exist") || body.includes('404') || body.includes('Page not found');
-          resolve(is404 ? 'banned' : 'live');
-        });
-        res2.on('close', () => {
-          const is404 = res2.statusCode === 404 || body.includes("doesn't exist") || body.includes('404');
-          resolve(is404 ? 'banned' : 'live');
-        });
-      });
-      req2.on('error', () => resolve('unknown'));
-      req2.setTimeout(8000, () => { req2.destroy(); resolve('unknown'); });
-    });
-
-    // Save status
-    account.status = status;
-    account.statusCheckedAt = new Date().toISOString();
-    await pool.query('UPDATE accounts SET data=$1 WHERE id=$2', [JSON.stringify(account), account.id]);
-    broadcast({ type: 'account-status', accountId: account.id, username: account.username, status });
-    res.json({ status, username: account.username });
+    statusCheckQueue.push({ accountId: account.id, username: account.username });
+    broadcast({ type: 'check-queued', accountId: account.id, username: account.username });
+    res.json({ queued: true, username: account.username });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -551,9 +541,15 @@ app.post('/api/daemon/heartbeat', (req, res) => {
   res.json({ ok: true });
 });
 
+let lastRunHeartbeat = null;
+app.post('/api/run/heartbeat', (req, res) => {
+  lastRunHeartbeat = new Date().toISOString();
+  res.json({ ok: true });
+});
 app.get('/api/daemon/status', (req, res) => {
   const alive = lastHeartbeat && (Date.now() - new Date(lastHeartbeat).getTime()) < 60000;
-  res.json({ alive, lastSeen: lastHeartbeat });
+  const runAlive = lastRunHeartbeat && (Date.now() - new Date(lastRunHeartbeat).getTime()) < 60000;
+  res.json({ alive, lastSeen: lastHeartbeat, runAlive, runLastSeen: lastRunHeartbeat });
 });
 
 initDB().then(() => {

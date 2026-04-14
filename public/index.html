@@ -140,7 +140,11 @@ code{font-family:var(--mono);font-size:11px;background:var(--s3);padding:2px 6px
     <div class="sb-btn" onclick="openNewSetModal()" style="color:var(--green);margin-top:8px;"><span class="icon">＋</span>New Set</div>
   </div>
   <div class="sb-bottom">
-    <div id="daemon-status" style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:8px;background:var(--s2);border:1px solid var(--border);margin-bottom:8px;font-size:12px;color:var(--muted);">
+    <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:8px;background:var(--s2);border:1px solid var(--border);margin-bottom:6px;font-size:12px;color:var(--muted);">
+      <span id="run-dot" style="width:7px;height:7px;border-radius:50%;background:var(--faint);flex-shrink:0;"></span>
+      <span id="run-label">RUN.bat offline</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:8px;background:var(--s2);border:1px solid var(--border);margin-bottom:8px;font-size:12px;color:var(--muted);">
       <span id="daemon-dot" style="width:7px;height:7px;border-radius:50%;background:var(--faint);flex-shrink:0;"></span>
       <span id="daemon-label">Daemon offline</span>
     </div>
@@ -440,44 +444,46 @@ async function renderActiveThisWeek(){
 }
 
 function toggleAccount(accountId){
+  const card=document.getElementById('card-'+accountId);
+  if(!card)return;
+  
   if(expandedAccounts.has(accountId)){
     expandedAccounts.delete(accountId);
-    // Collapse inline
-    const card=document.getElementById('card-'+accountId);
-    const dropdown=card?.querySelector('.account-dropdown');
-    if(dropdown){dropdown.style.maxHeight='0';setTimeout(()=>dropdown.remove(),300);}
-    // Update arrow
-    const arrow=card?.querySelector('.expand-arrow');
-    if(arrow)arrow.textContent='▸';
+    const dropdown=card.querySelector('.account-dropdown');
+    if(dropdown) dropdown.classList.remove('open');
+    const arrow=card.querySelector('.expand-arrow');
+    if(arrow) arrow.textContent='▸';
   } else {
     expandedAccounts.add(accountId);
-    // Expand inline without full re-render
-    const card=document.getElementById('card-'+accountId);
-    if(!card)return;
     const arrow=card.querySelector('.expand-arrow');
-    if(arrow)arrow.textContent='▾';
-    // Find this account's data
-    const accountData=activeCache.find(a=>a.accountId===accountId);
-    if(!accountData)return;
-    const orders=accountData.orders||[];
-    const div=document.createElement('div');
-    div.className='account-dropdown';
-    div.style.cssText='overflow:hidden;max-height:0;transition:max-height 0.3s ease;border-top:1px solid var(--border);margin-top:14px;padding-top:14px;';
-    let inner='';
-    if(!orders.length){
-      inner='<div style="font-size:13px;color:var(--muted);padding:10px 0;">No orders yet. Run <code>node agent.js</code> → option 4.</div>';
-    } else {
-      inner='<div style="font-size:12px;color:var(--muted);font-family:var(--mono);margin-bottom:10px);">'+orders.length+' orders</div>';
-      inner+='<table><thead><tr><th>Buyer</th><th>Item</th><th>SKU</th><th>Order #</th><th>Date</th></tr></thead><tbody>';
-      orders.forEach(o=>{
-        const sku=o.size&&o.size!=='Unknown'?'RUG-'+o.size:'—';
-        inner+='<tr><td>'+o.buyer+'</td><td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+o.item+'</td><td style="font-family:var(--mono);font-size:11px;">'+sku+'</td><td style="font-family:var(--mono);font-size:11px;">'+o.orderId+'</td><td style="font-size:11px;color:var(--muted);">'+new Date(o.date||Date.now()).toLocaleDateString()+'</td></tr>';
-      });
-      inner+='</tbody></table>';
+    if(arrow) arrow.textContent='▾';
+    
+    // Check if dropdown already exists
+    let dropdown=card.querySelector('.account-dropdown');
+    if(!dropdown){
+      const accountData=activeCache.find(a=>a.accountId===accountId);
+      if(!accountData) return;
+      const orders=accountData.orders||[];
+      dropdown=document.createElement('div');
+      dropdown.className='account-dropdown';
+      let inner='';
+      if(!orders.length){
+        inner='<div style="font-size:13px;color:var(--muted);padding:8px 0;">No orders yet. Run <code>node agent.js</code> → option 4.</div>';
+      } else {
+        inner='<div style="font-size:12px;color:var(--muted);font-family:var(--mono);margin-bottom:10px;">'+orders.length+' orders scraped</div>';
+        inner+='<table><thead><tr><th>Buyer</th><th>Item</th><th>SKU</th><th>Order #</th><th>Date</th></tr></thead><tbody>';
+        orders.forEach(o=>{
+          const sku=o.size&&o.size!=='Unknown'?'RUG-'+o.size:'—';
+          inner+='<tr><td>'+o.buyer+'</td><td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+o.item+'</td><td style="font-family:var(--mono);font-size:11px;">'+sku+'</td><td style="font-family:var(--mono);font-size:11px;">'+o.orderId+'</td><td style="font-size:11px;color:var(--muted);">'+new Date(o.date||Date.now()).toLocaleDateString()+'</td></tr>';
+        });
+        inner+='</tbody></table>';
+      }
+      const wrapper=document.createElement('div');
+      wrapper.innerHTML=inner;
+      dropdown.appendChild(wrapper);
+      card.appendChild(dropdown);
     }
-    div.innerHTML=inner;
-    card.appendChild(div);
-    requestAnimationFrame(()=>{ div.style.maxHeight='600px'; });
+    requestAnimationFrame(()=>{ requestAnimationFrame(()=>{ dropdown.classList.add('open'); }); });
   }
 }
 
@@ -486,39 +492,15 @@ let activeCache=[];
 async function checkOneStatus(accountId, username, btn){
   if(btn){btn.textContent='...';btn.disabled=true;}
   try{
-    glog('Checking @'+username+'...','');
-    const r=await fetch('/api/accounts/'+accountId+'/check-status');
-    const d=await r.json();
-    const status=d.status||'unknown';
-    glog('@'+username+': '+status,(status==='live'?'ok':'err'));
-    // Update card status badge inline without full re-render
-    const card=document.getElementById('card-'+accountId);
-    if(card){
-      const badge=card.querySelector('.badge.status-live,.badge.status-banned,.badge.status-unknown');
-      if(badge){
-        badge.className='badge '+(status==='live'?'status-live':status==='banned'?'status-banned':'status-unknown');
-        badge.textContent=status==='live'?'● Live':status==='banned'?'✕ Banned':'? Unknown';
-      }
-    }
-    await loadAccounts();
-  }catch(e){
-    glog('Check failed for @'+username+': '+e.message,'err');
-  }
+    glog('Queued status check for @'+username+' — run node agent.js → option 3','hi');
+    await fetch('/api/accounts/'+accountId+'/check-status');
+  }catch(e){glog('Error: '+e.message,'err');}
   if(btn){btn.textContent='🔍';btn.disabled=false;}
 }
 
 async function checkAllStatuses(){
-  const r=await fetch('/api/active-this-week');
-  const d=await r.json();
-  const active=d.active||[];
-  glog('Checking '+active.length+' accounts...','hi');
-  for(const a of active){
-    const btn=document.getElementById('chk-'+a.accountId);
-    await checkOneStatus(a.accountId,a.username,btn||null);
-    await new Promise(res=>setTimeout(res,1500));
-  }
-  glog('All done ✓','ok');
-  renderActiveThisWeek();
+  glog('Run node agent.js → option 3 to check all statuses','hi');
+  alert('To check account statuses:\n\n1. Open Command Prompt\n2. Run: node agent.js\n3. Select option 3 (Check account statuses)\n\nThe agent will open each profile in a real browser and accurately detect live vs banned.');
 }
 
 async function checkDaemon(){
@@ -526,6 +508,7 @@ async function checkDaemon(){
     const r=await fetch('/api/daemon/status');
     const d=await r.json();
     updateDaemonStatus(d.alive,d.lastSeen);
+    updateRunStatus(d.runAlive);
   }catch{}
 }
 
@@ -533,15 +516,24 @@ function updateDaemonStatus(alive,lastSeen){
   const dot=document.getElementById('daemon-dot');
   const lbl=document.getElementById('daemon-label');
   if(alive){
-    dot.style.background='var(--green)';
-    dot.style.boxShadow='0 0 6px var(--green)';
-    lbl.style.color='var(--green)';
-    lbl.textContent='Daemon active';
+    dot.style.background='var(--green)';dot.style.boxShadow='0 0 6px var(--green)';
+    lbl.style.color='var(--green)';lbl.textContent='Daemon active';
   }else{
-    dot.style.background='var(--faint)';
-    dot.style.boxShadow='none';
-    lbl.style.color='var(--muted)';
-    lbl.textContent='Daemon offline';
+    dot.style.background='var(--faint)';dot.style.boxShadow='none';
+    lbl.style.color='var(--muted)';lbl.textContent='Daemon offline';
+  }
+}
+
+function updateRunStatus(alive){
+  const dot=document.getElementById('run-dot');
+  const lbl=document.getElementById('run-label');
+  if(!dot||!lbl)return;
+  if(alive){
+    dot.style.background='var(--violet)';dot.style.boxShadow='0 0 6px var(--violet)';
+    lbl.style.color='var(--violet)';lbl.textContent='RUN.bat active';
+  }else{
+    dot.style.background='var(--faint)';dot.style.boxShadow='none';
+    lbl.style.color='var(--muted)';lbl.textContent='RUN.bat offline';
   }
 }
 
@@ -554,6 +546,19 @@ function connectSSE(){
     const d=JSON.parse(e.data);
     if(d.type==='account')loadAccounts();
     if(d.type==='daemon'){updateDaemonStatus(d.status==='alive',d.lastSeen);}
+    if(d.type==='account-status'){
+      const card=document.getElementById('card-'+d.accountId);
+      if(card){
+        const badge=card.querySelector('.badge.status-live,.badge.status-banned,.badge.status-unknown');
+        if(badge){
+          const s=d.status;
+          badge.className='badge '+(s==='live'?'status-live':s==='banned'?'status-banned':'status-unknown');
+          badge.textContent=s==='live'?'● Live':s==='banned'?'✕ Banned':'? Unknown';
+        }
+      }
+      glog('@'+d.username+': '+d.status,(d.status==='live'?'ok':'err'));
+      loadAccounts();
+    }
     if(d.type==='deploy'&&d.message){
       glog(d.message,d.status==='error'?'err':d.status==='done'||d.status==='posted'?'ok':'');
       if(d.progress!==undefined){
