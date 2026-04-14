@@ -377,17 +377,22 @@ async function runStatusCheck() {
       const body = pageContent.body.toLowerCase();
 
       const isBanned = httpStatus === 404
-        || title.includes('not found')
-        || title.includes('404')
-        || title.includes("doesn't exist")
         || body.includes("that page doesn't exist")
-        || body.includes('404 page not found')
-        || body.includes("sorry, that page");
+        || body.includes("404 page not found")
+        || body.includes("sorry, that page doesn't exist");
 
       const status = isBanned ? 'banned' : 'live';
 
       // Post result back to dashboard
-      await apiPost('/api/accounts/' + account.id + '/check-status', { status });
+      const https = require('https');
+      await new Promise((resolve) => {
+        const body = JSON.stringify({ status });
+        const urlObj = new URL(DASHBOARD_URL + '/api/accounts/' + account.id + '/check-status');
+        const mod = urlObj.protocol === 'https:' ? https : require('http');
+        const req = mod.request({ hostname: urlObj.hostname, path: urlObj.pathname, method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body), 'x-api-key': '1010' } }, () => resolve());
+        req.on('error', resolve);
+        req.write(body); req.end();
+      });
       console.log(status === 'live' ? '✓ Live' : '✕ BANNED', '(HTTP ' + httpStatus + ')');
 
     } catch (err) {
