@@ -386,64 +386,121 @@ async function runScrapeOrders() {
   }
 
   const page = await context.newPage();
-  const orders = [];
+  const allOrders = [];
 
   try {
-    console.log('Loading orders page...');
-    await page.goto('https://www.depop.com/sellinghub/orders/', { waitUntil: 'networkidle', timeout: 30000 });
+    // Navigate to sold items first to establish session
+    console.log('Establishing session...');
+    await page.goto('https://www.depop.com/sellinghub/sold-items/', { waitUntil: 'networkidle', timeout: 30000 });
     await page.waitForTimeout(2000);
 
-    // Scroll to load all orders
+    // Scrape UI directly using confirmed selectors
+    console.log('Loading sold items page...');
+    await page.goto('https://www.depop.com/sellinghub/sold-items/', { waitUntil: 'networkidle', timeout: 30000 });
+    await page.waitForTimeout(2000);
+
+    // Scroll to load all orders via infinite scroll
+    console.log('Scrolling to load all orders...');
     let prevCount = 0, sameCount = 0;
-    while (sameCount < 3) {
+    while (sameCount < 4) {
       await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-      await page.waitForTimeout(1500);
-      const items = await page.$$('[data-testid*="order"], [class*="Order"], [class*="order"]');
-      if (items.length === prevCount) sameCount++;
+      await page.waitForTimeout(1800);
+      const rows = await page.$$('li.styles_receiptsListWrapper__bdK1V');
+      console.log(`  Loaded ${rows.length} orders...`);
+      if (rows.length === prevCount) sameCount++;
       else sameCount = 0;
-      prevCount = items.length;
+      prevCount = rows.length;
     }
 
-    // Extract order data
-    const orderData = await page.evaluate(() => {
-      const orders = [];
-      // Try multiple selectors for order rows
-      const rows = document.querySelectorAll('[data-testid*="order-row"], [class*="OrderItem"], li[class*="order"]');
-      rows.forEach(row => {
-        const text = row.innerText || '';
-        const lines = text.split('\n').filter(l => l.trim());
-        
-        // Try to extract size from text
-        const sizeMatch = text.match(/\b(XXL|XL|Small|Medium|Large|S|M|L)\b/i);
-        const size = sizeMatch ? sizeMatch[1].toUpperCase()
-          .replace('SMALL','S').replace('MEDIUM','M').replace('LARGE','L') : 'Unknown';
-        
-        // Try to get buyer name
-        const buyerEl = row.querySelector('[class*="buyer"], [class*="username"], [data-testid*="buyer"]');
-        const buyer = buyerEl?.textContent?.trim() || lines[0] || 'Unknown';
-        
-        // Item name
-        const itemEl = row.querySelector('[class*="item"], [class*="title"], [data-testid*="item"]');
-        const item = itemEl?.textContent?.trim() || lines[1] || 'Mystery Bundle';
-        
-        // Order ID
-        const idMatch = text.match(/#([A-Z0-9]{6,})/);
-        const orderId = idMatch ? idMatch[1] : Math.random().toString(36).substr(2,8).toUpperCase();
-        
-        orders.push({ buyer, item, size, orderId, date: new Date().toISOString() });
-      });
-      return orders;
+    // Extract basic order info from list page
+    const orderLinks = await page.evaluate(() => {
+      const rows = [...document.querySelectorAll('li.styles_receiptsListWrapper__bdK1V')];
+      return rows.map(row => {
+        const link = row.querySelector('a[aria-label^="View receipt"]');
+        const ariaLabel = link?.getAttribute('aria-label') || '';
+        const orderIdMatch = ariaLabel.match(/receipt (\d+)/i);
+        const orderId = orderIdMatch ? orderIdMatch[1] : '';
+        const buyerSpans = row.querySelectorAll('div[class*="wrapper__qw03f"] span[class*="bold"]');
+        const buyer = buyerSpans[1]?.textContent?.trim().replace('@','') || 'Unknown';
+        const dateSpan = row.querySelector('span[class*="soldOnText"] + span, span.styles_soldOnText__LXzWM ~ span');
+        const date = dateSpan?.textContent?.trim() || new Date().toLocaleDateString();
+        const price = row.querySelector('div[class*="wrapper__y_j2_"] p[class*="bold"]')?.textContent?.trim() || '';
+        const href = link?.getAttribute('href') || '';
+        return { orderId, buyer, date, price, href };
+      }).filter(o => o.orderId);
     });
 
-    orders.push(...orderData);
-    console.log(`\nFound ${orders.length} orders`);
+    console.log(`\nFound ${orderLinks.length} orders. Fetching sizes from detail pages...`);
 
-    // Save to dashboard
-    if (orders.length > 0) {
-      await apiPost('/api/accounts/' + account.id + '/orders', { orders });
+    for (let i = 0; i < orderLinks.length; i++) {
+      const order = orderLinks[i];
+      process.stdout.write(`[${i+1}/${orderLinks.length}] Order ${order.orderId}... `);
+      try {
+        await page.goto(`https://www.depop.com/sellinghub/sold-items/${order.orderId}/`, { waitUntil: 'networkidle', timeout: 20000 });
+        await page.waitForTimeout(1200);
+
+        const detail = await page.evaluate(() => {
+          const drawer = document.querySelector('aside[data-testid="simpleDrawer-visible"]') || document;
+          
+          // Item title
+          const titleEl = drawer.querySelector('p[data-testid="receipt-product-description"]');
+          const item = titleEl?.textContent?.trim() || 'Mystery Bundle';
+
+          // Size - look in summary div first
+          const summaryEl = drawer.querySelector('div[class*="summary"]');
+          let size = 'Unknown';
+          if (summaryEl) {
+            const boldPs = summaryEl.querySelectorAll('p[class*="bold"]');
+            for (const p of boldPs) {
+              const t = p.textContent?.trim().toUpperCase();
+              if (['S','M','L','XL','XXL'].includes(t)) { size = t; break; }
+            }
+          }
+          // Fallback: scan all p tags for size
+          if (size === 'Unknown') {
+            const allP = [...drawer.querySelectorAll('p')];
+            for (const p of allP) {
+              const t = p.textContent?.trim().toUpperCase();
+              if (['S','M','L','XL','XXL'].includes(t)) { size = t; break; }
+            }
+          }
+          // Last resort: extract from item title
+          if (size === 'Unknown' && item) {
+            const m = item.match(/\b(XXL|XL|Small|Medium|Large|\bS\b|\bM\b|\bL\b)\b/i);
+            if (m) size = m[1].toUpperCase().replace('SMALL','S').replace('MEDIUM','M').replace('LARGE','L');
+          }
+
+          return { item, size };
+        });
+
+        allOrders.push({
+          orderId: order.orderId,
+          buyer: order.buyer,
+          date: order.date,
+          price: order.price,
+          item: detail.item,
+          size: detail.size
+        });
+        process.stdout.write(`${detail.size} ✓\n`);
+      } catch (e) {
+        allOrders.push({ orderId: order.orderId, buyer: order.buyer, date: order.date, price: order.price, item: 'Mystery Bundle', size: 'Unknown' });
+        process.stdout.write(`error\n`);
+      }
+      await page.waitForTimeout(600);
+    }
+
+    console.log(`\n✓ Total orders found: ${allOrders.length}`);
+    if (allOrders.length > 0) {
+      await apiPost('/api/accounts/' + account.id + '/orders', { orders: allOrders });
       console.log('✓ Saved to dashboard');
+      
+      // Show size breakdown
+      const sizes = {};
+      allOrders.forEach(o => { sizes[o.size] = (sizes[o.size]||0)+1; });
+      console.log('\nSize breakdown:');
+      Object.entries(sizes).sort().forEach(([s,n]) => console.log(`  ${s}: ${n}`));
     } else {
-      console.log('No orders found. Depop may have updated their UI.');
+      console.log('No orders found.');
     }
 
   } catch (err) {
@@ -451,7 +508,20 @@ async function runScrapeOrders() {
   }
 
   await browser.close();
-  console.log('\nDone. Check the Sold & Labels tab on the dashboard.');
+  console.log('\nDone. Check Sold & Labels tab on dashboard.');
+}
+
+function extractSize(text) {
+  if (!text) return null;
+  const m = text.match(/\b(XXL|XL|Small|Medium|Large|\bS\b|\bM\b|\bL\b)\b/i);
+  return m ? m[1] : null;
+}
+
+function normalizeSize(s) {
+  if (!s) return 'Unknown';
+  const map = { 'small':'S','medium':'M','large':'L','x-large':'XL','xlarge':'XL','xx-large':'XXL','2xl':'XXL','xxlarge':'XXL' };
+  const lower = s.toLowerCase().trim();
+  return map[lower] || s.toUpperCase().trim();
 }
 
 function browser_close_placeholder() { return Promise.resolve(); }

@@ -394,37 +394,89 @@ async function renderActiveThisWeek(){
     const r=await fetch('/api/active-this-week');
     const d=await r.json();
     const active=d.active||[];
-    if(!active.length){el.innerHTML='<div class="empty"><div class="empty-icon">📡</div>No accounts deployed this week.</div>';return;}
+    if(!active.length){
+      el.innerHTML='<div class="empty"><div class="empty-icon">📡</div>No accounts connected yet. Connect accounts via the Chrome extension.</div>';
+      return;
+    }
     el.innerHTML=active.map(a=>{
-      const pct=Math.min(100,Math.floor((a.hoursLive/24)*100));
       const statusClass=a.accountStatus==='live'?'status-live':a.accountStatus==='banned'?'status-banned':'status-unknown';
       const statusText=a.accountStatus==='live'?'● Live':a.accountStatus==='banned'?'✕ Banned':'? Unknown';
-      const phaseClass=a.descriptionPhase==='launch'?'phase-launch':'phase-evergreen';
-      const phaseText=a.descriptionPhase==='launch'?'🚀 Launch ('+a.hoursLive+'h)':'🌿 Evergreen';
-      const timeLeft=a.descriptionPhase==='launch'?'Switches to evergreen in '+(24-a.hoursLive)+'h':'Running evergreen description';
+      const deployedText=a.deployedAt?'Deployed '+a.hoursLive+'h ago':'Connected '+new Date(a.connectedAt).toLocaleDateString();
       return '<div class="active-card">'
         +'<div class="active-card-header">'
-          +'<div>'
-            +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">'
-              +'<div style="font-weight:700;font-size:16px;">@'+a.username+'</div>'
+          +'<div style="flex:1;">'
+            +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">'
+              +'<div style="font-weight:700;font-size:17px;">@'+a.username+'</div>'
               +'<span class="badge '+statusClass+'">'+statusText+'</span>'
-              +'<span class="'+phaseClass+'">'+phaseText+'</span>'
+              +(a.category?'<span class="badge badge-'+a.category+'">'+(a.category==='riptag'?'riptag.co':'rugpull')+'</span>':'')
             +'</div>'
-            +'<div style="font-size:12px;color:var(--muted);font-family:var(--mono);">'+a.setName+' · '+a.posted+'/'+a.listings+' posted · Live '+a.hoursLive+'h ago</div>'
+            +'<div style="display:flex;gap:24px;font-size:13px;">'
+              +'<div><span style="color:var(--muted);">Set: </span>'+a.setName+'</div>'
+              +'<div><span style="color:var(--muted);">Posted: </span>'+a.posted+'/'+a.listings+'</div>'
+              +'<div style="color:var(--green);font-weight:600;"><span style="color:var(--muted);">Sold: </span>'+a.soldCount+'</div>'
+              +'<div style="color:var(--muted);font-family:var(--mono);font-size:11px;">'+deployedText+'</div>'
+            +'</div>'
           +'</div>'
           +'<div class="active-card-actions">'
-            +'<button class="btn sm" onclick="openDescSchedule(this)" data-setid="'+a.setId+'">📝 Descriptions</button>'
-            +'<button class="btn sm" onclick="openMassEditBtn(this)" data-accountid="'+a.accountId+'" data-setid="'+a.setId+'" data-username="'+a.username+'">✏️ Mass Edit</button>'
+            +(a.setId?'<button class="btn sm" onclick="openDescSchedule(this)" data-setid="'+a.setId+'">📝 Descriptions</button>':'')
+            +(a.setId?'<button class="btn sm" onclick="openMassEditBtn(this)" data-accountid="'+a.accountId+'" data-setid="'+a.setId+'" data-username="'+a.username+'">✏️ Mass Edit</button>':'')
             +'<button class="btn sm" onclick="checkStatusBtn(this)" data-accountid="'+a.accountId+'" data-username="'+a.username+'">🔍 Check</button>'
+            +'<button class="btn sm primary" onclick="printAllLabelsForAccount(this)" data-accountid="'+a.accountId+'" data-username="'+a.username+'">🖨️ Print Labels</button>'
           +'</div>'
         +'</div>'
-        +(a.descriptionPhase==='launch'?
-          '<div style="font-size:11px;color:var(--muted);font-family:var(--mono);margin-bottom:4px;">'+timeLeft+'</div>'
-          +'<div class="timer-bar"><div class="timer-fill" style="width:'+pct+'%"></div></div>'
-          :'<div style="font-size:11px;color:var(--green);font-family:var(--mono);">'+timeLeft+'</div>')
         +'</div>';
     }).join('');
-  }catch(err){el.innerHTML='<div class="empty">Error: '+err.message+'</div>';}
+  }catch(err){el.innerHTML='<div class="empty">Error loading accounts: '+err.message+'</div>';}
+}
+
+async function printAllLabelsForAccount(el){
+  const accountId=el.dataset.accountid;
+  const username=el.dataset.username;
+  const r=await fetch('/api/accounts/'+accountId+'/orders');
+  const d=await r.json();
+  const orders=d.orders||[];
+  if(!orders.length){
+    alert('No orders found for @'+username+'. Run "Scrape Orders" in agent.js first.');
+    return;
+  }
+  printAllLabels(orders, username);
+}
+
+function printAllLabels(orders, username){
+  const win=window.open('','_blank');
+  win.document.write(`<!DOCTYPE html><html><head><title>Labels - @${username}</title>
+<style>
+  @page{size:4in 6in;margin:0;}
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:Arial,sans-serif;}
+  .label{width:4in;height:6in;padding:0.25in;page-break-after:always;display:flex;flex-direction:column;justify-content:space-between;border:1px solid #eee;}
+  .label:last-child{page-break-after:avoid;}
+  .brand{font-size:20pt;font-weight:bold;}
+  .item{font-size:13pt;margin:8pt 0;}
+  .buyer{font-size:12pt;color:#333;}
+  .sku{font-size:18pt;font-weight:bold;background:#f0f0f0;padding:8pt;border-radius:4pt;text-align:center;margin:10pt 0;}
+  .order{font-size:10pt;color:#666;}
+  .date{font-size:10pt;color:#888;}
+</style>
+</head><body>`);
+  orders.forEach(o=>{
+    win.document.write(`<div class="label">
+      <div>
+        <div class="brand">🏄 Riptag</div>
+        <div class="item">${o.item||'Mystery Bundle'}</div>
+        <div class="buyer">To: ${o.buyer||'Customer'}</div>
+      </div>
+      <div class="sku">${o.size&&o.size!=='Unknown'?'RUG-'+o.size:'MYSTERY'}</div>
+      <div>
+        <div class="order">Order: ${o.orderId||'—'}</div>
+        <div class="date">${o.date?new Date(o.date).toLocaleDateString():''}</div>
+      </div>
+    </div>`);
+  });
+  win.document.write('</body></html>');
+  win.document.close();
+  win.focus();
+  setTimeout(()=>win.print(),500);
 }
 
 async function checkStatus(accountId, username){

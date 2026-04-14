@@ -333,7 +333,46 @@ app.post('/api/deploy/progress', async (req, res) => {
 });
 
 
-// ─── DESCRIPTION MANAGEMENT ───────────────────────────────────
+// ─── ACTIVE ACCOUNTS ──────────────────────────────────────────
+app.get('/api/active-this-week', async (req, res) => {
+  try {
+    const acctR = await pool.query('SELECT data FROM accounts ORDER BY created_at DESC');
+    const accounts = acctR.rows.map(row => row.data);
+    const setsR = await pool.query('SELECT data FROM sets ORDER BY created_at DESC');
+    const sets = setsR.rows.map(row => row.data);
+    const now = new Date();
+
+    const active = accounts.map(account => {
+      const accountSets = sets.filter(s => s.accountId === account.id);
+      const latestSet = accountSets.sort((a,b) => new Date(b.deployedAt||b.createdAt) - new Date(a.deployedAt||a.createdAt))[0];
+      const deployedAt = latestSet?.deployedAt || account.connectedAt;
+      const hoursLive = deployedAt ? Math.floor((now - new Date(deployedAt)) / (1000 * 60 * 60)) : 0;
+      const orders = account.orders || [];
+      return {
+        accountId: account.id,
+        username: account.username,
+        accountStatus: account.status || 'unknown',
+        connectedAt: account.connectedAt,
+        proxy: account.proxy || null,
+        setId: latestSet?.id || null,
+        setName: latestSet?.name || 'No set assigned',
+        category: latestSet?.category || null,
+        deployedAt: deployedAt || null,
+        hoursLive,
+        soldCount: orders.length,
+        orders,
+        launchDescription: latestSet?.launchDescription || latestSet?.description || '',
+        evergreenDescription: latestSet?.evergreenDescription || latestSet?.description || '',
+        listings: latestSet?.listings?.length || 0,
+        posted: latestSet?.listings?.filter(l => l.posted).length || 0
+      };
+    });
+
+    res.json({ active });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ─── DESCRIPTION MANAGEMENT ─────────────────────────────────── ───────────────────────────────────
 
 // Update set descriptions (launch + evergreen)
 app.put('/api/sets/:id/descriptions', async (req, res) => {
