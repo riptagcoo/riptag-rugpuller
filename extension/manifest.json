@@ -1,14 +1,15 @@
 {
   "manifest_version": 3,
   "name": "Riptag Set Manager",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "Connect Depop accounts to the Riptag Set Manager dashboard.",
   "permissions": ["cookies", "storage", "activeTab", "scripting"],
   "host_permissions": [
     "https://www.depop.com/*",
     "https://*.depop.com/*",
     "http://localhost:3099/*",
-    "https://riptag-rugpuller-production.up.railway.app/*"
+    "https://riptag-rugpuller-production.up.railway.app/*",
+    "https://*.up.railway.app/*"
   ],
   "action": {
     "default_popup": "popup.html",
