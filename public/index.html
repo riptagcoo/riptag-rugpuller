@@ -387,6 +387,8 @@ code{font-family:var(--mono);font-size:11px;background:var(--s3);padding:2px 6px
 let sets=[],accounts=[],currentSetId=null,currentPage='overview',folders=[],selectedFolder=null,editingSetId=null,schedEnabled=false,currentTab='rugpull';
 
 // ─── ACTIVE THIS WEEK ────────────────────────────────────────
+let expandedAccounts = new Set();
+
 async function renderActiveThisWeek(){
   const el=document.getElementById('active-list');
   el.innerHTML='<div class="empty"><div class="empty-icon">⏳</div>Loading...</div>';
@@ -395,286 +397,116 @@ async function renderActiveThisWeek(){
     const d=await r.json();
     const active=d.active||[];
     if(!active.length){
-      el.innerHTML='<div class="empty"><div class="empty-icon">📡</div>No accounts connected yet. Connect accounts via the Chrome extension.</div>';
+      el.innerHTML='<div class="empty"><div class="empty-icon">📡</div>No accounts connected. Use the Chrome extension to connect accounts.</div>';
       return;
     }
     el.innerHTML=active.map(a=>{
       const statusClass=a.accountStatus==='live'?'status-live':a.accountStatus==='banned'?'status-banned':'status-unknown';
       const statusText=a.accountStatus==='live'?'● Live':a.accountStatus==='banned'?'✕ Banned':'? Unknown';
       const deployedText=a.deployedAt?'Deployed '+a.hoursLive+'h ago':'Connected '+new Date(a.connectedAt).toLocaleDateString();
-      return '<div class="active-card">'
-        +'<div class="active-card-header">'
+      const isExpanded=expandedAccounts.has(a.accountId);
+      const orders=a.orders||[];
+      
+      let ordersHtml='';
+      if(isExpanded){
+        ordersHtml='<div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border);">';
+        if(!orders.length){
+          ordersHtml+='<div style="font-size:13px;color:var(--muted);padding:10px 0;">No orders scraped yet. Run <code>node agent.js</code> → option 4 to scrape orders.</div>';
+        } else {
+          ordersHtml+='<div style="font-size:12px;color:var(--muted);font-family:var(--mono);margin-bottom:10px;">'+orders.length+' orders scraped · Last updated '+new Date(a.ordersScrapedAt||Date.now()).toLocaleDateString()+'</div>';
+          ordersHtml+='<table><thead><tr><th>Buyer</th><th>Item</th><th>SKU</th><th>Order #</th><th>Date</th></tr></thead><tbody>';
+          orders.forEach(o=>{
+            const sku=o.size&&o.size!=='Unknown'?'RUG-'+o.size:'—';
+            ordersHtml+='<tr><td>'+o.buyer+'</td><td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+o.item+'</td><td style="font-family:var(--mono);font-size:11px;">'+sku+'</td><td style="font-family:var(--mono);font-size:11px;">'+o.orderId+'</td><td style="font-size:11px;color:var(--muted);">'+new Date(o.date||Date.now()).toLocaleDateString()+'</td></tr>';
+          });
+          ordersHtml+='</tbody></table>';
+        }
+        ordersHtml+='</div>';
+      }
+
+      return '<div class="active-card" id="card-'+a.accountId+'">'
+        +'<div class="active-card-header" data-acid="'+a.accountId+'" onclick="toggleAccount(this.dataset.acid)" style="cursor:pointer;">'
           +'<div style="flex:1;">'
             +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">'
-              +'<div style="font-weight:700;font-size:17px;">@'+a.username+'</div>'
+              +'<div style="font-size:18px;">'+( isExpanded?'▾':'▸')+'</div>'
+              +'<div style="font-weight:700;font-size:16px;">@'+a.username+'</div>'
               +'<span class="badge '+statusClass+'">'+statusText+'</span>'
               +(a.category&&a.category!=='null'?'<span class="badge badge-'+a.category+'">'+(a.category==='riptag'?'riptag.co':'rugpull')+'</span>':'')
             +'</div>'
-            +'<div style="display:flex;gap:24px;font-size:13px;">'
+            +'<div style="display:flex;gap:20px;font-size:12px;">'
               +'<div><span style="color:var(--muted);">Set: </span>'+a.setName+'</div>'
               +'<div><span style="color:var(--muted);">Posted: </span>'+a.posted+'/'+a.listings+'</div>'
               +'<div style="color:var(--green);font-weight:600;"><span style="color:var(--muted);">Sold: </span>'+a.soldCount+'</div>'
               +'<div style="color:var(--muted);font-family:var(--mono);font-size:11px;">'+deployedText+'</div>'
             +'</div>'
           +'</div>'
-          +'<div class="active-card-actions">'
-            +(a.setId?'<button class="btn sm" onclick="openDescSchedule(this)" data-setid="'+a.setId+'">📝 Descriptions</button>':'')
-            +(a.setId?'<button class="btn sm" onclick="openMassEditBtn(this)" data-accountid="'+a.accountId+'" data-setid="'+a.setId+'" data-username="'+a.username+'">✏️ Mass Edit</button>':'')
-            +'<button class="btn sm" onclick="checkStatusBtn(this)" data-accountid="'+a.accountId+'" data-username="'+a.username+'">🔍 Check</button>'
-            +'<button class="btn sm primary" onclick="printAllLabelsForAccount(this)" data-accountid="'+a.accountId+'" data-username="'+a.username+'">🖨️ Print Labels</button>'
+          +'<div class="active-card-actions" onclick="event.stopPropagation();">'
+            +(a.setId&&a.setId!=='null'?'<button class="btn sm" onclick="openDescSchedule(this)" data-setid="'+a.setId+'">📝 Desc</button>':'')
+            +(a.setId&&a.setId!=='null'?'<button class="btn sm" onclick="openMassEditBtn(this)" data-accountid="'+a.accountId+'" data-setid="'+a.setId+'" data-username="'+a.username+'">✏️ Edit</button>':'')
+            +'<button class="btn sm" id="chk-'+a.accountId+'" data-acid="'+a.accountId+'" data-uname="'+a.username+'" onclick="checkOneStatus(this.dataset.acid,this.dataset.uname,this)">🔍</button>'
+            +'<button class="btn sm primary" onclick="printAllLabelsForAccount(this)" data-accountid="'+a.accountId+'" data-username="'+a.username+'">🖨️ Print</button>'
           +'</div>'
         +'</div>'
+        +ordersHtml
         +'</div>';
     }).join('');
-  }catch(err){el.innerHTML='<div class="empty">Error loading accounts: '+err.message+'</div>';}
+  }catch(err){el.innerHTML='<div class="empty">Error: '+err.message+'</div>';}
 }
 
-async function printAllLabelsForAccount(el){
-  const accountId=el.dataset.accountid;
-  const username=el.dataset.username;
-  const r=await fetch('/api/accounts/'+accountId+'/orders');
-  const d=await r.json();
-  const orders=d.orders||[];
-  if(!orders.length){
-    alert('No orders found for @'+username+'. Run "Scrape Orders" in agent.js first.');
-    return;
-  }
-  printAllLabels(orders, username);
+function toggleAccount(accountId){
+  if(expandedAccounts.has(accountId)) expandedAccounts.delete(accountId);
+  else expandedAccounts.add(accountId);
+  renderActiveThisWeek();
 }
 
-function printAllLabels(orders, username){
-  const win=window.open('','_blank');
-  win.document.write(`<!DOCTYPE html><html><head><title>Labels - @${username}</title>
-<style>
-  @page{size:4in 6in;margin:0;}
-  *{box-sizing:border-box;margin:0;padding:0;}
-  body{font-family:Arial,sans-serif;}
-  .label{width:4in;height:6in;padding:0.25in;page-break-after:always;display:flex;flex-direction:column;justify-content:space-between;border:1px solid #eee;}
-  .label:last-child{page-break-after:avoid;}
-  .brand{font-size:20pt;font-weight:bold;}
-  .item{font-size:13pt;margin:8pt 0;}
-  .buyer{font-size:12pt;color:#333;}
-  .sku{font-size:18pt;font-weight:bold;background:#f0f0f0;padding:8pt;border-radius:4pt;text-align:center;margin:10pt 0;}
-  .order{font-size:10pt;color:#666;}
-  .date{font-size:10pt;color:#888;}
-</style>
-</head><body>`);
-  orders.forEach(o=>{
-    win.document.write(`<div class="label">
-      <div>
-        <div class="brand">🏄 Riptag</div>
-        <div class="item">${o.item||'Mystery Bundle'}</div>
-        <div class="buyer">To: ${o.buyer||'Customer'}</div>
-      </div>
-      <div class="sku">${o.size&&o.size!=='Unknown'?'RUG-'+o.size:'MYSTERY'}</div>
-      <div>
-        <div class="order">Order: ${o.orderId||'—'}</div>
-        <div class="date">${o.date?new Date(o.date).toLocaleDateString():''}</div>
-      </div>
-    </div>`);
-  });
-  win.document.write('</body></html>');
-  win.document.close();
-  win.focus();
-  setTimeout(()=>win.print(),500);
-}
-
-async function checkStatus(accountId, username){
-  glog('Checking @'+username+'...','hi');
-  // Open Depop profile in a new tab to check if it exists
-  const win=window.open('https://www.depop.com/'+username+'/','_depopcheck');
-  // Wait a moment then check
-  setTimeout(async()=>{
-    try{win.close();}catch{}
-    // Ask user if it loaded
-    const alive=confirm('@'+username+' — did the Depop profile page load normally?\n\nClick OK if the account is LIVE\nClick Cancel if it showed an error/banned page');
-    const status=alive?'live':'banned';
+async function checkOneStatus(accountId, username, btn){
+  btn.textContent='...';btn.disabled=true;
+  try{
+    // Open profile in hidden iframe to check if it exists
+    const iframe=document.createElement('iframe');
+    iframe.style.cssText='position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;';
+    iframe.src='https://www.depop.com/'+username+'/';
+    document.body.appendChild(iframe);
+    
+    await new Promise(res=>setTimeout(res,4000));
+    
+    let status='unknown';
+    try{
+      const iDoc=iframe.contentDocument||iframe.contentWindow?.document;
+      const bodyText=iDoc?.body?.innerText||'';
+      const title=iDoc?.title||'';
+      if(bodyText.includes('404')||bodyText.includes("doesn't exist")||title.includes('404')||title.includes('not found')){
+        status='banned';
+      } else if(bodyText.length>100){
+        status='live';
+      }
+    }catch(e){
+      // Cross-origin means it loaded (live)
+      status='live';
+    }
+    document.body.removeChild(iframe);
+    
     await fetch('/api/accounts/'+accountId+'/status',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({status})});
-    glog('@'+username+' marked as '+status,(status==='live'?'ok':'err'));
+    glog('@'+username+': '+status,(status==='live'?'ok':'err'));
     await loadAccounts();
     renderActiveThisWeek();
-  },3000);
+  }catch(e){
+    glog('Check failed for @'+username+': '+e.message,'err');
+  }
+  btn.textContent='🔍';btn.disabled=false;
 }
 
 async function checkAllStatuses(){
-  glog('Checking all account statuses...','hi');
   const r=await fetch('/api/active-this-week');
   const d=await r.json();
-  for(const a of d.active||[]){
-    await checkStatus(a.accountId,a.username);
-    await new Promise(res=>setTimeout(res,500));
+  const active=d.active||[];
+  glog('Checking '+active.length+' accounts...','hi');
+  for(const a of active){
+    const btn=document.getElementById('chk-'+a.accountId);
+    await checkOneStatus(a.accountId,a.username,btn||{textContent:'',disabled:false});
+    await new Promise(res=>setTimeout(res,2000));
   }
-}
-
-function openMassEdit(accountId,setId,username){
-  document.getElementById('me-account-id').value=accountId;
-  document.getElementById('me-set-id').value=setId;
-  document.getElementById('me-account-label').textContent='Updating all listings for @'+username;
-  document.getElementById('me-description').value='';
-  document.getElementById('mass-edit-modal').classList.remove('hidden');
-}
-
-async function confirmMassEdit(){
-  const accountId=document.getElementById('me-account-id').value;
-  const setId=document.getElementById('me-set-id').value;
-  const description=document.getElementById('me-description').value.trim();
-  if(!description){alert('Enter a description first.');return;}
-  if(!confirm('This will update ALL listings on this account. Continue?'))return;
-  
-  await fetch('/api/accounts/'+accountId+'/mass-edit',{
-    method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({description,setId})
-  });
-  closeModal('mass-edit-modal');
-  glog('Mass edit queued — run agent.js and select Mass Edit to execute','hi');
-  alert('Mass edit queued! Run node agent.js and select "Mass Edit" option to execute.');
-}
-
-async function openDescScheduleById(setId){
-  const set=sets.find(s=>s.id===setId);
-  if(!set)return;
-  document.getElementById('ds-set-id').value=setId;
-  document.getElementById('ds-launch').value=set.launchDescription||set.description||'';
-  document.getElementById('ds-evergreen').value=set.evergreenDescription||set.description||'';
-  document.getElementById('desc-sched-modal').classList.remove('hidden');
-}
-
-async function saveDescSchedule(){
-  const setId=document.getElementById('ds-set-id').value;
-  const launchDescription=document.getElementById('ds-launch').value.trim();
-  const evergreenDescription=document.getElementById('ds-evergreen').value.trim();
-  await fetch('/api/sets/'+setId+'/descriptions',{
-    method:'PUT',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({launchDescription,evergreenDescription})
-  });
-  closeModal('desc-sched-modal');
-  await loadSets();
-  glog('Description schedule saved','ok');
-}
-
-// ─── SOLD & LABELS ───────────────────────────────────────────
-function initSoldPage(){
-  const sel=document.getElementById('sold-account-select');
-  sel.innerHTML='<option value="">— Select account —</option>'+accounts.map(a=>'<option value="'+a.id+'">@'+a.username+'</option>').join('');
-}
-
-async function loadOrders(){
-  const accountId=document.getElementById('sold-account-select').value;
-  if(!accountId)return;
-  const el=document.getElementById('sold-content');
-  el.innerHTML='<div class="empty"><div class="empty-icon">⏳</div>Loading orders...</div>';
-  const r=await fetch('/api/accounts/'+accountId+'/orders');
-  const d=await r.json();
-  const orders=d.orders||[];
-  if(!orders.length){
-    el.innerHTML='<div class="empty"><div class="empty-icon">📦</div>No orders yet. Click Scrape Orders to pull from Depop.</div>';
-    document.getElementById('sold-stats').style.display='none';
-    return;
-  }
-  currentOrders=orders;
-  renderOrders(orders, d.scrapedAt);
-}
-
-function renderOrders(orders, scrapedAt){
-  const sizes=['S','M','L','XL','XXL'];
-  const grouped={};
-  sizes.forEach(s=>grouped[s]=[]);
-  grouped['Other']=[];
-  orders.forEach(o=>{
-    const size=(o.size||'').toUpperCase().trim();
-    if(sizes.includes(size)) grouped[size].push(o);
-    else grouped['Other'].push(o);
-  });
-
-  // Stats
-  const statsEl=document.getElementById('sold-stats');
-  statsEl.style.display='grid';
-  statsEl.innerHTML=sizes.concat(['Other']).filter(s=>grouped[s].length>0).map(s=>
-    '<div class="stat"><div class="stat-n green">'+grouped[s].length+'</div><div class="stat-lbl">size '+s+'</div></div>'
-  ).join('')+'<div class="stat"><div class="stat-n">'+orders.length+'</div><div class="stat-lbl">total orders</div></div>';
-
-  // Buttons + tables per size
-  let html='<div style="font-size:11px;color:var(--muted);font-family:var(--mono);margin-bottom:16px;">Scraped '+new Date(scrapedAt).toLocaleString()+'</div>';
-  
-  sizes.concat(['Other']).forEach(size=>{
-    const group=grouped[size];
-    if(!group.length)return;
-    html+='<div class="card" style="margin-bottom:14px;">'
-      +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">'
-        +'<div class="card-title" style="margin:0;">Size '+size+' — '+group.length+' orders</div>'
-        +'<button class="btn primary sm" onclick="printLabels(this.dataset.size)" data-size="'+size+'">🖨️ Print '+size+' Labels</button>'
-      +'</div>'
-      +'<table><thead><tr><th>Buyer</th><th>Item</th><th>Size</th><th>Order #</th><th>Date</th></tr></thead><tbody>'
-      +group.map(o=>'<tr><td>'+o.buyer+'</td><td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+o.item+'</td><td><span style="font-family:var(--mono);font-size:12px;background:var(--s3);padding:2px 8px;border-radius:4px;">'+o.size+'</span></td><td style="font-family:var(--mono);font-size:12px;">'+o.orderId+'</td><td style="font-size:12px;color:var(--muted);">'+new Date(o.date).toLocaleDateString()+'</td></tr>').join('')
-      +'</tbody></table></div>';
-  });
-
-  document.getElementById('sold-content').innerHTML=html;
-}
-
-function printLabels(el){
-  const size = typeof el === 'string' ? el : el.dataset.size;
-  const sizeKey = typeof size === 'string' ? size : size.dataset?.size;
-  const orders=currentOrders.filter(o=>(o.size||'').toUpperCase().trim()===sizeKey);
-  if(!orders.length){alert('No orders for size '+size);return;}
-  
-  const win=window.open('','_blank');
-  win.document.write(`<!DOCTYPE html><html><head><title>Labels - Size ${size}</title>
-<style>
-  @page { size: 4in 6in; margin: 0; }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: Arial, sans-serif; }
-  .label {
-    width: 4in; height: 6in;
-    padding: 0.25in;
-    page-break-after: always;
-    border: 1px solid #ccc;
-    display: flex; flex-direction: column; justify-content: space-between;
-  }
-  .label:last-child { page-break-after: avoid; }
-  .brand { font-size: 18pt; font-weight: bold; margin-bottom: 8pt; }
-  .size-box { 
-    background: #000; color: #fff; 
-    font-size: 48pt; font-weight: bold; 
-    text-align: center; padding: 12pt;
-    border-radius: 4pt; margin: 12pt 0;
-  }
-  .item { font-size: 12pt; margin-bottom: 6pt; }
-  .buyer { font-size: 11pt; color: #444; }
-  .order { font-size: 10pt; color: #666; margin-top: 8pt; }
-  .date { font-size: 10pt; color: #888; }
-</style>
-</head><body>`);
-  
-  orders.forEach(o=>{
-    win.document.write(`
-    <div class="label">
-      <div>
-        <div class="brand">🏄 Riptag</div>
-        <div class="item">${o.item||'Mystery Bundle'}</div>
-        <div class="buyer">To: ${o.buyer||'Customer'}</div>
-      </div>
-      <div class="size-box">${size}</div>
-      <div>
-        <div class="order">Order: ${o.orderId||'—'}</div>
-        <div class="date">${new Date(o.date||Date.now()).toLocaleDateString()}</div>
-      </div>
-    </div>`);
-  });
-  
-  win.document.write('</body></html>');
-  win.document.close();
-  win.focus();
-  setTimeout(()=>win.print(), 500);
-}
-
-let currentOrders=[];
-
-async function scrapeOrders(){
-  const accountId=document.getElementById('sold-account-select').value;
-  if(!accountId){alert('Select an account first.');return;}
-  glog('Scraping orders — run agent.js and select "Scrape Orders"','hi');
-  alert('Open Command Prompt and run:\n\nnode agent.js\n\nThen select "Scrape Orders" option.');
+  glog('All status checks complete','ok');
 }
 
 async function checkDaemon(){
