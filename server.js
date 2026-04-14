@@ -359,7 +359,7 @@ app.get('/api/active-this-week', async (req, res) => {
         category: latestSet?.category || null,
         deployedAt: deployedAt || null,
         hoursLive,
-        soldCount: orders.length,
+        soldCount: account.soldCount !== undefined ? account.soldCount : orders.length,
         orders,
         launchDescription: latestSet?.launchDescription || latestSet?.description || '',
         evergreenDescription: latestSet?.evergreenDescription || latestSet?.description || '',
@@ -403,6 +403,7 @@ app.put('/api/accounts/:id/status', async (req, res) => {
     const account = r.rows[0].data;
     account.status = req.body.status;
     account.statusCheckedAt = new Date().toISOString();
+    if (req.body.soldCount !== undefined) account.soldCount = req.body.soldCount;
     await pool.query('UPDATE accounts SET data=$1 WHERE id=$2', [JSON.stringify(account), req.params.id]);
     broadcast({ type: 'account-status', accountId: req.params.id, status: req.body.status });
     res.json({ ok: true });
@@ -473,6 +474,48 @@ app.post('/api/sets/:id/mark-switched', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+
+// ─── SERVER-SIDE STATUS CHECK ────────────────────────────────
+app.get('/api/accounts/:id/check-status', async (req, res) => {
+  try {
+    const r = await pool.query('SELECT data FROM accounts WHERE id=$1', [req.params.id]);
+    if (!r.rows.length) return res.status(404).json({ error: 'Not found' });
+    const account = r.rows[0].data;
+    
+    // Check if Depop profile exists from server side (no CORS)
+    const https = require('https');
+    const checkUrl = `https://www.depop.com/${account.username}/`;
+    
+    const status = await new Promise((resolve) => {
+      const req2 = https.get(checkUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'text/html'
+        }
+      }, (res2) => {
+        let body = '';
+        res2.on('data', chunk => { body += chunk; if (body.length > 2000) res2.destroy(); });
+        res2.on('end', () => {
+          const is404 = res2.statusCode === 404 || body.includes("doesn't exist") || body.includes('404') || body.includes('Page not found');
+          resolve(is404 ? 'banned' : 'live');
+        });
+        res2.on('close', () => {
+          const is404 = res2.statusCode === 404 || body.includes("doesn't exist") || body.includes('404');
+          resolve(is404 ? 'banned' : 'live');
+        });
+      });
+      req2.on('error', () => resolve('unknown'));
+      req2.setTimeout(8000, () => { req2.destroy(); resolve('unknown'); });
+    });
+
+    // Save status
+    account.status = status;
+    account.statusCheckedAt = new Date().toISOString();
+    await pool.query('UPDATE accounts SET data=$1 WHERE id=$2', [JSON.stringify(account), account.id]);
+    broadcast({ type: 'account-status', accountId: account.id, username: account.username, status });
+    res.json({ status, username: account.username });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
 
 // ─── ORDERS / LABELS ──────────────────────────────────────────
 
