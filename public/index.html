@@ -745,39 +745,38 @@ async function renderActiveThisWeek(){
     }
     activeCache=active;
     el.innerHTML=active.map(a=>{
-      const statusClass=a.accountStatus==='live'?'status-live':a.accountStatus==='banned'?'status-banned':'status-unknown';
-      const statusText=a.accountStatus==='live'?'● Live':a.accountStatus==='banned'?'✕ Banned':'? Unknown';
-      const deployedText=a.deployedAt?'Deployed '+a.hoursLive+'h ago':'Connected '+new Date(a.connectedAt).toLocaleDateString();
-      const isExpanded=expandedAccounts.has(a.accountId);
-      const orders=a.orders||[];
-      
-      const ordersHtml='';
-
-      return '<div class="active-card" id="card-'+a.accountId+'">'
-        +'<div class="active-card-header" data-acid="'+a.accountId+'" onclick="toggleAccount(this.dataset.acid)" style="cursor:pointer;">'
-          +'<div style="flex:1;">'
-            +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">'
-              +'<div class="expand-arrow" style="font-size:18px;transition:transform 0.2s;">'+(isExpanded?'▾':'▸')+'</div>'
-              +'<div style="font-weight:700;font-size:16px;">@'+a.username+'</div>'
-              +'<span class="badge '+statusClass+'">'+statusText+'</span>'
-              +(a.category&&a.category!=='null'?'<span class="badge badge-'+a.category+'">'+(a.category==='riptag'?'riptag.co':'rugpull')+'</span>':'')
-            +'</div>'
-            +'<div style="display:flex;gap:20px;font-size:12px;">'
-              +'<div><span style="color:var(--muted);">Set: </span>'+a.setName+'</div>'
-              +'<div><span style="color:var(--muted);">Posted: </span>'+a.posted+'/'+a.listings+'</div>'
-              +'<div style="color:var(--green);font-weight:600;"><span style="color:var(--muted);">Sold: </span>'+a.soldCount+'</div>'
-              +'<div style="color:var(--muted);font-family:var(--mono);font-size:11px;">'+deployedText+'</div>'
-            +'</div>'
-          +'</div>'
-          +'<div class="active-card-actions" onclick="event.stopPropagation();">'
-            +(a.setId&&a.setId!=='null'?'<button class="btn sm" onclick="openDescSchedule(this)" data-setid="'+a.setId+'">📝 Desc</button>':'')
-            +(a.setId&&a.setId!=='null'?'<button class="btn sm" onclick="openMassEditBtn(this)" data-accountid="'+a.accountId+'" data-setid="'+a.setId+'" data-username="'+a.username+'">✏️ Edit</button>':'')
-            +'<button class="btn sm" id="chk-'+a.accountId+'" data-acid="'+a.accountId+'" data-uname="'+a.username+'" onclick="checkOneStatus(this.dataset.acid,this.dataset.uname,this)">🔍</button>'
-            +'<button class="btn sm primary" onclick="printAllLabelsForAccount(this)" data-accountid="'+a.accountId+'" data-username="'+a.username+'">🖨️ Print</button>'
-          +'</div>'
-        +'</div>'
-        +ordersHtml
-        +'</div>';
+      const sc=a.accountStatus==='live'?'status-live':a.accountStatus==='banned'?'status-banned':'status-unknown';
+      const st=a.accountStatus==='live'?'● Live':a.accountStatus==='banned'?'✕ Banned':'? Unknown';
+      const dt=a.deployedAt?a.hoursLive+'h ago':'—';
+      const ie=expandedAccounts.has(a.accountId);
+      const av=a.username.substring(0,2).toUpperCase();
+      const catBadge=a.category&&a.category!=='null'?`<span class="badge badge-${a.category}">${a.category==='riptag'?'riptag.co':'rugpull'}</span>`:'';
+      const descBtn=a.setId&&a.setId!=='null'?`<button class="btn xs ghost" onclick="openDescSchedule(this)" data-setid="${a.setId}">Desc</button>`:'';
+      const editBtn=a.setId&&a.setId!=='null'?`<button class="btn xs ghost" onclick="openMassEditBtn(this)" data-accountid="${a.accountId}" data-setid="${a.setId}" data-username="${a.username}">Edit</button>`:'';
+      return `<div class="acct-card" id="card-${a.accountId}">
+  <div style="display:flex;align-items:center;gap:16px;padding:20px 22px;cursor:pointer;" data-acid="${a.accountId}" onclick="toggleAccount(this.dataset.acid)">
+    <div style="width:46px;height:46px;border-radius:12px;background:linear-gradient(135deg,rgba(0,229,160,0.12),rgba(167,139,250,0.08));border:1px solid rgba(0,229,160,0.18);display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;color:var(--green);flex-shrink:0;">${av}</div>
+    <div style="flex:1;min-width:0;">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+        <span style="font-size:16px;font-weight:700;letter-spacing:-0.02em;">@${a.username}</span>
+        <span class="badge ${sc}">${st}</span>
+        ${catBadge}
+      </div>
+      <div style="display:flex;gap:28px;">
+        <div><div style="font-size:10px;color:var(--ink-3);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:3px;">Set</div><div style="font-size:12px;color:var(--ink-2);">${a.setName}</div></div>
+        <div><div style="font-size:10px;color:var(--ink-3);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:3px;">Posted</div><div style="font-size:12px;color:var(--ink);">${a.posted}/${a.listings}</div></div>
+        <div><div style="font-size:10px;color:var(--ink-3);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:3px;">Sold</div><div style="font-size:13px;font-weight:700;color:var(--green);">${a.soldCount}</div></div>
+        <div><div style="font-size:10px;color:var(--ink-3);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:3px;">Live</div><div style="font-size:12px;color:var(--ink-3);font-family:var(--mono);">${dt}</div></div>
+      </div>
+    </div>
+    <div style="display:flex;gap:6px;flex-shrink:0;" onclick="event.stopPropagation();">
+      ${descBtn}${editBtn}
+      <button class="btn xs ghost" id="chk-${a.accountId}" data-acid="${a.accountId}" data-uname="${a.username}" onclick="checkOneStatus(this.dataset.acid,this.dataset.uname,this)">Check</button>
+      <button class="btn xs primary" onclick="printAllLabelsForAccount(this)" data-accountid="${a.accountId}" data-username="${a.username}">🖨 Print</button>
+    </div>
+    <div class="expand-arrow" style="color:var(--ink-3);font-size:12px;margin-left:8px;flex-shrink:0;">${ie?'▾':'▸'}</div>
+  </div>
+</div>`;
     }).join('');
   }catch(err){el.innerHTML='<div class="empty">Error: '+err.message+'</div>';}
 }
