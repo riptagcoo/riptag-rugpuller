@@ -195,55 +195,105 @@ app.post('/api/sets/:id/build-listings', async (req, res) => {
 
     const drive = google.drive({ version: 'v3', auth: getOAuth2Client(req.session.googleTokens) });
 
-    async function listChildren(folderId, type='all') {
-      const q = type === 'folders'
-        ? `'${folderId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`
-        : type === 'images'
-        ? `'${folderId}' in parents and mimeType contains 'image/' and trashed=false`
-        : `'${folderId}' in parents and trashed=false`;
-      const r = await drive.files.list({ q, fields: 'files(id,name,mimeType,thumbnailLink)', orderBy: 'name', pageSize: 200 });
-      return r.data.files;
+    // Get all photos in flat folder
+    const allPhotos = [];
+    let pageToken = null;
+    do {
+      const params = {
+        q: `'${set.driveFolder}' in parents and mimeType contains 'image/' and trashed=false`,
+        fields: 'nextPageToken, files(id,name,thumbnailLink)',
+        orderBy: 'name', pageSize: 1000
+      };
+      if (pageToken) params.pageToken = pageToken;
+      const pr = await drive.files.list(params);
+      allPhotos.push(...(pr.data.files || []));
+      pageToken = pr.data.nextPageToken;
+    } while (pageToken);
+
+    if (!allPhotos.length) return res.status(400).json({ error: 'No photos found in folder' });
+
+    // Parse naming pattern: {prefix}-{group}.{position}
+    // e.g. set2-1.1, set2-1.2, set3-2.4 etc.
+    const photoMap = {}; // groupNum -> { posNum -> photo }
+    const unparsed = [];
+
+    for (const photo of allPhotos) {
+      // Match pattern: anything-{number}.{number} (with any extension)
+      const match = photo.name.match(/^.+-(\d+)\.(\d+)\./);
+      if (match) {
+        const groupNum = parseInt(match[1]);
+        const posNum = parseInt(match[2]);
+        if (!photoMap[groupNum]) photoMap[groupNum] = {};
+        photoMap[groupNum][posNum] = photo;
+      } else {
+        unparsed.push(photo);
+      }
     }
 
-    const sizeAliases = { 's':'S','small':'S','m':'M','medium':'M','med':'M','l':'L','large':'L','xl':'XL','x-large':'XL','xlarge':'XL','xxl':'XXL','2xl':'XXL' };
-    const groupFolders = await listChildren(set.driveFolder, 'folders');
+    const groupNums = Object.keys(photoMap).map(Number).sort((a,b) => a-b);
+    
+    if (!groupNums.length) {
+      return res.status(400).json({ error: 'Could not parse photo names. Expected format: setname-{group}.{position}.ext (e.g. set2-1.1.heic)' });
+    }
+
+    // Size position mapping: pos 1=S, 2=M, 3=L, 4=XL, 5=XXL
+    const sizePositions = { 'S': 1, 'M': 2, 'L': 3, 'XL': 4, 'XXL': 5 };
     const listings = [];
 
-    if (groupFolders.length === 0) {
-      // Flat mode
-      const photos = await listChildren(set.driveFolder, 'images');
-      const groupSize = set.groupSize || 4;
-      for (let i = 0; i < photos.length; i += groupSize) {
-        const group = photos.slice(i, i + groupSize);
-        const groupId = uuid();
-        for (const size of set.sizes) {
-          listings.push({ id: uuid(), groupId, groupIndex: Math.floor(i/groupSize), title: set.name, description: set.description, price: set.price, size, photos: group.map(p => ({ driveId: p.id, name: p.name, thumb: p.thumbnailLink })), customDescription: null, customPrice: null, posted: false });
+    for (let gi = 0; gi < groupNums.length; gi++) {
+      const groupNum = groupNums[gi];
+      const groupPhotos = photoMap[groupNum];
+      const groupId = uuid();
+
+      // Get all photos from OTHER groups for filler
+      const otherPhotos = [];
+      for (const otherGroup of groupNums) {
+        if (otherGroup !== groupNum) {
+          otherPhotos.push(...Object.values(photoMap[otherGroup]));
         }
       }
-    } else {
-      // Structured mode: Group > Size > Photos
-      for (let gi = 0; gi < groupFolders.length; gi++) {
-        const groupId = uuid();
-        const sizeFolders = await listChildren(groupFolders[gi].id, 'folders');
-        if (sizeFolders.length === 0) {
-          const photos = await listChildren(groupFolders[gi].id, 'images');
-          for (const size of set.sizes) {
-            listings.push({ id: uuid(), groupId, groupIndex: gi, title: set.name, description: set.description, price: set.price, size, photos: photos.map(p => ({ driveId: p.id, name: p.name, thumb: p.thumbnailLink })), customDescription: null, customPrice: null, posted: false });
-          }
-        } else {
-          for (const sf of sizeFolders) {
-            const normalizedSize = sizeAliases[sf.name.trim().toLowerCase()] || sf.name.trim().toUpperCase();
-            if (!set.sizes.includes(normalizedSize)) continue;
-            const photos = await listChildren(sf.id, 'images');
-            listings.push({ id: uuid(), groupId, groupIndex: gi, title: set.name, description: set.description, price: set.price, size: normalizedSize, photos: photos.map(p => ({ driveId: p.id, name: p.name, thumb: p.thumbnailLink })), customDescription: null, customPrice: null, posted: false });
-          }
-        }
+      // Shuffle other photos for randomness
+      for (let i = otherPhotos.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [otherPhotos[i], otherPhotos[j]] = [otherPhotos[j], otherPhotos[i]];
+      }
+
+      for (const size of set.sizes) {
+        const pos = sizePositions[size] || 1;
+        
+        // Cover photo: use position for this size, fallback to pos 1, fallback to any group photo
+        let coverPhoto = groupPhotos[pos] || groupPhotos[1] || Object.values(groupPhotos)[0];
+        
+        // Fill remaining 3 slots with random photos from other groups
+        const fillerPhotos = otherPhotos.slice(0, 3);
+        
+        const listingPhotos = [coverPhoto, ...fillerPhotos]
+          .filter(Boolean)
+          .map(p => ({ driveId: p.id, name: p.name, thumb: p.thumbnailLink }));
+
+        listings.push({
+          id: uuid(), groupId, groupIndex: gi,
+          title: set.name,
+          description: set.description,
+          price: set.price,
+          size,
+          photos: listingPhotos,
+          customDescription: null, customPrice: null, posted: false
+        });
       }
     }
 
     set.listings = listings;
     await pool.query('UPDATE sets SET data=$1 WHERE id=$2', [JSON.stringify(set), set.id]);
-    res.json({ ok: true, count: listings.length, groups: groupFolders.length, mode: groupFolders.length ? 'structured' : 'flat' });
+    res.json({ 
+      ok: true, 
+      count: listings.length, 
+      groups: groupNums.length,
+      mode: 'flat-named',
+      parsed: groupNums.length,
+      unparsed: unparsed.length,
+      total: allPhotos.length
+    });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
