@@ -379,10 +379,10 @@ app.get('/api/active-this-week', async (req, res) => {
     const accounts = acctR.rows.map(row => row.data);
     
     const now = new Date();
-    const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     
+    // Show ALL sets that have been deployed (no time limit)
     const active = sets
-      .filter(s => s.deployedAt && new Date(s.deployedAt) > weekAgo)
+      .filter(s => s.deployedAt && s.accountId)
       .map(s => {
         const account = accounts.find(a => a.id === s.accountId);
         const deployedAt = new Date(s.deployedAt);
