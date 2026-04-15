@@ -581,6 +581,98 @@ app.get('/api/accounts/:id/orders', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+
+// ─── RUGPULL TRACKER ──────────────────────────────────────────
+app.get('/api/tracker', async (req, res) => {
+  try {
+    await pool.query(`CREATE TABLE IF NOT EXISTS tracker (
+      id TEXT PRIMARY KEY,
+      data JSONB NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+    const r = await pool.query('SELECT data FROM tracker ORDER BY created_at DESC');
+    res.json(r.rows.map(row => row.data));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/tracker', async (req, res) => {
+  try {
+    await pool.query(`CREATE TABLE IF NOT EXISTS tracker (id TEXT PRIMARY KEY, data JSONB NOT NULL, created_at TIMESTAMPTZ DEFAULT NOW())`);
+    const { v4: uid } = require('uuid');
+    const id = uid();
+    const entry = {
+      id,
+      username: req.body.username || '',
+      email: req.body.email || '',
+      password: req.body.password || '',
+      authId: req.body.authId || '',
+      bannedAt: req.body.bannedAt || null,
+      earnings: req.body.earnings || '0',
+      notes: req.body.notes || '',
+      createdAt: new Date().toISOString()
+    };
+    await pool.query('INSERT INTO tracker (id, data) VALUES ($1, $2)', [id, JSON.stringify(entry)]);
+    res.json(entry);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.put('/api/tracker/:id', async (req, res) => {
+  try {
+    const r = await pool.query('SELECT data FROM tracker WHERE id=$1', [req.params.id]);
+    if (!r.rows.length) return res.status(404).json({ error: 'Not found' });
+    const updated = { ...r.rows[0].data, ...req.body, id: req.params.id };
+    await pool.query('UPDATE tracker SET data=$1 WHERE id=$2', [JSON.stringify(updated), req.params.id]);
+    res.json(updated);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.delete('/api/tracker/:id', async (req, res) => {
+  try {
+    await pool.query('DELETE FROM tracker WHERE id=$1', [req.params.id]);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+
+// ─── RUGPULL TRACKER ──────────────────────────────────────────
+app.get('/api/tracker', async (req, res) => {
+  try {
+    const r = await pool.query('SELECT data FROM accounts ORDER BY created_at DESC');
+    const accounts = r.rows.map(row => row.data);
+    // Return all accounts including tracker fields
+    res.json({ accounts });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.put('/api/tracker/:id', async (req, res) => {
+  try {
+    const r = await pool.query('SELECT data FROM accounts WHERE id=$1', [req.params.id]);
+    if (!r.rows.length) return res.status(404).json({ error: 'Not found' });
+    const account = { ...r.rows[0].data, ...req.body, id: req.params.id };
+    // Auto-calculate payout date (banned + 30 days)
+    if (req.body.bannedAt) {
+      const banned = new Date(req.body.bannedAt);
+      banned.setDate(banned.getDate() + 30);
+      account.payoutDate = banned.toISOString().split('T')[0];
+    }
+    await pool.query('UPDATE accounts SET data=$1 WHERE id=$2', [JSON.stringify(account), req.params.id]);
+    res.json(account);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Multi-account deploy - get accounts for a set
+app.post('/api/sets/:id/deploy-to', async (req, res) => {
+  try {
+    const r = await pool.query('SELECT data FROM sets WHERE id=$1', [req.params.id]);
+    if (!r.rows.length) return res.status(404).json({ error: 'Not found' });
+    const set = r.rows[0].data;
+    set.deployAccounts = req.body.accountIds || [];
+    set.lastDeployedAt = new Date().toISOString();
+    await pool.query('UPDATE sets SET data=$1 WHERE id=$2', [JSON.stringify(set), set.id]);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 app.get('/api/ping', (req, res) => res.json({ ok: true, version: '2.2.0' }));
 
 // Daemon heartbeat
