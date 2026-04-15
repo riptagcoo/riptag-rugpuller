@@ -172,7 +172,7 @@ body::after {
 .drive-pill.connected { color: var(--green); border-color: rgba(0,229,160,0.25); }
 
 /* ── MAIN ── */
-.main { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+.main { flex: 1; overflow: hidden; display: flex; flex-direction: column; min-width: 0; }
 
 /* ── TOPBAR ── */
 .topbar {
@@ -189,7 +189,7 @@ body::after {
 .topbar-right { display: flex; gap: 8px; align-items: center; }
 
 /* ── CONTENT ── */
-.page-content { flex: 1; overflow-y: auto; padding: 24px 28px; }
+.page-content { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 24px 28px; min-height: 0; }
 .page-content::-webkit-scrollbar { width: 4px; }
 .page-content::-webkit-scrollbar-track { background: transparent; }
 .page-content::-webkit-scrollbar-thumb { background: var(--ink-4); border-radius: 2px; }
@@ -603,7 +603,7 @@ tr:hover td { background: rgba(255,255,255,0.015); }
     </div>
   </div>
   <div class="page-content">
-    <div class="grid-2">
+    <div class="grid-2" style="margin-bottom:16px;">
       <div class="card" style="margin:0;"><div class="card-title">Set Info</div><div id="set-info-panel"></div></div>
       <div class="card" style="margin:0;">
         <div class="card-title">Deploy Status</div>
