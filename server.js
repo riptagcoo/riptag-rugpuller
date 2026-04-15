@@ -673,6 +673,119 @@ app.post('/api/sets/:id/deploy-to', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+
+// ─── REPLIER SYSTEM ───────────────────────────────────────────
+
+// Speed setting
+let replierSpeed = 'balanced';
+app.get('/api/replier/speed', (req, res) => res.json({ speed: replierSpeed }));
+app.post('/api/replier/speed', (req, res) => {
+  replierSpeed = req.body.speed || 'balanced';
+  broadcast({ type: 'replier-speed', speed: replierSpeed });
+  res.json({ ok: true, speed: replierSpeed });
+});
+
+// Cooldown tracking
+app.post('/api/replier/cooldown', async (req, res) => {
+  try {
+    const { accountId, until, reason } = req.body;
+    const r = await pool.query('SELECT data FROM accounts WHERE id=$1', [accountId]);
+    if (!r.rows.length) return res.status(404).json({ error: 'Not found' });
+    const account = r.rows[0].data;
+    account.cooldownUntil = until;
+    account.cooldownReason = reason;
+    await pool.query('UPDATE accounts SET data=$1 WHERE id=$2', [JSON.stringify(account), accountId]);
+    broadcast({ type: 'replier-cooldown', accountId, until, reason });
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+
+// Store conversations per account
+app.post('/api/replier/conversations/:accountId', async (req, res) => {
+  try {
+    const r = await pool.query('SELECT data FROM accounts WHERE id=$1', [req.params.accountId]);
+    if (!r.rows.length) return res.status(404).json({ error: 'Not found' });
+    const account = r.rows[0].data;
+    if (!account.conversations) account.conversations = {};
+    const { senderId, senderUsername, message, reply, direction } = req.body;
+    if (!account.conversations[senderId]) {
+      account.conversations[senderId] = { senderId, senderUsername, messages: [], unread: 0 };
+    }
+    account.conversations[senderId].messages.push({
+      direction, message, reply, timestamp: new Date().toISOString()
+    });
+    if (direction === 'inbound') account.conversations[senderId].unread++;
+    else account.conversations[senderId].unread = 0;
+    account.conversations[senderId].lastMessage = new Date().toISOString();
+    await pool.query('UPDATE accounts SET data=$1 WHERE id=$2', [JSON.stringify(account), req.params.accountId]);
+    broadcast({ type: 'new-message', accountId: req.params.accountId, senderId, senderUsername, message, reply, direction });
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.get('/api/replier/conversations/:accountId', async (req, res) => {
+  try {
+    const r = await pool.query('SELECT data FROM accounts WHERE id=$1', [req.params.accountId]);
+    if (!r.rows.length) return res.status(404).json({ error: 'Not found' });
+    const convos = r.rows[0].data.conversations || {};
+    const list = Object.values(convos).sort((a,b) => new Date(b.lastMessage) - new Date(a.lastMessage));
+    res.json({ conversations: list });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Replier settings per account
+app.put('/api/replier/settings/:accountId', async (req, res) => {
+  try {
+    const r = await pool.query('SELECT data FROM accounts WHERE id=$1', [req.params.accountId]);
+    if (!r.rows.length) return res.status(404).json({ error: 'Not found' });
+    const account = r.rows[0].data;
+    account.replierSettings = { ...account.replierSettings, ...req.body };
+    await pool.query('UPDATE accounts SET data=$1 WHERE id=$2', [JSON.stringify(account), req.params.accountId]);
+    broadcast({ type: 'replier-settings', accountId: req.params.accountId, settings: account.replierSettings });
+    res.json({ ok: true, settings: account.replierSettings });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Global replier prompts
+app.get('/api/replier/prompts', async (req, res) => {
+  try {
+    const r = await pool.query("SELECT data FROM sets WHERE id='__replier_prompts__'");
+    if (!r.rows.length) {
+      const defaults = {
+        rugpull: `you are a depop seller responding to dms. your vibe is super chill, casual, lowercase only. you're a yes man - everything they ask, the answer is yes. create urgency without being pushy. never use periods at the end. key rules: always say yes to availability. if they ask about sizes say "yeah got all sizes check my page". if they ask about shipping say "we ship quick fr". if they ask about brands or bundles say yes and hype it up. keep running low on stock as a theme. sound like a real person, not a bot. vary your responses each time. examples: "yeah bro still got some left, going fast tho", "yooo yes we got that, check the page for sizes", "fr we ship same day or next day", "yeah running low but u can grab it rn"`,
+        riptag: `you are a rep for riptag.co responding to depop dms. chill lowercase vibes. your only job is to funnel them to riptag.co. you're a yes man for everything but always bring it back to the site. rules: first letter never capitalized. say yes to everything - bundles, sizes, availability. always drop riptag.co naturally in the response. sound genuine not salesy. vary responses. examples: "yo yeah we got all that at riptag.co bro", "yeah all sizes available, easiest to just grab it at riptag.co", "yoo we got crazy bundles rn check riptag.co", "yeah dm works but honestly just hit riptag.co its all there"`
+      };
+      return res.json({ prompts: defaults });
+    }
+    res.json({ prompts: r.rows[0].data });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.put('/api/replier/prompts', async (req, res) => {
+  try {
+    const existing = await pool.query("SELECT id FROM sets WHERE id='__replier_prompts__'");
+    if (existing.rows.length) {
+      await pool.query("UPDATE sets SET data=$1 WHERE id='__replier_prompts__'", [JSON.stringify(req.body)]);
+    } else {
+      await pool.query("INSERT INTO sets (id, data) VALUES ('__replier_prompts__', $1)", [JSON.stringify(req.body)]);
+    }
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Replier heartbeat
+let lastReplierHeartbeat = null;
+app.post('/api/replier/heartbeat', (req, res) => {
+  lastReplierHeartbeat = new Date().toISOString();
+  broadcast({ type: 'replier-alive' });
+  res.json({ ok: true });
+});
+app.get('/api/replier/status', (req, res) => {
+  const alive = lastReplierHeartbeat && (Date.now() - new Date(lastReplierHeartbeat).getTime()) < 90000;
+  res.json({ alive, lastSeen: lastReplierHeartbeat });
+});
+
 app.get('/api/ping', (req, res) => res.json({ ok: true, version: '2.2.0' }));
 
 // Daemon heartbeat
