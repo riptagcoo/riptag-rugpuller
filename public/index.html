@@ -688,24 +688,22 @@ tr:hover td { background: rgba(255,255,255,0.015); }
 <!-- TRACKER EDIT MODAL -->
 <div class="modal-overlay hidden" id="tracker-modal">
   <div class="modal">
-    <div class="modal-title">Edit Account Record</div>
+    <div class="modal-title" id="tracker-modal-title">Add Account</div>
     <input type="hidden" id="tm-id"/>
+    <div class="grid-2">
+      <div class="field"><label>Depop Username</label><input class="input" id="tm-username" placeholder="@username"/></div>
+      <div class="field"><label>Estimated Earnings ($)</label><input class="input" id="tm-earnings" type="number" placeholder="0"/></div>
+    </div>
     <div class="grid-2">
       <div class="field"><label>Email</label><input class="input" id="tm-email" placeholder="email@gmail.com"/></div>
       <div class="field"><label>Password</label><input class="input" id="tm-password" placeholder="password"/></div>
     </div>
-    <div class="grid-2">
-      <div class="field"><label>Authenticator ID / Backup Code</label><input class="input" id="tm-auth" placeholder="2FA backup code"/></div>
-      <div class="field"><label>Estimated Earnings ($)</label><input class="input" id="tm-earnings" type="number" placeholder="0"/></div>
-    </div>
-    <div class="grid-2">
-      <div class="field"><label>Date Banned</label><input class="input" id="tm-banned" type="date"/></div>
-      <div class="field"><label>Payout Date (auto: banned + 30d)</label><input class="input" id="tm-payout" type="date"/></div>
-    </div>
+    <div class="field"><label>Authenticator ID / 2FA Backup Code</label><input class="input" id="tm-authid" placeholder="2FA backup code"/></div>
+    <div class="field"><label>Date Banned (leave blank if still active)</label><input class="input" id="tm-banned" type="date"/></div>
     <div class="field"><label>Notes</label><textarea class="input" id="tm-notes" rows="3" placeholder="Any notes..."></textarea></div>
     <div class="modal-actions">
       <button class="btn ghost" onclick="closeModal('tracker-modal')">Cancel</button>
-      <button class="btn primary" onclick="saveTrackerRecord()">Save</button>
+      <button class="btn primary" onclick="saveTracker()">Save Account</button>
     </div>
   </div>
 </div>
@@ -1170,30 +1168,7 @@ async function renderTracker(){
 }
 
 
-async function saveTrackerRecord(){
-  const id=document.getElementById('tm-id').value;
-  const bannedAt=document.getElementById('tm-banned').value;
-  const body={
-    email:document.getElementById('tm-email').value,
-    password:document.getElementById('tm-password').value,
-    authId:document.getElementById('tm-auth').value,
-    earnings:document.getElementById('tm-earnings').value,
-    bannedAt:bannedAt||null,
-    payoutDate:document.getElementById('tm-payout').value||null,
-    notes:document.getElementById('tm-notes').value
-  };
-  // Auto-calc payout if banned date set and payout empty
-  if(bannedAt&&!body.payoutDate){
-    const d=new Date(bannedAt);
-    d.setDate(d.getDate()+30);
-    body.payoutDate=d.toISOString().split('T')[0];
-  }
-  await fetch('/api/tracker/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  closeModal('tracker-modal');
-  await loadAccounts();
-  renderTracker();
-  glog('Account record saved','ok');
-}
+// saveTrackerRecord replaced by saveTracker()
 
 // ─── REPLIER ─────────────────────────────────────────────────
 let selectedReplierAccount = null;
