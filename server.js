@@ -616,6 +616,29 @@ app.post('/api/tracker', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+app.post('/api/tracker', async (req, res) => {
+  try {
+    const { v4: uuid } = require('uuid');
+    const id = uuid();
+    const body = req.body;
+    if (body.bannedAt && !body.payoutDate) {
+      const d = new Date(body.bannedAt);
+      d.setDate(d.getDate() + 30);
+      body.payoutDate = d.toISOString().split('T')[0];
+    }
+    const account = { id, ...body, connectedAt: new Date().toISOString() };
+    await pool.query('INSERT INTO accounts (id, data) VALUES ($1, $2)', [id, JSON.stringify(account)]);
+    res.json({ ok: true, id });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.delete('/api/tracker/:id', async (req, res) => {
+  try {
+    await pool.query('DELETE FROM accounts WHERE id=$1', [req.params.id]);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 app.put('/api/tracker/:id', async (req, res) => {
   try {
     const r = await pool.query('SELECT data FROM tracker WHERE id=$1', [req.params.id]);
@@ -641,6 +664,29 @@ app.get('/api/tracker', async (req, res) => {
     const accounts = r.rows.map(row => row.data);
     // Return all accounts including tracker fields
     res.json({ accounts });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/tracker', async (req, res) => {
+  try {
+    const { v4: uuid } = require('uuid');
+    const id = uuid();
+    const body = req.body;
+    if (body.bannedAt && !body.payoutDate) {
+      const d = new Date(body.bannedAt);
+      d.setDate(d.getDate() + 30);
+      body.payoutDate = d.toISOString().split('T')[0];
+    }
+    const account = { id, ...body, connectedAt: new Date().toISOString() };
+    await pool.query('INSERT INTO accounts (id, data) VALUES ($1, $2)', [id, JSON.stringify(account)]);
+    res.json({ ok: true, id });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.delete('/api/tracker/:id', async (req, res) => {
+  try {
+    await pool.query('DELETE FROM accounts WHERE id=$1', [req.params.id]);
+    res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
