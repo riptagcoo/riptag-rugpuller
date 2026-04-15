@@ -1454,7 +1454,7 @@ async function loadAccounts(){const r=await fetch('/api/accounts').catch(()=>({j
 async function checkDrive(){const r=await fetch('/api/drive/status').catch(()=>({json:()=>({})}));const d=await r.json().catch(()=>({}));const btn=document.getElementById('drive-btn');const lbl=document.getElementById('drive-label');if(d.connected){btn.classList.add('connected');lbl.textContent='Drive Connected ✓';}else{btn.className='drive-pill';lbl.textContent='Connect Drive';}}
 
 function showPage(page,setId){
-  ['overview','accounts','schedule','active','sold','set','replier'].forEach(p=>{document.getElementById('page-'+p).classList.toggle('hidden',p!==page);const nav=document.getElementById('nav-'+p);if(nav)nav.classList.toggle('active',p===page);});
+  ['overview','accounts','schedule','active','sold','tracker','replier','set'].forEach(p=>{document.getElementById('page-'+p).classList.toggle('hidden',p!==page);const nav=document.getElementById('nav-'+p);if(nav)nav.classList.toggle('active',p===page);});
   currentPage=page;
   document.querySelectorAll('#page-'+page).forEach(el=>el.classList.add('page-enter'));
   if(page==='set'&&setId){currentSetId=setId;renderCurrentSet();}
