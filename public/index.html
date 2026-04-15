@@ -1209,6 +1209,167 @@ async function saveTrackerRecord(){
   glog('Account record saved','ok');
 }
 
+// ─── REPLIER ─────────────────────────────────────────────────
+let selectedReplierAccount = null;
+
+async function loadReplierPage(){
+  // Check agent status
+  try{
+    const r=await fetch('/api/replier/status');
+    const d=await r.json();
+    updateReplierStatus(d.alive);
+  }catch{}
+  // Load speed setting
+  try{
+    const r=await fetch('/api/replier/speed');
+    const d=await r.json();
+    setSpeedUI(d.speed||'balanced');
+  }catch{}
+
+  // Render account list
+  const el=document.getElementById('replier-account-list');
+  if(!el)return;
+  if(!accounts.length){
+    el.innerHTML='<div style="font-size:13px;color:var(--ink-3);padding:8px;">No accounts connected.</div>';
+    return;
+  }
+  el.innerHTML=accounts.map(a=>{
+    const isSelected=selectedReplierAccount===a.id;
+    const settings=a.replierSettings||{};
+    const isOn=settings.enabled!==false;
+    const cooldownUntil=a.cooldownUntil?new Date(a.cooldownUntil):null;
+    const isCoolingDown=cooldownUntil&&cooldownUntil>new Date();
+    const cooldownSecs=isCoolingDown?Math.ceil((cooldownUntil-new Date())/1000):0;
+    return `<div onclick="selectReplierAccount('${a.id}')" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;cursor:pointer;background:${isSelected?'var(--green-dim)':'var(--glass)'};border:1px solid ${isSelected?'rgba(0,229,160,0.2)':'var(--glass-border)'};transition:all 0.15s;margin-bottom:6px;">
+      <div style="width:36px;height:36px;border-radius:9px;background:linear-gradient(135deg,rgba(0,229,160,0.12),rgba(167,139,250,0.08));display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:var(--green);flex-shrink:0;">${a.username.substring(0,2).toUpperCase()}</div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">@${a.username}</div>
+        <div style="font-size:10px;font-family:var(--mono);color:${isOn?'var(--green)':'var(--ink-3)'};">${isOn?'● auto-reply on':'○ paused'}</div>
+      </div>
+      <div onclick="event.stopPropagation();toggleReplierAccount('${a.id}',${!isOn})" style="width:32px;height:18px;border-radius:9px;background:${isOn?'var(--green)':'rgba(255,255,255,0.08)'};cursor:pointer;position:relative;border:1px solid ${isOn?'transparent':'var(--glass-border)'};flex-shrink:0;transition:all 0.2s;">
+        <div style="position:absolute;width:12px;height:12px;background:white;border-radius:50%;top:2px;left:${isOn?'16px':'2px'};transition:left 0.2s;box-shadow:0 1px 3px rgba(0,0,0,0.3);"></div>
+      </div>
+    </div>`;
+  }).join('');
+
+  if(selectedReplierAccount) loadReplierInbox(selectedReplierAccount);
+}
+
+async function selectReplierAccount(accountId){
+  selectedReplierAccount=accountId;
+  loadReplierPage();
+}
+
+async function setReplierSpeed(speed){
+  await fetch('/api/replier/speed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({speed})});
+  setSpeedUI(speed);
+  const labels={stealth:'Stealth — slow & safe',balanced:'Balanced',fast:'Fast — 3s polls'};
+  glog('Reply speed set to: '+speed,'ok');
+}
+
+function setSpeedUI(speed){
+  ['stealth','balanced','fast'].forEach(s=>{
+    const el=document.getElementById('speed-'+s);
+    if(el)el.className='speed-btn'+(s===speed?' active-speed':'');
+  });
+}
+
+async function toggleReplierAccount(accountId, enabled){
+  await fetch('/api/replier/settings/'+accountId,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled})});
+  await loadAccounts();
+  loadReplierPage();
+  glog((enabled?'Auto-reply ON':'Auto-reply PAUSED')+' for account','ok');
+}
+
+async function loadReplierInbox(accountId){
+  const account=accounts.find(a=>a.id===accountId);
+  const header=document.getElementById('replier-inbox-header');
+  const convoList=document.getElementById('replier-convo-list');
+  if(!account||!header||!convoList)return;
+
+  header.innerHTML=`<div>
+    <div style="font-size:14px;font-weight:700;">@${account.username}</div>
+    <div style="font-size:11px;color:var(--ink-3);font-family:var(--mono);margin-top:2px;">${account.replierSettings?.enabled!==false?'● auto-reply active':'○ paused'}</div>
+  </div>
+  <div style="display:flex;gap:6px;">
+    <span style="font-size:11px;color:var(--ink-3);font-family:var(--mono);">type: ${account.category||'rugpull'}</span>
+  </div>`;
+
+  try{
+    const r=await fetch('/api/replier/conversations/'+accountId);
+    const d=await r.json();
+    const convos=d.conversations||[];
+    if(!convos.length){
+      convoList.innerHTML='<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--ink-3);font-size:13px;gap:8px;"><div style="font-size:32px;opacity:0.3;">💬</div><div>No messages yet</div><div style="font-size:11px;font-family:var(--mono);">Run node agent.js --reply to start</div></div>';
+      return;
+    }
+
+    convoList.style.display='block';
+    convoList.style.overflowY='auto';
+    convoList.innerHTML='<div style="padding:12px;">'
+      +convos.map(c=>{
+        const last=c.messages[c.messages.length-1];
+        const lastText=last?.message||last?.reply||'';
+        const lastTime=last?.timestamp?new Date(last.timestamp).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'}):'';
+        return `<div onclick="openConvoModal('${accountId}','${c.senderId}')" style="display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:10px;background:var(--glass);border:1px solid var(--glass-border);margin-bottom:8px;cursor:pointer;transition:all 0.15s;" onmouseover="this.style.borderColor='rgba(255,255,255,0.1)'" onmouseout="this.style.borderColor='var(--glass-border)'">
+          <div style="width:38px;height:38px;border-radius:50%;background:var(--violet-dim);border:1px solid var(--violet-bd,rgba(167,139,250,0.2));display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--violet);flex-shrink:0;">${(c.senderUsername||'?').substring(0,2).toUpperCase()}</div>
+          <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+              <span style="font-size:13px;font-weight:600;">@${c.senderUsername||c.senderId}</span>
+              <span style="font-size:10px;color:var(--ink-3);font-family:var(--mono);">${lastTime}</span>
+            </div>
+            <div style="font-size:12px;color:var(--ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${lastText.substring(0,60)}${lastText.length>60?'...':''}</div>
+          </div>
+          ${c.unread?`<div style="width:18px;height:18px;border-radius:50%;background:var(--green);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#001a10;flex-shrink:0;">${c.unread}</div>`:''}
+        </div>`;
+      }).join('')
+    +'</div>';
+  }catch(e){convoList.innerHTML='<div style="color:var(--red);padding:20px;font-size:13px;">Error: '+e.message+'</div>';}
+}
+
+async function openConvoModal(accountId, senderId){
+  const r=await fetch('/api/replier/conversations/'+accountId);
+  const d=await r.json();
+  const convo=d.conversations.find(c=>c.senderId===senderId);
+  if(!convo)return;
+
+  document.getElementById('convo-modal-title').textContent='@'+convo.senderUsername;
+  const msgs=document.getElementById('convo-messages');
+  msgs.innerHTML=convo.messages.map(m=>{
+    const isReply=m.direction==='outbound';
+    return `<div style="display:flex;flex-direction:column;align-items:${isReply?'flex-end':'flex-start'};gap:3px;">
+      <div style="max-width:80%;padding:10px 14px;border-radius:${isReply?'14px 14px 4px 14px':'14px 14px 14px 4px'};background:${isReply?'linear-gradient(135deg,var(--green),#00c98a)':'var(--glass)'};border:1px solid ${isReply?'transparent':'var(--glass-border)'};color:${isReply?'#001a10':'var(--ink)'};font-size:13px;line-height:1.6;">${m.reply||m.message}</div>
+      <div style="font-size:10px;color:var(--ink-3);font-family:var(--mono);padding:0 4px;">${isReply?'AI reply · ':'@'+convo.senderUsername+' · '}${new Date(m.timestamp).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}</div>
+    </div>`;
+  }).join('');
+  msgs.scrollTop=msgs.scrollHeight;
+  document.getElementById('convo-modal').classList.remove('hidden');
+}
+
+async function openReplierPrompts(){
+  const r=await fetch('/api/replier/prompts');
+  const d=await r.json();
+  document.getElementById('prompt-rugpull').value=d.prompts.rugpull||'';
+  document.getElementById('prompt-riptag').value=d.prompts.riptag||'';
+  document.getElementById('replier-prompts-modal').classList.remove('hidden');
+}
+
+async function saveReplierPrompts(){
+  const rugpull=document.getElementById('prompt-rugpull').value;
+  const riptag=document.getElementById('prompt-riptag').value;
+  await fetch('/api/replier/prompts',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({rugpull,riptag})});
+  closeModal('replier-prompts-modal');
+  glog('AI prompts saved','ok');
+}
+
+function updateReplierStatus(alive){
+  const pill=document.getElementById('replier-status-pill');
+  const lbl=document.getElementById('replier-status-label');
+  if(!pill)return;
+  if(alive){pill.className='status-pill active-daemon';lbl.textContent='Agent active';}
+  else{pill.className='status-pill';lbl.textContent='Agent offline';}
+}
+
 async function checkDaemon(){
   try{
     const r=await fetch('/api/daemon/status');
@@ -1247,6 +1408,13 @@ function connectSSE(){
     const d=JSON.parse(e.data);
     if(d.type==='account')loadAccounts();
     if(d.type==='daemon'){updateDaemonStatus(d.status==='alive',d.lastSeen);}
+    if(d.type==='new-message'&&currentPage==='replier'){loadReplierPage();}
+    if(d.type==='replier-alive'){updateReplierStatus(true);}
+    if(d.type==='replier-cooldown'){
+      glog('❄️ @'+(accounts.find(a=>a.id===d.accountId)?.username||d.accountId)+' cooling down 3 min','hi');
+      loadAccounts().then(()=>{if(currentPage==='replier')loadReplierPage();});
+    }
+    if(d.type==='replier-speed'){setSpeedUI(d.speed);}
     if(d.type==='account-status'){
       const card=document.getElementById('card-'+d.accountId);
       if(card){
@@ -1295,8 +1463,10 @@ function showPage(page,setId){
   if(page==='schedule')renderSchedule();
   if(page==='active')renderActiveThisWeek();
   if(page==='tracker')renderTracker();
+  if(page==='replier')loadReplierPage();
   if(page==='sold')initSoldPage();
   if(page==='tracker')renderTracker();
+  if(page==='replier')loadReplierPage();
   document.querySelectorAll('.sb-set-item').forEach(el=>el.classList.toggle('active',el.dataset.id===setId));
 }
 
