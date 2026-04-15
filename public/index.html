@@ -468,20 +468,20 @@ tr:hover td { background: rgba(255,255,255,0.015); }
     </div>
   </div>
   <div class="sb-nav">
-    <div class="sb-item active" id="nav-overview" onclick="showPage('overview')"><span class="ico">◈</span>Overview</div>
-    <div class="sb-item" id="nav-active" onclick="showPage('active')"><span class="ico">◉</span>Active Accounts</div>
-    <div class="sb-item" id="nav-accounts" onclick="showPage('accounts')"><span class="ico">◎</span>Accounts</div>
-    <div class="sb-item" id="nav-schedule" onclick="showPage('schedule')"><span class="ico">◷</span>Schedule</div>
-    <div class="sb-item" id="nav-sold" onclick="showPage('sold')"><span class="ico">◫</span>Sold & Labels</div>
+    <div class="sb-item active" id="nav-overview" onclick="showPage('overview')"><span class="ico">⬡</span>Overview</div>
+    <div class="sb-item" id="nav-active" onclick="showPage('active')"><span class="ico">⬤</span>Active Accounts</div>
+    <div class="sb-item" id="nav-accounts" onclick="showPage('accounts')"><span class="ico">○</span>Accounts</div>
+    <div class="sb-item" id="nav-schedule" onclick="showPage('schedule')"><span class="ico">◻</span>Schedule</div>
+    <div class="sb-item" id="nav-sold" onclick="showPage('sold')"><span class="ico">▦</span>Sold & Labels</div>
     <div class="sb-label">Rugpull</div>
     <div id="sb-rugpull"></div>
     <div class="sb-label">Riptag.co</div>
     <div id="sb-riptag"></div>
     <div class="sb-add" onclick="openNewSetModal()"><span>＋</span>New Set</div>
     <div style="margin-top:16px;border-top:1px solid var(--glass-border);padding-top:12px;">
-      <div class="sb-item" id="nav-tracker" onclick="showPage('tracker')" style="margin-bottom:4px;"><span class="ico">📊</span>Rugpull Tracker</div>
+      <div class="sb-item" id="nav-tracker" onclick="showPage('tracker')" style="margin-bottom:4px;"><span class="ico">◈</span>Rugpull Tracker</div>
       <div class="sb-item" onclick="showPage('replier')" id="nav-replier" style="position:relative;">
-        <span class="ico">◈</span>Riptag Replier
+        <span class="ico">◎</span>Riptag Replier
         <span style="font-size:9px;font-family:var(--mono);background:linear-gradient(135deg,var(--violet),var(--green));-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-left:auto;font-weight:700;letter-spacing:0.05em;">SOON</span>
       </div>
     </div>
@@ -489,6 +489,7 @@ tr:hover td { background: rgba(255,255,255,0.015); }
   <div class="sb-bottom">
     <div class="status-pill" id="run-pill"><span class="dot"></span><span id="run-label">RUN.bat offline</span></div>
     <div class="status-pill" id="daemon-pill"><span class="dot"></span><span id="daemon-label">Daemon offline</span></div>
+    <div class="status-pill" id="reply-pill"><span class="dot"></span><span id="reply-label">Replier offline</span></div>
     <div class="drive-pill" id="drive-btn" onclick="connectDrive()"><span>◫</span><span id="drive-label">Connect Drive</span></div>
   </div>
 </div>
@@ -629,15 +630,12 @@ tr:hover td { background: rgba(255,255,255,0.015); }
   </div>
 </div>
 
-</div><!-- /main -->
-</div><!-- /shell -->
-
 <!-- TRACKER PAGE -->
 <div id="page-tracker" class="hidden">
   <div class="topbar">
     <div class="topbar-left">
       <div class="page-title">Rugpull Tracker</div>
-      <div class="page-sub">All accounts — credentials, ban dates, payouts</div>
+      <div class="page-sub">All accounts · credentials · ban dates · payouts</div>
     </div>
     <div class="topbar-right">
       <button class="btn primary" onclick="openTrackerModal()">＋ Add Account</button>
@@ -649,30 +647,6 @@ tr:hover td { background: rgba(255,255,255,0.015); }
   </div>
 </div>
 
-<!-- TRACKER EDIT MODAL -->
-<div class="modal-overlay hidden" id="tracker-modal">
-  <div class="modal">
-    <div class="modal-title">Edit Account Record</div>
-    <input type="hidden" id="tm-id"/>
-    <div class="grid-2">
-      <div class="field"><label>Email</label><input class="input" id="tm-email" placeholder="email@gmail.com"/></div>
-      <div class="field"><label>Password</label><input class="input" id="tm-password" placeholder="password"/></div>
-    </div>
-    <div class="grid-2">
-      <div class="field"><label>Authenticator ID / Backup Code</label><input class="input" id="tm-auth" placeholder="2FA backup code"/></div>
-      <div class="field"><label>Estimated Earnings ($)</label><input class="input" id="tm-earnings" type="number" placeholder="0"/></div>
-    </div>
-    <div class="grid-2">
-      <div class="field"><label>Date Banned</label><input class="input" id="tm-banned" type="date"/></div>
-      <div class="field"><label>Payout Date (auto: banned + 30d)</label><input class="input" id="tm-payout" type="date"/></div>
-    </div>
-    <div class="field"><label>Notes</label><textarea class="input" id="tm-notes" rows="3" placeholder="Any notes..."></textarea></div>
-    <div class="modal-actions">
-      <button class="btn ghost" onclick="closeModal('tracker-modal')">Cancel</button>
-      <button class="btn primary" onclick="saveTrackerRecord()">Save</button>
-    </div>
-  </div>
-</div>
 
 <!-- REPLIER PAGE -->
 <div id="page-replier" class="hidden">
@@ -707,6 +681,36 @@ tr:hover td { background: rgba(255,255,255,0.015); }
     </div>
   </div>
 </div>
+
+</div><!-- /main -->
+</div><!-- /shell -->
+
+<!-- TRACKER EDIT MODAL -->
+<div class="modal-overlay hidden" id="tracker-modal">
+  <div class="modal">
+    <div class="modal-title">Edit Account Record</div>
+    <input type="hidden" id="tm-id"/>
+    <div class="grid-2">
+      <div class="field"><label>Email</label><input class="input" id="tm-email" placeholder="email@gmail.com"/></div>
+      <div class="field"><label>Password</label><input class="input" id="tm-password" placeholder="password"/></div>
+    </div>
+    <div class="grid-2">
+      <div class="field"><label>Authenticator ID / Backup Code</label><input class="input" id="tm-auth" placeholder="2FA backup code"/></div>
+      <div class="field"><label>Estimated Earnings ($)</label><input class="input" id="tm-earnings" type="number" placeholder="0"/></div>
+    </div>
+    <div class="grid-2">
+      <div class="field"><label>Date Banned</label><input class="input" id="tm-banned" type="date"/></div>
+      <div class="field"><label>Payout Date (auto: banned + 30d)</label><input class="input" id="tm-payout" type="date"/></div>
+    </div>
+    <div class="field"><label>Notes</label><textarea class="input" id="tm-notes" rows="3" placeholder="Any notes..."></textarea></div>
+    <div class="modal-actions">
+      <button class="btn ghost" onclick="closeModal('tracker-modal')">Cancel</button>
+      <button class="btn primary" onclick="saveTrackerRecord()">Save</button>
+    </div>
+  </div>
+</div>
+
+
 
 <!-- REPLIER PROMPTS MODAL -->
 <div class="modal-overlay hidden" id="replier-prompts-modal">
@@ -1359,6 +1363,19 @@ async function checkDaemon(){
     updateDaemonStatus(d.alive,d.lastSeen);
     updateRunStatus(d.runAlive);
   }catch{}
+  try{
+    const r2=await fetch('/api/replier/status');
+    const d2=await r2.json();
+    updateReplierPill(d2.alive);
+  }catch{}
+}
+
+function updateReplierPill(alive){
+  const pill=document.getElementById('reply-pill');
+  const lbl=document.getElementById('reply-label');
+  if(!pill)return;
+  if(alive){pill.className='status-pill active-daemon';lbl.textContent='Replier active';}
+  else{pill.className='status-pill';lbl.textContent='Replier offline';}
 }
 
 function updateDaemonStatus(alive,lastSeen){
