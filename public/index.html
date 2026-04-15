@@ -478,6 +478,12 @@ tr:hover td { background: rgba(255,255,255,0.015); }
     <div class="sb-label">Riptag.co</div>
     <div id="sb-riptag"></div>
     <div class="sb-add" onclick="openNewSetModal()"><span>＋</span>New Set</div>
+    <div style="margin-top:16px;border-top:1px solid var(--glass-border);padding-top:12px;">
+      <div class="sb-item" onclick="showPage('replier')" id="nav-replier" style="position:relative;">
+        <span class="ico">◈</span>Riptag Replier
+        <span style="font-size:9px;font-family:var(--mono);background:linear-gradient(135deg,var(--violet),var(--green));-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-left:auto;font-weight:700;letter-spacing:0.05em;">SOON</span>
+      </div>
+    </div>
   </div>
   <div class="sb-bottom">
     <div class="status-pill" id="run-pill"><span class="dot"></span><span id="run-label">RUN.bat offline</span></div>
@@ -624,6 +630,126 @@ tr:hover td { background: rgba(255,255,255,0.015); }
 
 </div><!-- /main -->
 </div><!-- /shell -->
+
+<!-- TRACKER PAGE -->
+<div id="page-tracker" class="hidden">
+  <div class="topbar">
+    <div class="topbar-left">
+      <div class="page-title">Rugpull Tracker</div>
+      <div class="page-sub">All accounts — credentials, ban dates, payouts</div>
+    </div>
+    <div class="topbar-right">
+      <button class="btn primary" onclick="openTrackerModal()">＋ Add Account</button>
+    </div>
+  </div>
+  <div class="page-content">
+    <div class="stats-grid" id="tracker-stats" style="margin-bottom:20px;"></div>
+    <div id="tracker-list"></div>
+  </div>
+</div>
+
+<!-- TRACKER PAGE -->
+<div id="page-tracker" class="hidden">
+  <div class="topbar">
+    <div class="topbar-left">
+      <div class="page-title">Rugpull Tracker</div>
+      <div class="page-sub">All accounts · earnings · payout dates</div>
+    </div>
+    <div class="topbar-right">
+      <button class="btn ghost sm" onclick="renderTracker()">↻ Refresh</button>
+    </div>
+  </div>
+  <div class="page-content"><div id="tracker-list"></div></div>
+</div>
+
+<!-- TRACKER EDIT MODAL -->
+<div class="modal-overlay hidden" id="tracker-modal">
+  <div class="modal">
+    <div class="modal-title">Edit Account Record</div>
+    <input type="hidden" id="tm-id"/>
+    <div class="grid-2">
+      <div class="field"><label>Email</label><input class="input" id="tm-email" placeholder="email@gmail.com"/></div>
+      <div class="field"><label>Password</label><input class="input" id="tm-password" placeholder="password"/></div>
+    </div>
+    <div class="grid-2">
+      <div class="field"><label>Authenticator ID / Backup Code</label><input class="input" id="tm-auth" placeholder="2FA backup code"/></div>
+      <div class="field"><label>Estimated Earnings ($)</label><input class="input" id="tm-earnings" type="number" placeholder="0"/></div>
+    </div>
+    <div class="grid-2">
+      <div class="field"><label>Date Banned</label><input class="input" id="tm-banned" type="date"/></div>
+      <div class="field"><label>Payout Date (auto: banned + 30d)</label><input class="input" id="tm-payout" type="date"/></div>
+    </div>
+    <div class="field"><label>Notes</label><textarea class="input" id="tm-notes" rows="3" placeholder="Any notes..."></textarea></div>
+    <div class="modal-actions">
+      <button class="btn ghost" onclick="closeModal('tracker-modal')">Cancel</button>
+      <button class="btn primary" onclick="saveTrackerRecord()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- REPLIER PAGE -->
+<div id="page-replier" class="hidden">
+  <div class="topbar">
+    <div class="topbar-left">
+      <div class="page-title">Riptag Replier</div>
+      <div class="page-sub">AI-powered Depop auto-reply system</div>
+    </div>
+  </div>
+  <div class="page-content">
+    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;text-align:center;gap:20px;">
+      <div style="font-size:64px;filter:grayscale(0.3);">🤖</div>
+      <div>
+        <div style="font-size:28px;font-weight:800;letter-spacing:-0.04em;background:linear-gradient(135deg,var(--green),var(--violet));-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:10px;">Coming Soon</div>
+        <div style="font-size:14px;color:var(--ink-3);max-width:420px;line-height:1.8;">
+          24/7 AI-powered auto-reply for all your Depop accounts. Claude-trained on your voice, human-like delays, CAPTCHA bypass, and separate personas for rugpull vs riptag.co accounts.
+        </div>
+      </div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;justify-content:center;margin-top:8px;">
+        <div style="padding:10px 18px;border-radius:10px;background:var(--glass);border:1px solid var(--glass-border);font-size:12px;color:var(--ink-3);">🧠 Claude AI replies</div>
+        <div style="padding:10px 18px;border-radius:10px;background:var(--glass);border:1px solid var(--glass-border);font-size:12px;color:var(--ink-3);">⏱ Human-like delays</div>
+        <div style="padding:10px 18px;border-radius:10px;background:var(--glass);border:1px solid var(--glass-border);font-size:12px;color:var(--ink-3);">🔐 CAPTCHA handling</div>
+        <div style="padding:10px 18px;border-radius:10px;background:var(--glass);border:1px solid var(--glass-border);font-size:12px;color:var(--ink-3);">🌐 24/7 DigitalOcean</div>
+        <div style="padding:10px 18px;border-radius:10px;background:var(--glass);border:1px solid var(--glass-border);font-size:12px;color:var(--ink-3);">📱 Pushover alerts</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- TRACKER MODAL -->
+<div class="modal-overlay hidden" id="tracker-modal">
+  <div class="modal">
+    <div class="modal-title" id="tracker-modal-title">Add Account</div>
+    <input type="hidden" id="tm-id"/>
+    <div class="grid-2">
+      <div class="field"><label>Depop Username</label><input class="input" id="tm-username" placeholder="@username"/></div>
+      <div class="field"><label>Estimated Earnings ($)</label><input class="input" id="tm-earnings" type="number" placeholder="0"/></div>
+    </div>
+    <div class="grid-2">
+      <div class="field"><label>Email</label><input class="input" id="tm-email" placeholder="email@gmail.com"/></div>
+      <div class="field"><label>Password</label><input class="input" id="tm-password" type="password" placeholder="••••••••"/></div>
+    </div>
+    <div class="field"><label>Authenticator ID / Backup Code</label><input class="input" id="tm-authid" placeholder="2FA backup code or auth app ID"/></div>
+    <div class="field"><label>Ban Date (leave blank if still active)</label><input class="input" id="tm-banned" type="date"/></div>
+    <div class="field"><label>Notes</label><textarea class="input" id="tm-notes" rows="3" placeholder="Any notes about this account..."></textarea></div>
+    <div class="modal-actions">
+      <button class="btn ghost" onclick="closeModal('tracker-modal')">Cancel</button>
+      <button class="btn primary" onclick="saveTracker()">Save Account</button>
+    </div>
+  </div>
+</div>
+
+<!-- MULTI DEPLOY MODAL -->
+<div class="modal-overlay hidden" id="multi-deploy-modal">
+  <div class="modal">
+    <div class="modal-title">Deploy to Accounts</div>
+    <div style="font-size:13px;color:var(--ink-3);margin-bottom:16px;">Select which accounts to deploy this set to. The agent will post listings to each selected account.</div>
+    <div id="multi-deploy-accounts" style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px;"></div>
+    <div class="modal-actions">
+      <button class="btn ghost" onclick="closeModal('multi-deploy-modal')">Cancel</button>
+      <button class="btn primary" onclick="confirmMultiDeploy()">Save Accounts</button>
+    </div>
+  </div>
+</div>
 
 <!-- SET MODAL -->
 <div class="modal-overlay hidden" id="set-modal">
@@ -842,6 +968,247 @@ async function checkAllStatuses(){
   alert('To check account statuses:\n\n1. Open Command Prompt\n2. Run: node agent.js\n3. Select option 3 (Check account statuses)\n\nThe agent will open each profile in a real browser and accurately detect live vs banned.');
 }
 
+// ─── RUGPULL TRACKER ─────────────────────────────────────────
+let trackerData = [];
+let expandedTrackers = new Set();
+
+async function renderTracker(){
+  const el = document.getElementById('tracker-list');
+  const statsEl = document.getElementById('tracker-stats');
+  el.innerHTML = '<div class="empty"><div class="empty-ico">⏳</div>Loading...</div>';
+  try {
+    const r = await fetch('/api/tracker');
+    trackerData = await r.json();
+
+    // Stats
+    const totalEarnings = trackerData.reduce((a,t) => a + parseFloat(t.earnings||0), 0);
+    const banned = trackerData.filter(t => t.bannedAt).length;
+    const active = trackerData.length - banned;
+    const pendingPayout = trackerData.filter(t => {
+      if(!t.bannedAt) return false;
+      const payout = new Date(t.bannedAt);
+      payout.setDate(payout.getDate() + 30);
+      return payout > new Date();
+    }).length;
+
+    statsEl.innerHTML = `
+      <div class="stat-card"><div class="stat-n">${trackerData.length}</div><div class="stat-lbl">total accounts</div></div>
+      <div class="stat-card"><div class="stat-n g">${active}</div><div class="stat-lbl">still active</div></div>
+      <div class="stat-card"><div class="stat-n" style="color:var(--red);">${banned}</div><div class="stat-lbl">banned</div></div>
+      <div class="stat-card"><div class="stat-n a">$${totalEarnings.toFixed(0)}</div><div class="stat-lbl">total earned</div></div>
+    `;
+
+    if(!trackerData.length){
+      el.innerHTML = '<div class="empty"><div class="empty-ico">📊</div><div class="empty-title">No accounts tracked yet</div>Click "+ Add Account" to start tracking.</div>';
+      return;
+    }
+
+    el.innerHTML = trackerData.map(t => {
+      const isExpanded = expandedTrackers.has(t.id);
+      const banDate = t.bannedAt ? new Date(t.bannedAt) : null;
+      const payoutDate = banDate ? new Date(banDate.getTime() + 30*24*60*60*1000) : null;
+      const payoutDue = payoutDate ? payoutDate <= new Date() : false;
+      const daysUntilPayout = payoutDate ? Math.max(0, Math.ceil((payoutDate - new Date()) / (1000*60*60*24))) : null;
+      const statusBadge = t.bannedAt 
+        ? '<span class="badge status-banned">✕ Banned</span>'
+        : '<span class="badge status-live">● Active</span>';
+
+      const payoutBadge = payoutDate 
+        ? payoutDue 
+          ? '<span class="badge" style="background:rgba(0,229,160,0.15);color:var(--green);border:1px solid rgba(0,229,160,0.3);">💰 Payout Due</span>'
+          : `<span class="badge" style="background:var(--amber-dim);color:var(--amber);border:1px solid rgba(251,191,36,0.2);">Payout in ${daysUntilPayout}d</span>`
+        : '';
+
+      const expandedHTML = isExpanded ? `
+        <div style="padding:0 22px 20px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;border-top:1px solid var(--glass-border);padding-top:16px;margin-top:0;">
+          <div>
+            <div style="font-size:10px;color:var(--ink-3);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:6px;">Email</div>
+            <div style="font-size:13px;font-family:var(--mono);">${t.email||'—'}</div>
+          </div>
+          <div>
+            <div style="font-size:10px;color:var(--ink-3);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:6px;">Password</div>
+            <div style="font-size:13px;font-family:var(--mono);letter-spacing:0.05em;">${t.password?'••••••••':' —'}</div>
+          </div>
+          <div>
+            <div style="font-size:10px;color:var(--ink-3);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:6px;">Auth ID / 2FA</div>
+            <div style="font-size:13px;font-family:var(--mono);">${t.authId||'—'}</div>
+          </div>
+          <div>
+            <div style="font-size:10px;color:var(--ink-3);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:6px;">Ban Date</div>
+            <div style="font-size:13px;">${banDate?banDate.toLocaleDateString():'Still active'}</div>
+          </div>
+          <div>
+            <div style="font-size:10px;color:var(--ink-3);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:6px;">Payout Expected</div>
+            <div style="font-size:13px;color:${payoutDue?'var(--green)':'var(--amber)'};">${payoutDate?payoutDate.toLocaleDateString():'—'}</div>
+          </div>
+          <div>
+            <div style="font-size:10px;color:var(--ink-3);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:6px;">Estimated Earnings</div>
+            <div style="font-size:16px;font-weight:700;color:var(--green);">$${parseFloat(t.earnings||0).toFixed(2)}</div>
+          </div>
+          ${t.notes?`<div style="grid-column:span 3;"><div style="font-size:10px;color:var(--ink-3);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:6px;">Notes</div><div style="font-size:13px;color:var(--ink-2);">${t.notes}</div></div>`:''}
+        </div>
+      ` : '';
+
+      return `<div class="acct-card" id="tcard-${t.id}" style="margin-bottom:10px;padding:0;">
+  <div style="display:flex;align-items:center;gap:16px;padding:18px 22px;cursor:pointer;" onclick="toggleTracker('${t.id}')">
+    <div style="width:42px;height:42px;border-radius:11px;background:linear-gradient(135deg,rgba(0,229,160,0.1),rgba(167,139,250,0.08));border:1px solid var(--glass-border);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:var(--ink-2);flex-shrink:0;">${t.username?t.username.substring(0,2).toUpperCase():'??'}</div>
+    <div style="flex:1;min-width:0;">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+        <span style="font-size:15px;font-weight:700;letter-spacing:-0.02em;">@${t.username||'unknown'}</span>
+        ${statusBadge}
+        ${payoutBadge}
+      </div>
+      <div style="display:flex;gap:24px;">
+        <div><div style="font-size:10px;color:var(--ink-3);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:2px;">Earned</div><div style="font-size:13px;font-weight:700;color:var(--green);">$${parseFloat(t.earnings||0).toFixed(0)}</div></div>
+        <div><div style="font-size:10px;color:var(--ink-3);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:2px;">Banned</div><div style="font-size:13px;">${banDate?banDate.toLocaleDateString():'—'}</div></div>
+        <div><div style="font-size:10px;color:var(--ink-3);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:2px;">Payout</div><div style="font-size:13px;color:${payoutDate?(payoutDue?'var(--green)':'var(--amber)'):'var(--ink-3)'};">${payoutDate?payoutDate.toLocaleDateString():'—'}</div></div>
+      </div>
+    </div>
+    <div style="display:flex;gap:6px;flex-shrink:0;" onclick="event.stopPropagation();">
+      <button class="btn xs ghost" onclick="openTrackerModal('${t.id}')">✏ Edit</button>
+      <button class="btn xs danger" onclick="deleteTracker('${t.id}')">✕</button>
+    </div>
+    <div style="color:var(--ink-3);font-size:12px;margin-left:8px;flex-shrink:0;">${isExpanded?'▾':'▸'}</div>
+  </div>
+  ${expandedHTML}
+</div>`;
+    }).join('');
+  } catch(err){ el.innerHTML = '<div class="empty">Error: '+err.message+'</div>'; }
+}
+
+function toggleTracker(id){
+  if(expandedTrackers.has(id)) expandedTrackers.delete(id);
+  else expandedTrackers.add(id);
+  renderTracker();
+}
+
+function openTrackerModal(id){
+  const t = id ? trackerData.find(x=>x.id===id) : null;
+  document.getElementById('tracker-modal-title').textContent = t ? 'Edit Account' : 'Add Account';
+  document.getElementById('tm-id').value = id||'';
+  document.getElementById('tm-username').value = t?.username||'';
+  document.getElementById('tm-email').value = t?.email||'';
+  document.getElementById('tm-password').value = t?.password||'';
+  document.getElementById('tm-authid').value = t?.authId||'';
+  document.getElementById('tm-earnings').value = t?.earnings||'';
+  document.getElementById('tm-banned').value = t?.bannedAt?t.bannedAt.split('T')[0]:'';
+  document.getElementById('tm-notes').value = t?.notes||'';
+  document.getElementById('tracker-modal').classList.remove('hidden');
+}
+
+async function saveTracker(){
+  const id = document.getElementById('tm-id').value;
+  const body = {
+    username: document.getElementById('tm-username').value.trim().replace('@',''),
+    email: document.getElementById('tm-email').value.trim(),
+    password: document.getElementById('tm-password').value,
+    authId: document.getElementById('tm-authid').value.trim(),
+    earnings: document.getElementById('tm-earnings').value||'0',
+    bannedAt: document.getElementById('tm-banned').value||null,
+    notes: document.getElementById('tm-notes').value.trim()
+  };
+  if(id) await fetch('/api/tracker/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  else await fetch('/api/tracker',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  closeModal('tracker-modal');
+  renderTracker();
+}
+
+async function deleteTracker(id){
+  if(!confirm('Remove this account from tracker?')) return;
+  await fetch('/api/tracker/'+id,{method:'DELETE'});
+  renderTracker();
+}
+
+// ─── RUGPULL TRACKER ─────────────────────────────────────────
+async function renderTracker(){
+  const el=document.getElementById('tracker-list');
+  el.innerHTML='<div class="empty"><div class="empty-ico">⏳</div>Loading...</div>';
+  try{
+    const r=await fetch('/api/tracker');
+    const d=await r.json();
+    const accts=d.accounts||[];
+    if(!accts.length){el.innerHTML='<div class="empty"><div class="empty-ico">📊</div><div class="empty-title">No accounts yet</div>Connect accounts via the Chrome extension.</div>';return;}
+
+    // Summary stats
+    const totalEarnings=accts.reduce((a,x)=>a+(parseFloat(x.earnings)||0),0);
+    const banned=accts.filter(a=>a.status==='banned').length;
+    const live=accts.filter(a=>a.status==='live').length;
+    const pendingPayout=accts.filter(a=>a.payoutDate&&new Date(a.payoutDate)>new Date()).length;
+
+    el.innerHTML=`<div class="stats-grid" style="margin-bottom:20px;">
+      <div class="stat-card"><div class="stat-n">${accts.length}</div><div class="stat-lbl">total accounts</div></div>
+      <div class="stat-card"><div class="stat-n g">${live}</div><div class="stat-lbl">live</div></div>
+      <div class="stat-card"><div class="stat-n" style="color:var(--red);">${banned}</div><div class="stat-lbl">banned</div></div>
+      <div class="stat-card"><div class="stat-n v">$${totalEarnings.toFixed(0)}</div><div class="stat-lbl">total earnings</div></div>
+    </div>`+accts.map(a=>{
+      const today=new Date();
+      const payoutDate=a.payoutDate?new Date(a.payoutDate):null;
+      const payoutDays=payoutDate?Math.ceil((payoutDate-today)/(1000*60*60*24)):null;
+      const payoutText=payoutDate?(payoutDays>0?`In ${payoutDays} days (${payoutDate.toLocaleDateString('en-US',{month:'short',day:'numeric'})})`:`Ready (${payoutDate.toLocaleDateString('en-US',{month:'short',day:'numeric'})})`):null;
+      const sc=a.status==='live'?'status-live':a.status==='banned'?'status-banned':'status-unknown';
+      const st=a.status==='live'?'● Live':a.status==='banned'?'✕ Banned':'? Unknown';
+      return `<div class="acct-card" style="margin-bottom:10px;">
+  <div style="display:flex;align-items:center;gap:16px;padding:18px 22px;cursor:pointer;" onclick="openTrackerModal('${a.id}')">
+    <div style="width:44px;height:44px;border-radius:11px;background:linear-gradient(135deg,rgba(0,229,160,0.12),rgba(167,139,250,0.08));border:1px solid rgba(0,229,160,0.18);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:var(--green);flex-shrink:0;">${a.username.substring(0,2).toUpperCase()}</div>
+    <div style="flex:1;min-width:0;">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+        <span style="font-size:15px;font-weight:700;letter-spacing:-0.02em;">@${a.username}</span>
+        <span class="badge ${sc}">${st}</span>
+        ${a.email?`<span style="font-size:11px;color:var(--ink-3);font-family:var(--mono);">${a.email}</span>`:''}
+      </div>
+      <div style="display:flex;gap:24px;">
+        <div><div style="font-size:10px;color:var(--ink-3);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:3px;">Earnings</div><div style="font-size:13px;font-weight:700;color:var(--green);">$${a.earnings||'0'}</div></div>
+        ${a.bannedAt?`<div><div style="font-size:10px;color:var(--ink-3);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:3px;">Banned</div><div style="font-size:12px;color:var(--red);">${new Date(a.bannedAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</div></div>`:''}
+        ${payoutText?`<div><div style="font-size:10px;color:var(--ink-3);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:3px;">Payout</div><div style="font-size:12px;color:${payoutDays<=0?'var(--green)':'var(--amber)'};">${payoutText}</div></div>`:''}
+        <div><div style="font-size:10px;color:var(--ink-3);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:3px;">Connected</div><div style="font-size:12px;color:var(--ink-3);font-family:var(--mono);">${new Date(a.connectedAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</div></div>
+      </div>
+    </div>
+    <button class="btn xs ghost" onclick="event.stopPropagation();openTrackerModal('${a.id}')">✏ Edit</button>
+  </div>
+</div>`;
+    }).join('');
+  }catch(err){el.innerHTML='<div class="empty">Error: '+err.message+'</div>';}
+}
+
+function openTrackerModal(accountId){
+  const acct=accounts.find(a=>a.id===accountId);
+  if(!acct)return;
+  document.getElementById('tm-id').value=accountId;
+  document.getElementById('tm-email').value=acct.email||'';
+  document.getElementById('tm-password').value=acct.password||'';
+  document.getElementById('tm-auth').value=acct.authId||'';
+  document.getElementById('tm-earnings').value=acct.earnings||'';
+  document.getElementById('tm-banned').value=acct.bannedAt?acct.bannedAt.split('T')[0]:'';
+  document.getElementById('tm-payout').value=acct.payoutDate||'';
+  document.getElementById('tm-notes').value=acct.notes||'';
+  document.getElementById('tracker-modal').classList.remove('hidden');
+}
+
+async function saveTrackerRecord(){
+  const id=document.getElementById('tm-id').value;
+  const bannedAt=document.getElementById('tm-banned').value;
+  const body={
+    email:document.getElementById('tm-email').value,
+    password:document.getElementById('tm-password').value,
+    authId:document.getElementById('tm-auth').value,
+    earnings:document.getElementById('tm-earnings').value,
+    bannedAt:bannedAt||null,
+    payoutDate:document.getElementById('tm-payout').value||null,
+    notes:document.getElementById('tm-notes').value
+  };
+  // Auto-calc payout if banned date set and payout empty
+  if(bannedAt&&!body.payoutDate){
+    const d=new Date(bannedAt);
+    d.setDate(d.getDate()+30);
+    body.payoutDate=d.toISOString().split('T')[0];
+  }
+  await fetch('/api/tracker/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  closeModal('tracker-modal');
+  await loadAccounts();
+  renderTracker();
+  glog('Account record saved','ok');
+}
+
 async function checkDaemon(){
   try{
     const r=await fetch('/api/daemon/status');
@@ -919,7 +1286,7 @@ async function loadAccounts(){const r=await fetch('/api/accounts').catch(()=>({j
 async function checkDrive(){const r=await fetch('/api/drive/status').catch(()=>({json:()=>({})}));const d=await r.json().catch(()=>({}));const btn=document.getElementById('drive-btn');const lbl=document.getElementById('drive-label');if(d.connected){btn.classList.add('connected');lbl.textContent='Drive Connected ✓';}else{btn.className='drive-pill';lbl.textContent='Connect Drive';}}
 
 function showPage(page,setId){
-  ['overview','accounts','schedule','active','sold','set'].forEach(p=>{document.getElementById('page-'+p).classList.toggle('hidden',p!==page);const nav=document.getElementById('nav-'+p);if(nav)nav.classList.toggle('active',p===page);});
+  ['overview','accounts','schedule','active','sold','set','replier'].forEach(p=>{document.getElementById('page-'+p).classList.toggle('hidden',p!==page);const nav=document.getElementById('nav-'+p);if(nav)nav.classList.toggle('active',p===page);});
   currentPage=page;
   document.querySelectorAll('#page-'+page).forEach(el=>el.classList.add('page-enter'));
   if(page==='set'&&setId){currentSetId=setId;renderCurrentSet();}
@@ -927,7 +1294,9 @@ function showPage(page,setId){
   if(page==='accounts')renderAccounts();
   if(page==='schedule')renderSchedule();
   if(page==='active')renderActiveThisWeek();
+  if(page==='tracker')renderTracker();
   if(page==='sold')initSoldPage();
+  if(page==='tracker')renderTracker();
   document.querySelectorAll('.sb-set-item').forEach(el=>el.classList.toggle('active',el.dataset.id===setId));
 }
 
@@ -949,7 +1318,7 @@ function switchTab(tab){
 
 function renderOverview(){
   document.getElementById('ov-sets').textContent=sets.length;
-  document.getElementById('ov-deployed').textContent=sets.filter(s=>s.status==='deployed').length;
+  document.getElementById('ov-deployed').textContent=sets.filter(s=>s.status==='deployed'||s.deployedAt||(s.listings&&s.listings.some(l=>l.posted))).length;
   document.getElementById('ov-listings').textContent=sets.reduce((a,s)=>a+(s.listings?.length||0),0);
   document.getElementById('ov-accounts').textContent=accounts.length;
   renderOverviewSets();
@@ -1109,10 +1478,37 @@ async function buildListings(){
 
 async function deploySet(){
   const set=sets.find(s=>s.id===currentSetId);
-  if(!set?.accountId){alert('Assign an account first.');return;}
   if(!set?.listings?.length){alert('Build listings first.');return;}
-  glog('Run agent.js and select "'+set.name+'" to deploy.','hi');
-  alert('Open Command Prompt and run:\n\nnode agent.js\n\nThen select this set.');
+  openMultiDeployModal();
+}
+
+function openMultiDeployModal(){
+  const set=sets.find(s=>s.id===currentSetId);
+  if(!set)return;
+  const selectedAccounts=set.deployAccounts||[set.accountId].filter(Boolean);
+  const el=document.getElementById('multi-deploy-accounts');
+  if(!accounts.length){el.innerHTML='<div style="color:var(--ink-3);font-size:13px;">No accounts connected.</div>';document.getElementById('multi-deploy-modal').classList.remove('hidden');return;}
+  el.innerHTML=accounts.map(a=>`
+    <label style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--glass);border:1px solid var(--glass-border);border-radius:10px;cursor:pointer;">
+      <input type="checkbox" value="${a.id}" ${selectedAccounts.includes(a.id)?'checked':''} style="width:16px;height:16px;accent-color:var(--green);cursor:pointer;"/>
+      <div>
+        <div style="font-weight:600;font-size:13px;">@${a.username}</div>
+        <div style="font-size:11px;color:var(--ink-3);font-family:var(--mono);">${a.status==='banned'?'✕ Banned':a.status==='live'?'● Live':'? Unknown'}</div>
+      </div>
+    </label>`).join('');
+  document.getElementById('multi-deploy-modal').classList.remove('hidden');
+}
+
+async function confirmMultiDeploy(){
+  const set=sets.find(s=>s.id===currentSetId);
+  if(!set)return;
+  const checked=[...document.querySelectorAll('#multi-deploy-accounts input:checked')].map(i=>i.value);
+  if(!checked.length){alert('Select at least one account.');return;}
+  await fetch('/api/sets/'+currentSetId+'/deploy-to',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({accountIds:checked})});
+  closeModal('multi-deploy-modal');
+  await loadSets();
+  glog('Saved '+checked.length+' deploy account(s). Run node agent.js to deploy.','ok');
+  alert('Accounts saved!\n\nOpen Command Prompt and run:\n\nnode agent.js\n\nThen select this set to deploy.');
 }
 
 async function openNewSetModal(){
