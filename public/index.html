@@ -479,6 +479,7 @@ tr:hover td { background: rgba(255,255,255,0.015); }
     <div id="sb-riptag"></div>
     <div class="sb-add" onclick="openNewSetModal()"><span>＋</span>New Set</div>
     <div style="margin-top:16px;border-top:1px solid var(--glass-border);padding-top:12px;">
+      <div class="sb-item" id="nav-tracker" onclick="showPage('tracker')" style="margin-bottom:4px;"><span class="ico">📊</span>Rugpull Tracker</div>
       <div class="sb-item" onclick="showPage('replier')" id="nav-replier" style="position:relative;">
         <span class="ico">◈</span>Riptag Replier
         <span style="font-size:9px;font-family:var(--mono);background:linear-gradient(135deg,var(--violet),var(--green));-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-left:auto;font-weight:700;letter-spacing:0.05em;">SOON</span>
@@ -648,20 +649,6 @@ tr:hover td { background: rgba(255,255,255,0.015); }
   </div>
 </div>
 
-<!-- TRACKER PAGE -->
-<div id="page-tracker" class="hidden">
-  <div class="topbar">
-    <div class="topbar-left">
-      <div class="page-title">Rugpull Tracker</div>
-      <div class="page-sub">All accounts · earnings · payout dates</div>
-    </div>
-    <div class="topbar-right">
-      <button class="btn ghost sm" onclick="renderTracker()">↻ Refresh</button>
-    </div>
-  </div>
-  <div class="page-content"><div id="tracker-list"></div></div>
-</div>
-
 <!-- TRACKER EDIT MODAL -->
 <div class="modal-overlay hidden" id="tracker-modal">
   <div class="modal">
@@ -692,51 +679,59 @@ tr:hover td { background: rgba(255,255,255,0.015); }
   <div class="topbar">
     <div class="topbar-left">
       <div class="page-title">Riptag Replier</div>
-      <div class="page-sub">AI-powered Depop auto-reply system</div>
+      <div class="page-sub" id="replier-sub">AI auto-reply · Depop DMs</div>
+    </div>
+    <div class="topbar-right">
+      <div id="replier-status-pill" class="status-pill" style="margin-right:8px;"><span class="dot"></span><span id="replier-status-label">Agent offline</span></div>
+      <div style="display:flex;gap:4px;background:var(--glass);border:1px solid var(--glass-border);border-radius:9px;padding:3px;margin-right:4px;">
+        <div onclick="setReplierSpeed('stealth')" id="speed-stealth" style="padding:5px 12px;border-radius:7px;font-size:11px;font-weight:600;cursor:pointer;color:var(--ink-3);">🥷 Stealth</div>
+        <div onclick="setReplierSpeed('balanced')" id="speed-balanced" style="padding:5px 12px;border-radius:7px;font-size:11px;font-weight:600;cursor:pointer;background:var(--green-dim);color:var(--green);">⚖️ Balanced</div>
+        <div onclick="setReplierSpeed('fast')" id="speed-fast" style="padding:5px 12px;border-radius:7px;font-size:11px;font-weight:600;cursor:pointer;color:var(--ink-3);">⚡ Fast</div>
+      </div>
+      <button class="btn ghost sm" onclick="openReplierPrompts()">✏ Edit AI Prompts</button>
+      <button class="btn ghost sm" onclick="loadReplierPage()">↻ Refresh</button>
     </div>
   </div>
   <div class="page-content">
-    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;text-align:center;gap:20px;">
-      <div style="font-size:64px;filter:grayscale(0.3);">🤖</div>
-      <div>
-        <div style="font-size:28px;font-weight:800;letter-spacing:-0.04em;background:linear-gradient(135deg,var(--green),var(--violet));-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:10px;">Coming Soon</div>
-        <div style="font-size:14px;color:var(--ink-3);max-width:420px;line-height:1.8;">
-          24/7 AI-powered auto-reply for all your Depop accounts. Claude-trained on your voice, human-like delays, CAPTCHA bypass, and separate personas for rugpull vs riptag.co accounts.
-        </div>
+    <div style="display:grid;grid-template-columns:260px 1fr;gap:16px;height:calc(100vh - 120px);">
+      <div style="display:flex;flex-direction:column;gap:8px;overflow-y:auto;">
+        <div style="font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:var(--ink-3);padding:4px 2px;margin-bottom:4px;">Accounts</div>
+        <div id="replier-account-list"></div>
       </div>
-      <div style="display:flex;gap:12px;flex-wrap:wrap;justify-content:center;margin-top:8px;">
-        <div style="padding:10px 18px;border-radius:10px;background:var(--glass);border:1px solid var(--glass-border);font-size:12px;color:var(--ink-3);">🧠 Claude AI replies</div>
-        <div style="padding:10px 18px;border-radius:10px;background:var(--glass);border:1px solid var(--glass-border);font-size:12px;color:var(--ink-3);">⏱ Human-like delays</div>
-        <div style="padding:10px 18px;border-radius:10px;background:var(--glass);border:1px solid var(--glass-border);font-size:12px;color:var(--ink-3);">🔐 CAPTCHA handling</div>
-        <div style="padding:10px 18px;border-radius:10px;background:var(--glass);border:1px solid var(--glass-border);font-size:12px;color:var(--ink-3);">🌐 24/7 DigitalOcean</div>
-        <div style="padding:10px 18px;border-radius:10px;background:var(--glass);border:1px solid var(--glass-border);font-size:12px;color:var(--ink-3);">📱 Pushover alerts</div>
+      <div style="display:flex;flex-direction:column;background:var(--glass);border:1px solid var(--glass-border);border-radius:var(--r);overflow:hidden;">
+        <div id="replier-inbox-header" style="padding:16px 20px;border-bottom:1px solid var(--glass-border);display:flex;align-items:center;justify-content:space-between;">
+          <div style="font-size:13px;font-weight:600;color:var(--ink-3);">Select an account</div>
+        </div>
+        <div id="replier-convo-list" style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:var(--ink-3);font-size:13px;">Select an account to view inbox</div>
       </div>
     </div>
   </div>
 </div>
 
-<!-- TRACKER MODAL -->
-<div class="modal-overlay hidden" id="tracker-modal">
-  <div class="modal">
-    <div class="modal-title" id="tracker-modal-title">Add Account</div>
-    <input type="hidden" id="tm-id"/>
-    <div class="grid-2">
-      <div class="field"><label>Depop Username</label><input class="input" id="tm-username" placeholder="@username"/></div>
-      <div class="field"><label>Estimated Earnings ($)</label><input class="input" id="tm-earnings" type="number" placeholder="0"/></div>
-    </div>
-    <div class="grid-2">
-      <div class="field"><label>Email</label><input class="input" id="tm-email" placeholder="email@gmail.com"/></div>
-      <div class="field"><label>Password</label><input class="input" id="tm-password" type="password" placeholder="••••••••"/></div>
-    </div>
-    <div class="field"><label>Authenticator ID / Backup Code</label><input class="input" id="tm-authid" placeholder="2FA backup code or auth app ID"/></div>
-    <div class="field"><label>Ban Date (leave blank if still active)</label><input class="input" id="tm-banned" type="date"/></div>
-    <div class="field"><label>Notes</label><textarea class="input" id="tm-notes" rows="3" placeholder="Any notes about this account..."></textarea></div>
-    <div class="modal-actions">
-      <button class="btn ghost" onclick="closeModal('tracker-modal')">Cancel</button>
-      <button class="btn primary" onclick="saveTracker()">Save Account</button>
-    </div>
+<!-- REPLIER PROMPTS MODAL -->
+<div class="modal-overlay hidden" id="replier-prompts-modal">
+  <div class="modal" style="max-width:700px;">
+    <div class="modal-title">Edit AI Reply Prompts</div>
+    <p style="font-size:13px;color:var(--ink-3);line-height:1.7;margin-bottom:18px;">These prompts train the AI on how to respond. Edit them to match your voice.</p>
+    <div class="field"><label>🎯 Rugpull — System Prompt</label><textarea class="input" id="prompt-rugpull" rows="7"></textarea></div>
+    <div class="field"><label>🌐 Riptag.co — System Prompt</label><textarea class="input" id="prompt-riptag" rows="7"></textarea></div>
+    <div class="modal-actions"><button class="btn ghost" onclick="closeModal('replier-prompts-modal')">Cancel</button><button class="btn primary" onclick="saveReplierPrompts()">Save Prompts</button></div>
   </div>
 </div>
+
+<!-- CONVERSATION VIEW MODAL -->
+<div class="modal-overlay hidden" id="convo-modal">
+  <div class="modal" style="max-width:600px;max-height:80vh;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">
+      <div class="modal-title" style="margin:0;" id="convo-modal-title">Conversation</div>
+      <button class="btn ghost sm" onclick="closeModal('convo-modal')">✕</button>
+    </div>
+    <div id="convo-messages" style="display:flex;flex-direction:column;gap:10px;max-height:400px;overflow-y:auto;padding-right:4px;"></div>
+  </div>
+</div>
+
+<!-- TRACKER MODAL -->
+
 
 <!-- MULTI DEPLOY MODAL -->
 <div class="modal-overlay hidden" id="multi-deploy-modal">
@@ -1170,19 +1165,6 @@ async function renderTracker(){
   }catch(err){el.innerHTML='<div class="empty">Error: '+err.message+'</div>';}
 }
 
-function openTrackerModal(accountId){
-  const acct=accounts.find(a=>a.id===accountId);
-  if(!acct)return;
-  document.getElementById('tm-id').value=accountId;
-  document.getElementById('tm-email').value=acct.email||'';
-  document.getElementById('tm-password').value=acct.password||'';
-  document.getElementById('tm-auth').value=acct.authId||'';
-  document.getElementById('tm-earnings').value=acct.earnings||'';
-  document.getElementById('tm-banned').value=acct.bannedAt?acct.bannedAt.split('T')[0]:'';
-  document.getElementById('tm-payout').value=acct.payoutDate||'';
-  document.getElementById('tm-notes').value=acct.notes||'';
-  document.getElementById('tracker-modal').classList.remove('hidden');
-}
 
 async function saveTrackerRecord(){
   const id=document.getElementById('tm-id').value;
