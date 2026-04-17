@@ -820,6 +820,96 @@ app.put('/api/replier/prompts', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ─── CLAUDE AI REPLY GENERATION ───────────────────────────────
+// Loads ANTHROPIC_API_KEY from Railway env vars. Falls back to null if missing.
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || null;
+const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || 'claude-haiku-4-5';
+
+// Status check — lets the UI show whether the AI is wired up
+app.get('/api/replier/ai-status', (req, res) => {
+  res.json({
+    configured: !!ANTHROPIC_API_KEY,
+    model: ANTHROPIC_API_KEY ? ANTHROPIC_MODEL : null
+  });
+});
+
+// Build a messages[] array for the Anthropic API from conversation history
+function buildClaudeMessages(message, history) {
+  const msgs = [];
+  if (Array.isArray(history)) {
+    for (const h of history) {
+      if (!h || !h.direction) continue;
+      const role = h.direction === 'inbound' ? 'user' : 'assistant';
+      const text = (h.message || h.reply || '').trim();
+      if (text) msgs.push({ role, content: text });
+    }
+  }
+  msgs.push({ role: 'user', content: String(message || '').trim() });
+  return msgs;
+}
+
+// Generate a reply using Claude. Body: { accountId?, message, style?, history?, systemOverride? }
+app.post('/api/replier/generate', async (req, res) => {
+  try {
+    if (!ANTHROPIC_API_KEY) {
+      return res.status(503).json({ error: 'ANTHROPIC_API_KEY not set. Add it in Railway → Variables, then redeploy.' });
+    }
+
+    const { accountId, message, style, history, systemOverride } = req.body || {};
+    if (!message || !String(message).trim()) {
+      return res.status(400).json({ error: 'message is required' });
+    }
+
+    // Pick the system prompt. Priority: explicit override → account's category → style arg → rugpull default.
+    let systemPrompt = systemOverride && String(systemOverride).trim();
+    if (!systemPrompt) {
+      const pr = await pool.query("SELECT data FROM sets WHERE id='__replier_prompts__'");
+      const prompts = pr.rows.length ? pr.rows[0].data : {};
+      let chosenStyle = style;
+      if (!chosenStyle && accountId) {
+        const ar = await pool.query('SELECT data FROM accounts WHERE id=$1', [accountId]);
+        if (ar.rows.length) chosenStyle = ar.rows[0].data.category;
+      }
+      chosenStyle = chosenStyle || 'rugpull';
+      systemPrompt = prompts[chosenStyle] || prompts.rugpull || 'you are a chill depop seller responding to dms in lowercase, casual, say yes to everything, keep it short';
+    }
+
+    const messages = buildClaudeMessages(message, history);
+
+    const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: ANTHROPIC_MODEL,
+        max_tokens: 300,
+        system: systemPrompt,
+        messages
+      })
+    });
+
+    if (!anthropicRes.ok) {
+      const errText = await anthropicRes.text();
+      return res.status(502).json({ error: 'Claude API error: ' + anthropicRes.status + ' ' + errText.slice(0, 500) });
+    }
+
+    const data = await anthropicRes.json();
+    const reply = (data.content && data.content[0] && data.content[0].text || '').trim();
+    if (!reply) return res.status(502).json({ error: 'Empty reply from Claude', raw: data });
+
+    res.json({
+      reply,
+      model: data.model || ANTHROPIC_MODEL,
+      usage: data.usage || null
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Replier heartbeat
 let lastReplierHeartbeat = null;
 app.post('/api/replier/heartbeat', (req, res) => {
