@@ -662,6 +662,8 @@ tr:hover td { background: rgba(255,255,255,0.015); }
         <div onclick="setReplierSpeed('balanced')" id="speed-balanced" style="padding:5px 12px;border-radius:7px;font-size:11px;font-weight:600;cursor:pointer;background:var(--green-dim);color:var(--green);">⚖️ Balanced</div>
         <div onclick="setReplierSpeed('fast')" id="speed-fast" style="padding:5px 12px;border-radius:7px;font-size:11px;font-weight:600;cursor:pointer;color:var(--ink-3);">⚡ Fast</div>
       </div>
+      <span id="ai-key-pill" style="font-size:10px;font-family:var(--mono);color:var(--ink-3);padding:4px 8px;border-radius:6px;background:var(--glass);border:1px solid var(--glass-border);margin-right:4px;">AI: checking…</span>
+      <button class="btn ghost sm" onclick="openAITestModal()">🤖 Test AI</button>
       <button class="btn ghost sm" onclick="openReplierPrompts()">✏ Edit AI Prompts</button>
       <button class="btn ghost sm" onclick="loadReplierPage()">↻ Refresh</button>
     </div>
@@ -718,6 +720,30 @@ tr:hover td { background: rgba(255,255,255,0.015); }
     <div class="field"><label>🎯 Rugpull — System Prompt</label><textarea class="input" id="prompt-rugpull" rows="7"></textarea></div>
     <div class="field"><label>🌐 Riptag.co — System Prompt</label><textarea class="input" id="prompt-riptag" rows="7"></textarea></div>
     <div class="modal-actions"><button class="btn ghost" onclick="closeModal('replier-prompts-modal')">Cancel</button><button class="btn primary" onclick="saveReplierPrompts()">Save Prompts</button></div>
+  </div>
+</div>
+
+<!-- AI TEST MODAL -->
+<div class="modal-overlay hidden" id="ai-test-modal">
+  <div class="modal" style="max-width:640px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+      <div class="modal-title" style="margin:0;">🤖 Test AI Reply</div>
+      <button class="btn ghost sm" onclick="closeModal('ai-test-modal')">✕</button>
+    </div>
+    <p style="font-size:12px;color:var(--ink-3);line-height:1.6;margin-bottom:14px;">Paste a DM you might get, pick a prompt style, and see what Claude would send back. Uses your saved prompts + the <code>ANTHROPIC_API_KEY</code> env var on Railway.</p>
+    <div class="field"><label>Style</label>
+      <select class="input" id="ai-test-style">
+        <option value="rugpull">🎯 Rugpull</option>
+        <option value="riptag">🌐 Riptag.co</option>
+      </select>
+    </div>
+    <div class="field"><label>Incoming message</label><textarea class="input" id="ai-test-message" rows="3" placeholder="yo is this still available in XL?"></textarea></div>
+    <div class="modal-actions" style="margin-bottom:14px;">
+      <button class="btn ghost" onclick="closeModal('ai-test-modal')">Cancel</button>
+      <button class="btn primary" id="ai-test-generate-btn" onclick="runAITest()">Generate reply</button>
+    </div>
+    <div id="ai-test-output" style="display:none;font-size:13px;line-height:1.6;padding:12px 14px;border-radius:10px;background:var(--glass);border:1px solid var(--glass-border);white-space:pre-wrap;"></div>
+    <div id="ai-test-meta" style="display:none;font-size:10px;font-family:var(--mono);color:var(--ink-3);margin-top:8px;"></div>
   </div>
 </div>
 
@@ -1180,6 +1206,8 @@ async function loadReplierPage(){
     const d=await r.json();
     updateReplierStatus(d.alive);
   }catch{}
+  // Check Claude AI key status
+  checkAIStatus();
   // Load speed setting
   try{
     const r=await fetch('/api/replier/speed');
@@ -1231,7 +1259,14 @@ async function setReplierSpeed(speed){
 function setSpeedUI(speed){
   ['stealth','balanced','fast'].forEach(s=>{
     const el=document.getElementById('speed-'+s);
-    if(el)el.className='speed-btn'+(s===speed?' active-speed':'');
+    if(!el)return;
+    if(s===speed){
+      el.style.background='var(--green-dim)';
+      el.style.color='var(--green)';
+    }else{
+      el.style.background='transparent';
+      el.style.color='var(--ink-3)';
+    }
   });
 }
 
@@ -1321,6 +1356,55 @@ async function saveReplierPrompts(){
   await fetch('/api/replier/prompts',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({rugpull,riptag})});
   closeModal('replier-prompts-modal');
   glog('AI prompts saved','ok');
+}
+
+// ── Claude AI test modal ─────────────────────────
+async function checkAIStatus(){
+  const pill=document.getElementById('ai-key-pill');
+  if(!pill)return;
+  try{
+    const r=await fetch('/api/replier/ai-status');
+    const d=await r.json();
+    if(d.configured){
+      pill.textContent='AI: '+(d.model||'ready');
+      pill.style.color='var(--green)';
+      pill.style.borderColor='rgba(0,229,160,0.2)';
+    }else{
+      pill.textContent='AI: no key';
+      pill.style.color='var(--red,#ff6b6b)';
+      pill.style.borderColor='rgba(255,107,107,0.2)';
+    }
+  }catch{
+    pill.textContent='AI: ?';
+  }
+}
+
+function openAITestModal(){
+  document.getElementById('ai-test-output').style.display='none';
+  document.getElementById('ai-test-meta').style.display='none';
+  document.getElementById('ai-test-modal').classList.remove('hidden');
+  checkAIStatus();
+}
+
+async function runAITest(){
+  const btn=document.getElementById('ai-test-generate-btn');
+  const out=document.getElementById('ai-test-output');
+  const meta=document.getElementById('ai-test-meta');
+  const message=document.getElementById('ai-test-message').value.trim();
+  const style=document.getElementById('ai-test-style').value;
+  if(!message){glog('Type a message first','err');return;}
+  btn.disabled=true;btn.textContent='Generating…';
+  out.style.display='block';out.textContent='';meta.style.display='none';
+  try{
+    const r=await fetch('/api/replier/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message,style})});
+    const d=await r.json();
+    if(!r.ok){out.style.color='var(--red,#ff6b6b)';out.textContent=d.error||'Request failed';}
+    else{
+      out.style.color='var(--ink)';out.textContent=d.reply;
+      if(d.usage){meta.style.display='block';meta.textContent='model: '+(d.model||'?')+' · in: '+(d.usage.input_tokens||0)+' tok · out: '+(d.usage.output_tokens||0)+' tok';}
+    }
+  }catch(e){out.style.color='var(--red,#ff6b6b)';out.textContent=e.message;}
+  btn.disabled=false;btn.textContent='Generate reply';
 }
 
 function updateReplierStatus(alive){
