@@ -43,7 +43,28 @@ function apiPut(endpoint, body) {
       hostname: urlObj.hostname,
       path: urlObj.pathname,
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) }
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data), 'x-api-key': '1010' }
+    }, (res) => {
+      let d = '';
+      res.on('data', chunk => d += chunk);
+      res.on('end', () => { try { resolve(JSON.parse(d)); } catch(e) { resolve(d); } });
+    });
+    req.on('error', reject);
+    req.write(data);
+    req.end();
+  });
+}
+
+function apiPost(endpoint, body) {
+  return new Promise((resolve, reject) => {
+    const data = JSON.stringify(body || {});
+    const urlObj = new URL(DASHBOARD_URL + endpoint);
+    const mod = urlObj.protocol === 'https:' ? https : http;
+    const req = mod.request({
+      hostname: urlObj.hostname,
+      path: urlObj.pathname,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data), 'x-api-key': '1010' }
     }, (res) => {
       let d = '';
       res.on('data', chunk => d += chunk);
