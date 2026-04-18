@@ -85,13 +85,50 @@ body::after {
   display: flex; align-items: center; gap: 10px;
 }
 .sb-logo {
-  width: 32px; height: 32px;
+  width: 34px; height: 34px;
   background: linear-gradient(135deg, var(--green), #00b37e);
   border-radius: 9px;
   display: flex; align-items: center; justify-content: center;
   font-size: 16px;
   box-shadow: 0 0 20px var(--green-glow);
   flex-shrink: 0;
+  overflow: hidden;
+}
+.sb-logo img {
+  width: 100%; height: 100%;
+  object-fit: contain;
+  padding: 4px;
+  /* Turn the black logo white so it reads on the green gradient */
+  filter: brightness(0) invert(1);
+}
+
+/* Dark, on-brand dropdown styling — matches the .input aesthetic and
+   hides the OS-default select chevron + highlight colors. */
+select.input, .input[is="select"], #sold-account-select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-color: var(--glass);
+  color: var(--ink);
+  border: 1px solid var(--glass-border);
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M1 1l4 4 4-4' stroke='%237a8291' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 30px;
+  cursor: pointer;
+  transition: border-color var(--transition), background-color var(--transition);
+}
+select.input:hover, #sold-account-select:hover { border-color: rgba(0,229,160,0.25); }
+select.input:focus, #sold-account-select:focus { outline: none; border-color: var(--green); box-shadow: 0 0 0 3px rgba(0,229,160,0.12); }
+select.input option, #sold-account-select option {
+  background: #14181d;
+  color: var(--ink);
+  font-family: var(--sans);
+  padding: 8px 12px;
+}
+select.input option:checked, #sold-account-select option:checked {
+  background: linear-gradient(var(--green-dim), var(--green-dim));
+  color: var(--green);
 }
 .sb-title { font-size: 14px; font-weight: 700; letter-spacing: -0.02em; }
 .sb-version { font-size: 10px; color: var(--ink-3); font-family: var(--mono); }
@@ -461,7 +498,7 @@ tr:hover td { background: rgba(255,255,255,0.015); }
 <!-- SIDEBAR -->
 <div class="sidebar">
   <div class="sb-brand">
-    <div class="sb-logo">🏄</div>
+    <div class="sb-logo"><img src="/logo.png" alt="Riptag" onerror="this.style.display='none';this.parentElement.textContent='🏄';"/></div>
     <div>
       <div class="sb-title">Riptag</div>
       <div class="sb-version">v2.3 · Set Manager</div>
@@ -586,7 +623,7 @@ tr:hover td { background: rgba(255,255,255,0.015); }
       <div class="page-sub">4×6 label printing by size</div>
     </div>
     <div class="topbar-right">
-      <select class="input" id="sold-account-select" style="width:180px;padding:7px 12px;" onchange="loadOrders()">
+      <select class="input" id="sold-account-select" style="width:200px;height:34px;padding-top:0;padding-bottom:0;font-size:12px;" onchange="loadOrders()">
         <option value="">— Select account —</option>
       </select>
       <button class="btn ghost sm" onclick="scrapeOrders()">↓ Scrape Orders</button>
