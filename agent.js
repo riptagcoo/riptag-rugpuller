@@ -503,37 +503,81 @@ async function runScrapeOrders() {
         await page.waitForTimeout(1200);
 
         const detail = await page.evaluate(() => {
+          const SIZES = ['S','M','L','XL','XXL'];
+          const normalizeSize = (raw) => {
+            if (!raw) return null;
+            const t = String(raw).trim().toUpperCase();
+            if (SIZES.includes(t)) return t;
+            const m = t.match(/\b(XXL|XL|SMALL|MEDIUM|LARGE|\bS\b|\bM\b|\bL\b)\b/);
+            if (!m) return null;
+            return m[1].replace('SMALL','S').replace('MEDIUM','M').replace('LARGE','L');
+          };
+
           const drawer = document.querySelector('aside[data-testid="simpleDrawer-visible"]') || document;
-          
-          // Item title
-          const titleEl = drawer.querySelector('p[data-testid="receipt-product-description"]');
-          const item = titleEl?.textContent?.trim() || 'Mystery Bundle';
 
-          // Size - look in summary div first
-          const summaryEl = drawer.querySelector('div[class*="summary"]');
-          let size = 'Unknown';
-          if (summaryEl) {
-            const boldPs = summaryEl.querySelectorAll('p[class*="bold"]');
-            for (const p of boldPs) {
-              const t = p.textContent?.trim().toUpperCase();
-              if (['S','M','L','XL','XXL'].includes(t)) { size = t; break; }
+          // An order can contain multiple items (someone buys 2 packs).
+          // Each item has its own <p data-testid="receipt-product-description">.
+          // We find each one and look for the size nearby.
+          const productEls = [...drawer.querySelectorAll('p[data-testid="receipt-product-description"]')];
+          const items = [];
+
+          for (const pEl of productEls) {
+            const itemTitle = pEl.textContent?.trim() || 'Item';
+            let size = null;
+
+            // Walk up from the product title, scanning siblings/ancestors for a size.
+            let walker = pEl.parentElement;
+            let depth = 0;
+            while (walker && walker !== drawer && depth < 6 && !size) {
+              const ps = walker.querySelectorAll('p');
+              for (const p of ps) {
+                const candidate = normalizeSize(p.textContent);
+                if (candidate) { size = candidate; break; }
+              }
+              walker = walker.parentElement;
+              depth++;
             }
-          }
-          // Fallback: scan all p tags for size
-          if (size === 'Unknown') {
-            const allP = [...drawer.querySelectorAll('p')];
-            for (const p of allP) {
-              const t = p.textContent?.trim().toUpperCase();
-              if (['S','M','L','XL','XXL'].includes(t)) { size = t; break; }
-            }
-          }
-          // Last resort: extract from item title
-          if (size === 'Unknown' && item) {
-            const m = item.match(/\b(XXL|XL|Small|Medium|Large|\bS\b|\bM\b|\bL\b)\b/i);
-            if (m) size = m[1].toUpperCase().replace('SMALL','S').replace('MEDIUM','M').replace('LARGE','L');
+
+            // Fallback: try to pull from the item title itself
+            if (!size) size = normalizeSize(itemTitle);
+
+            items.push({ item: itemTitle, size: size || 'Unknown' });
           }
 
-          return { item, size };
+          // If we found 0 items via the specific selector, do the original
+          // single-size fallback so old-style pages still work.
+          if (!items.length) {
+            let size = 'Unknown';
+            const summaryEl = drawer.querySelector('div[class*="summary"]');
+            if (summaryEl) {
+              const boldPs = summaryEl.querySelectorAll('p[class*="bold"]');
+              for (const p of boldPs) {
+                const c = normalizeSize(p.textContent);
+                if (c) { size = c; break; }
+              }
+            }
+            if (size === 'Unknown') {
+              for (const p of drawer.querySelectorAll('p')) {
+                const c = normalizeSize(p.textContent);
+                if (c) { size = c; break; }
+              }
+            }
+            items.push({ item: 'Mystery Bundle', size });
+          }
+
+          // Decide the "grouping" size for this order:
+          //   1 item  → that item's size (S/M/L/XL/XXL or Unknown)
+          //   2+ items → '?' so the dashboard knows it's a multi-item order
+          let groupSize, displayItem;
+          if (items.length === 1) {
+            groupSize = items[0].size;
+            displayItem = items[0].item;
+          } else {
+            groupSize = '?';
+            displayItem = `${items.length} items: ` + items.map(i => i.size).join(', ');
+          }
+
+          return { item: displayItem, size: groupSize, items };
         });
 
         allOrders.push({
@@ -542,11 +586,16 @@ async function runScrapeOrders() {
           date: order.date,
           price: order.price,
           item: detail.item,
-          size: detail.size
+          size: detail.size,
+          items: detail.items
         });
-        process.stdout.write(`${detail.size} ✓\n`);
+        if (detail.size === '?') {
+          process.stdout.write(`? (${detail.items.length} items: ${detail.items.map(i => i.size).join(',')}) ✓\n`);
+        } else {
+          process.stdout.write(`${detail.size} ✓\n`);
+        }
       } catch (e) {
-        allOrders.push({ orderId: order.orderId, buyer: order.buyer, date: order.date, price: order.price, item: 'Mystery Bundle', size: 'Unknown' });
+        allOrders.push({ orderId: order.orderId, buyer: order.buyer, date: order.date, price: order.price, item: 'Mystery Bundle', size: 'Unknown', items: [] });
         process.stdout.write(`error\n`);
       }
       await page.waitForTimeout(600);
