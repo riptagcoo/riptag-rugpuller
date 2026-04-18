@@ -211,6 +211,8 @@ select.input option:checked, #sold-account-select option:checked {
 
 /* ── MAIN ── */
 .main { flex: 1; overflow: hidden; display: flex; flex-direction: column; min-width: 0; }
+/* Each page fills .main vertically so .page-content inside can scroll properly */
+[id^="page-"]:not(.hidden) { flex: 1; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 
 /* ── TOPBAR ── */
 .topbar {
