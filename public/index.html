@@ -1270,19 +1270,22 @@ async function loadOrders(){
       return;
     }
 
-    // Group by size
-    const sizeOrder=['S','M','L','XL','XXL','Unknown'];
+    // Group by size. '?' = multi-item order (irregular), Unknown = parse failed.
+    const sizeOrder=['S','M','L','XL','XXL','?','Unknown'];
     const bySize={};
     for(const o of orders){
       const s=(o.size||'Unknown').toUpperCase();
       (bySize[s]=bySize[s]||[]).push(o);
     }
 
+    const sizeLabel=s=>s==='Unknown'?'?':s;
+    const sizeHeader=s=>s==='?'?'Multi-item (?)':s==='Unknown'?'Unknown':'Size '+s;
+
     // Stats row — counts by size + total
     stats.classList.remove('hidden');
     stats.innerHTML=sizeOrder.map(s=>{
       const c=bySize[s]?.length||0;
-      return `<div class="stat-card"><div class="stat-n">${c}</div><div class="stat-lbl">${s==='Unknown'?'?':s}</div></div>`;
+      return `<div class="stat-card"><div class="stat-n">${c}</div><div class="stat-lbl">${sizeLabel(s)}</div></div>`;
     }).join('')+`<div class="stat-card"><div class="stat-n g">${orders.length}</div><div class="stat-lbl">total</div></div>`;
 
     // Grouped order list
@@ -1292,20 +1295,28 @@ async function loadOrders(){
         const grp=bySize[s];
         return `<div style="margin-bottom:22px;">
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
-            <div style="font-size:15px;font-weight:700;letter-spacing:-0.02em;">Size ${s==='Unknown'?'?':s}</div>
+            <div style="font-size:15px;font-weight:700;letter-spacing:-0.02em;">${sizeHeader(s)}</div>
             <span style="font-size:11px;color:var(--ink-3);font-family:var(--mono);">${grp.length} order${grp.length===1?'':'s'}</span>
-            <button class="btn xs ghost" style="margin-left:auto;" onclick="printLabels('${id}','${s}')">🖨 Print ${s} labels</button>
+            <button class="btn xs ghost" style="margin-left:auto;" onclick="printLabels('${id}','${s}')">🖨 Print ${sizeLabel(s)} labels</button>
           </div>
           <div style="border:1px solid var(--glass-border);border-radius:10px;overflow:hidden;background:var(--glass);">
             <div style="display:grid;grid-template-columns:1.4fr 1fr 0.8fr 0.7fr;gap:12px;padding:8px 14px;border-bottom:1px solid var(--glass-border);font-family:var(--mono);font-size:10px;color:var(--ink-3);text-transform:uppercase;letter-spacing:0.07em;">
               <div>Item</div><div>Buyer</div><div>Date</div><div style="text-align:right;">Price</div>
             </div>
-            ${grp.map(o=>`<div style="display:grid;grid-template-columns:1.4fr 1fr 0.8fr 0.7fr;gap:12px;padding:10px 14px;border-bottom:1px solid rgba(255,255,255,0.03);font-size:12px;align-items:center;">
-              <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${(o.item||'Item').replace(/</g,'&lt;')}</div>
-              <div style="color:var(--ink-3);font-family:var(--mono);">@${o.buyer||'?'}</div>
-              <div style="color:var(--ink-3);font-family:var(--mono);">${o.date||''}</div>
-              <div style="color:var(--green);font-weight:700;font-family:var(--mono);text-align:right;">${o.price||''}</div>
-            </div>`).join('')}
+            ${grp.map(o=>{
+              const hasMultiItems=Array.isArray(o.items)&&o.items.length>1;
+              const itemBreakdown=hasMultiItems?`<div style="font-size:10px;color:var(--ink-3);font-family:var(--mono);margin-top:4px;padding-left:0;">${o.items.map(it=>`• ${it.size||'?'} — ${(it.item||'').replace(/</g,'&lt;').slice(0,50)}`).join('<br/>')}</div>`:'';
+              const mainItem=hasMultiItems?`<strong style="color:var(--amber,#f0b100);">${o.items.length} items:</strong> ${o.items.map(it=>it.size||'?').join(', ')}`:(o.item||'Item').replace(/</g,'&lt;');
+              return `<div style="display:grid;grid-template-columns:1.4fr 1fr 0.8fr 0.7fr;gap:12px;padding:10px 14px;border-bottom:1px solid rgba(255,255,255,0.03);font-size:12px;align-items:start;">
+                <div style="overflow:hidden;">
+                  <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${mainItem}</div>
+                  ${itemBreakdown}
+                </div>
+                <div style="color:var(--ink-3);font-family:var(--mono);">@${o.buyer||'?'}</div>
+                <div style="color:var(--ink-3);font-family:var(--mono);">${o.date||''}</div>
+                <div style="color:var(--green);font-weight:700;font-family:var(--mono);text-align:right;">${o.price||''}</div>
+              </div>`;
+            }).join('')}
           </div>
         </div>`;
       }).join('');
