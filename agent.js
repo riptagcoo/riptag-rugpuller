@@ -655,6 +655,15 @@ async function runDownloadLabels() {
   sorted.forEach(o => { breakdown[o.size] = (breakdown[o.size] || 0) + 1; });
   Object.entries(breakdown).forEach(([s, n]) => console.log(`  ${s}: ${n}`));
 
+  // Fail fast with a clear message if pdf-lib isn't installed
+  try { require('pdf-lib'); }
+  catch {
+    console.log('\n❌ pdf-lib is not installed. Run this first:');
+    console.log('   npm install');
+    console.log('Then retry this option.');
+    return;
+  }
+
   const go = await ask('\nContinue? (y/n): ');
   if (go.toLowerCase() !== 'y') { console.log('Cancelled.'); return; }
 
@@ -662,6 +671,9 @@ async function runDownloadLabels() {
   const tmpDir = path.join(__dirname, 'tmp', 'labels', account.username);
   fs.ensureDirSync(tmpDir);
   fs.emptyDirSync(tmpDir);
+
+  // Replace Windows-illegal chars in the size (? in particular) for filenames
+  const safeSize = s => s === '?' ? 'MULTI' : String(s || 'X').replace(/[^A-Z0-9]/gi, '_');
 
   console.log(`\nOpening browser for @${account.username}...`);
   const browser = await chromium.launch({ headless: false, slowMo: 50 });
@@ -733,7 +745,7 @@ async function runDownloadLabels() {
 
       // Download the PDF using Node https (the URL is signed, no auth needed)
       const pdfBytes = await downloadUrlToBuffer(pdfUrl);
-      const pdfPath = path.join(tmpDir, `${String(i+1).padStart(3,'0')}_${o.size}_${o.orderId}.pdf`);
+      const pdfPath = path.join(tmpDir, `${String(i+1).padStart(3,'0')}_${safeSize(o.size)}_${o.orderId}.pdf`);
       fs.writeFileSync(pdfPath, pdfBytes);
       collected.push({ order: o, pdfPath });
       process.stdout.write(`ok (${Math.round(pdfBytes.length/1024)}kb)\n`);
