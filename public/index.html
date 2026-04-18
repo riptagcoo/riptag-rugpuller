@@ -1196,6 +1196,100 @@ async function renderTracker(){
 
 // saveTrackerRecord replaced by saveTracker()
 
+// ─── SOLD & LABELS ───────────────────────────────────────────
+function initSoldPage(){
+  const sel=document.getElementById('sold-account-select');
+  if(!sel) return;
+  const prev=sel.value;
+  sel.innerHTML='<option value="">— Select account —</option>'+
+    accounts.map(a=>{
+      const n=(a.orders||[]).length;
+      return `<option value="${a.id}">@${a.username}${n?` (${n} orders)`:''}</option>`;
+    }).join('');
+  if(prev){ sel.value=prev; if(sel.value) loadOrders(); }
+}
+
+async function loadOrders(){
+  const id=document.getElementById('sold-account-select').value;
+  const stats=document.getElementById('sold-stats');
+  const content=document.getElementById('sold-content');
+  if(!id){
+    stats.classList.add('hidden');
+    content.innerHTML='<div class="empty"><div class="empty-ico">📦</div><div class="empty-title">Pick an account above</div>Orders will show here grouped by size.</div>';
+    return;
+  }
+  content.innerHTML='<div class="empty"><div class="empty-ico">⏳</div>Loading orders...</div>';
+  try{
+    const r=await fetch('/api/accounts/'+id+'/orders');
+    const d=await r.json();
+    const orders=d.orders||[];
+    const acct=accounts.find(a=>a.id===id);
+
+    if(!orders.length){
+      stats.classList.add('hidden');
+      content.innerHTML=`<div class="empty"><div class="empty-ico">📭</div><div class="empty-title">No orders scraped yet for @${acct?.username||''}</div>In your terminal, run <code>node agent.js</code> → option 4 → pick @${acct?.username||''}. After it finishes, click Refresh here.</div>`;
+      return;
+    }
+
+    // Group by size
+    const sizeOrder=['S','M','L','XL','XXL','Unknown'];
+    const bySize={};
+    for(const o of orders){
+      const s=(o.size||'Unknown').toUpperCase();
+      (bySize[s]=bySize[s]||[]).push(o);
+    }
+
+    // Stats row — counts by size + total
+    stats.classList.remove('hidden');
+    stats.innerHTML=sizeOrder.map(s=>{
+      const c=bySize[s]?.length||0;
+      return `<div class="stat-card"><div class="stat-n">${c}</div><div class="stat-lbl">${s==='Unknown'?'?':s}</div></div>`;
+    }).join('')+`<div class="stat-card"><div class="stat-n g">${orders.length}</div><div class="stat-lbl">total</div></div>`;
+
+    // Grouped order list
+    const scrapedText=d.scrapedAt?`last scraped ${new Date(d.scrapedAt).toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}`:'';
+    content.innerHTML=`<div style="font-size:11px;color:var(--ink-3);font-family:var(--mono);margin-bottom:14px;">${scrapedText}</div>`+
+      sizeOrder.filter(s=>bySize[s]?.length).map(s=>{
+        const grp=bySize[s];
+        return `<div style="margin-bottom:22px;">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+            <div style="font-size:15px;font-weight:700;letter-spacing:-0.02em;">Size ${s==='Unknown'?'?':s}</div>
+            <span style="font-size:11px;color:var(--ink-3);font-family:var(--mono);">${grp.length} order${grp.length===1?'':'s'}</span>
+            <button class="btn xs ghost" style="margin-left:auto;" onclick="printLabels('${id}','${s}')">🖨 Print ${s} labels</button>
+          </div>
+          <div style="border:1px solid var(--glass-border);border-radius:10px;overflow:hidden;background:var(--glass);">
+            <div style="display:grid;grid-template-columns:1.4fr 1fr 0.8fr 0.7fr;gap:12px;padding:8px 14px;border-bottom:1px solid var(--glass-border);font-family:var(--mono);font-size:10px;color:var(--ink-3);text-transform:uppercase;letter-spacing:0.07em;">
+              <div>Item</div><div>Buyer</div><div>Date</div><div style="text-align:right;">Price</div>
+            </div>
+            ${grp.map(o=>`<div style="display:grid;grid-template-columns:1.4fr 1fr 0.8fr 0.7fr;gap:12px;padding:10px 14px;border-bottom:1px solid rgba(255,255,255,0.03);font-size:12px;align-items:center;">
+              <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${(o.item||'Item').replace(/</g,'&lt;')}</div>
+              <div style="color:var(--ink-3);font-family:var(--mono);">@${o.buyer||'?'}</div>
+              <div style="color:var(--ink-3);font-family:var(--mono);">${o.date||''}</div>
+              <div style="color:var(--green);font-weight:700;font-family:var(--mono);text-align:right;">${o.price||''}</div>
+            </div>`).join('')}
+          </div>
+        </div>`;
+      }).join('');
+  }catch(e){ content.innerHTML='<div class="empty">Error: '+e.message+'</div>'; }
+}
+
+function scrapeOrders(){
+  const id=document.getElementById('sold-account-select').value;
+  if(!id){ alert('Pick an account from the dropdown first.'); return; }
+  const acct=accounts.find(a=>a.id===id);
+  const msg='To scrape orders for @'+(acct?.username||'this account')+':\n\n'+
+    '1. Open a terminal in your Riptag-Rugpuller folder\n'+
+    '2. Run:  node agent.js\n'+
+    '3. Pick option 4 (Scrape orders)\n'+
+    '4. Select @'+(acct?.username||'')+' from the list\n\n'+
+    'When it finishes, come back here and click the Sold & Labels tab again to refresh.';
+  alert(msg);
+}
+
+function printLabels(accountId, size){
+  alert('Label printing for size '+size+' is coming next. Tell me the exact format you want:\n\n• 4×6 thermal label PDF?\n• Letter-size sheet with multiple per page?\n• Just a printable text list grouped by size?\n\nI\'ll wire it up once you confirm.');
+}
+
 // ─── REPLIER ─────────────────────────────────────────────────
 let selectedReplierAccount = null;
 
