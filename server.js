@@ -583,86 +583,13 @@ app.get('/api/accounts/:id/orders', async (req, res) => {
 
 
 // ─── RUGPULL TRACKER ──────────────────────────────────────────
-app.get('/api/tracker', async (req, res) => {
-  try {
-    await pool.query(`CREATE TABLE IF NOT EXISTS tracker (
-      id TEXT PRIMARY KEY,
-      data JSONB NOT NULL,
-      created_at TIMESTAMPTZ DEFAULT NOW()
-    )`);
-    const r = await pool.query('SELECT data FROM tracker ORDER BY created_at DESC');
-    res.json(r.rows.map(row => row.data));
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-app.post('/api/tracker', async (req, res) => {
-  try {
-    await pool.query(`CREATE TABLE IF NOT EXISTS tracker (id TEXT PRIMARY KEY, data JSONB NOT NULL, created_at TIMESTAMPTZ DEFAULT NOW())`);
-    const { v4: uid } = require('uuid');
-    const id = uid();
-    const entry = {
-      id,
-      username: req.body.username || '',
-      email: req.body.email || '',
-      password: req.body.password || '',
-      authId: req.body.authId || '',
-      bannedAt: req.body.bannedAt || null,
-      earnings: req.body.earnings || '0',
-      notes: req.body.notes || '',
-      createdAt: new Date().toISOString()
-    };
-    await pool.query('INSERT INTO tracker (id, data) VALUES ($1, $2)', [id, JSON.stringify(entry)]);
-    res.json(entry);
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-app.post('/api/tracker', async (req, res) => {
-  try {
-    const { v4: uuid } = require('uuid');
-    const id = uuid();
-    const body = req.body;
-    if (body.bannedAt && !body.payoutDate) {
-      const d = new Date(body.bannedAt);
-      d.setDate(d.getDate() + 30);
-      body.payoutDate = d.toISOString().split('T')[0];
-    }
-    const account = { id, ...body, connectedAt: new Date().toISOString() };
-    await pool.query('INSERT INTO accounts (id, data) VALUES ($1, $2)', [id, JSON.stringify(account)]);
-    res.json({ ok: true, id });
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-app.delete('/api/tracker/:id', async (req, res) => {
-  try {
-    await pool.query('DELETE FROM accounts WHERE id=$1', [req.params.id]);
-    res.json({ ok: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-app.put('/api/tracker/:id', async (req, res) => {
-  try {
-    const r = await pool.query('SELECT data FROM tracker WHERE id=$1', [req.params.id]);
-    if (!r.rows.length) return res.status(404).json({ error: 'Not found' });
-    const updated = { ...r.rows[0].data, ...req.body, id: req.params.id };
-    await pool.query('UPDATE tracker SET data=$1 WHERE id=$2', [JSON.stringify(updated), req.params.id]);
-    res.json(updated);
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-app.delete('/api/tracker/:id', async (req, res) => {
-  try {
-    await pool.query('DELETE FROM tracker WHERE id=$1', [req.params.id]);
-    res.json({ ok: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-
-// ─── RUGPULL TRACKER ──────────────────────────────────────────
+// All tracker operations read from / write to the same `accounts` table
+// that the Chrome extension also writes to, so extension-connected
+// accounts and manually-added ones show up in the same list.
 app.get('/api/tracker', async (req, res) => {
   try {
     const r = await pool.query('SELECT data FROM accounts ORDER BY created_at DESC');
     const accounts = r.rows.map(row => row.data);
-    // Return all accounts including tracker fields
     res.json({ accounts });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -671,22 +598,30 @@ app.post('/api/tracker', async (req, res) => {
   try {
     const { v4: uuid } = require('uuid');
     const id = uuid();
-    const body = req.body;
+    const body = req.body || {};
+    // Auto-calculate payout date (banned + 30 days) if not provided
     if (body.bannedAt && !body.payoutDate) {
       const d = new Date(body.bannedAt);
       d.setDate(d.getDate() + 30);
       body.payoutDate = d.toISOString().split('T')[0];
     }
-    const account = { id, ...body, connectedAt: new Date().toISOString() };
+    const account = {
+      id,
+      username: (body.username || '').replace(/^@/, ''),
+      email: body.email || '',
+      password: body.password || '',
+      authId: body.authId || '',
+      earnings: body.earnings || '0',
+      bannedAt: body.bannedAt || null,
+      payoutDate: body.payoutDate || null,
+      notes: body.notes || '',
+      status: body.status || 'unknown',
+      connectedAt: new Date().toISOString(),
+      cookies: []
+    };
     await pool.query('INSERT INTO accounts (id, data) VALUES ($1, $2)', [id, JSON.stringify(account)]);
-    res.json({ ok: true, id });
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-app.delete('/api/tracker/:id', async (req, res) => {
-  try {
-    await pool.query('DELETE FROM accounts WHERE id=$1', [req.params.id]);
-    res.json({ ok: true });
+    broadcast({ type: 'account', action: 'created', id });
+    res.json({ ok: true, id, account });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -694,15 +629,26 @@ app.put('/api/tracker/:id', async (req, res) => {
   try {
     const r = await pool.query('SELECT data FROM accounts WHERE id=$1', [req.params.id]);
     if (!r.rows.length) return res.status(404).json({ error: 'Not found' });
-    const account = { ...r.rows[0].data, ...req.body, id: req.params.id };
-    // Auto-calculate payout date (banned + 30 days)
-    if (req.body.bannedAt) {
-      const banned = new Date(req.body.bannedAt);
+    const body = req.body || {};
+    const account = { ...r.rows[0].data, ...body, id: req.params.id };
+    if (body.username) account.username = String(body.username).replace(/^@/, '');
+    // Auto-calculate payout date (banned + 30 days) if banned was just set
+    if (body.bannedAt) {
+      const banned = new Date(body.bannedAt);
       banned.setDate(banned.getDate() + 30);
       account.payoutDate = banned.toISOString().split('T')[0];
     }
     await pool.query('UPDATE accounts SET data=$1 WHERE id=$2', [JSON.stringify(account), req.params.id]);
+    broadcast({ type: 'account', action: 'updated', id: req.params.id });
     res.json(account);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.delete('/api/tracker/:id', async (req, res) => {
+  try {
+    await pool.query('DELETE FROM accounts WHERE id=$1', [req.params.id]);
+    broadcast({ type: 'account', action: 'deleted', id: req.params.id });
+    res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
