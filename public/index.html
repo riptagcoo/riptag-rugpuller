@@ -1337,7 +1337,17 @@ function scrapeOrders(){
 }
 
 function printLabels(accountId, size){
-  alert('Label printing for size '+size+' is coming next. Tell me the exact format you want:\n\n• 4×6 thermal label PDF?\n• Letter-size sheet with multiple per page?\n• Just a printable text list grouped by size?\n\nI\'ll wire it up once you confirm.');
+  const acct=accounts.find(a=>a.id===accountId);
+  const msg='Labels are downloaded + merged locally (the Railway server has no browser).\n\n'+
+    'In a terminal:\n'+
+    '  1. cd to your Riptag-Rugpuller folder\n'+
+    '  2. node agent.js\n'+
+    '  3. Pick option 5 (Download & merge shipping labels)\n'+
+    '  4. Select @'+(acct?.username||'')+' from the list\n\n'+
+    'It will download every label, merge into one PDF sorted by size (S → M → L → XL → XXL → ?), '+
+    'and save to labels-YYYY-MM-DD-'+(acct?.username||'')+'.pdf in your folder.\n\n'+
+    'Open that PDF → Ctrl+P → pick your Polono printer → print.';
+  alert(msg);
 }
 
 // ─── REPLIER ─────────────────────────────────────────────────
