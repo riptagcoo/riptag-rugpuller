@@ -623,6 +623,178 @@ async function runScrapeOrders() {
   console.log('\nDone. Check Sold & Labels tab on dashboard.');
 }
 
+// ─── DOWNLOAD & MERGE SHIPPING LABELS ─────────────────────────
+// Opens each order page, clicks "Download Label" (which pops to a
+// Shippo-signed PDF URL), downloads the PDF, and merges them into one
+// big PDF sorted by size. Output lands next to this file as
+// labels-YYYY-MM-DD-{username}.pdf
+async function runDownloadLabels() {
+  const accounts = await apiGet('/api/accounts');
+  console.log('\nSelect account to download labels from:');
+  accounts.forEach((a, i) => console.log(`  ${i+1}. @${a.username} (${(a.orders||[]).length} orders)`));
+  const choice = await ask('\nEnter account number: ');
+  const account = accounts[parseInt(choice) - 1];
+  if (!account) { console.log('Invalid.'); return; }
+
+  const allOrders = account.orders || [];
+  if (!allOrders.length) {
+    console.log(`\nNo scraped orders for @${account.username}. Run option 4 first.`);
+    return;
+  }
+
+  // Sort orders: S, M, L, XL, XXL, ?, Unknown
+  const order = { 'S':0, 'M':1, 'L':2, 'XL':3, 'XXL':4, '?':5, 'Unknown':6 };
+  const sorted = [...allOrders].sort((a, b) => {
+    const oa = order[a.size] ?? 99;
+    const ob = order[b.size] ?? 99;
+    return oa - ob;
+  });
+
+  console.log(`\nWill fetch ${sorted.length} labels for @${account.username} in order:`);
+  const breakdown = {};
+  sorted.forEach(o => { breakdown[o.size] = (breakdown[o.size] || 0) + 1; });
+  Object.entries(breakdown).forEach(([s, n]) => console.log(`  ${s}: ${n}`));
+
+  const go = await ask('\nContinue? (y/n): ');
+  if (go.toLowerCase() !== 'y') { console.log('Cancelled.'); return; }
+
+  // Prep tmp folder
+  const tmpDir = path.join(__dirname, 'tmp', 'labels', account.username);
+  fs.ensureDirSync(tmpDir);
+  fs.emptyDirSync(tmpDir);
+
+  console.log(`\nOpening browser for @${account.username}...`);
+  const browser = await chromium.launch({ headless: false, slowMo: 50 });
+  const context = await browser.newContext({ acceptDownloads: true });
+
+  if (account.cookies?.length) {
+    const clean = account.cookies.map(c => ({
+      name: c.name, value: c.value, domain: c.domain,
+      path: c.path || '/', secure: c.secure || false, httpOnly: c.httpOnly || false,
+      sameSite: ['Strict','Lax','None'].includes(c.sameSite) ? c.sameSite : 'Lax'
+    }));
+    await context.addCookies(clean);
+  }
+
+  const page = await context.newPage();
+  const collected = []; // { order, pdfPath }
+
+  for (let i = 0; i < sorted.length; i++) {
+    const o = sorted[i];
+    const tag = `[${i+1}/${sorted.length}] ${o.size.padEnd(3)} ${o.orderId}`;
+    process.stdout.write(`${tag} ... `);
+    try {
+      await page.goto(`https://www.depop.com/sellinghub/sold-items/${o.orderId}/`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      await page.waitForTimeout(2000);
+
+      // Listen for the popup (Shippo PDF opens in new tab) BEFORE clicking
+      const popupPromise = page.waitForEvent('popup', { timeout: 15000 }).catch(() => null);
+
+      // Find and click the Download/Print Label button
+      const clicked = await page.evaluate(() => {
+        const els = [...document.querySelectorAll('button, a')];
+        for (const el of els) {
+          const t = (el.innerText || '').toLowerCase().trim();
+          const aria = (el.getAttribute('aria-label') || '').toLowerCase();
+          if (/download.*label|print.*label|view.*label|^label$|dispatch|shipping.*label/i.test(t + ' ' + aria)) {
+            // Prefer <a href> for direct URL extraction
+            if (el.tagName === 'A' && el.href) {
+              return { clicked: false, href: el.href };
+            }
+            el.click();
+            return { clicked: true };
+          }
+        }
+        return null;
+      });
+
+      if (!clicked) { process.stdout.write('no label button\n'); continue; }
+
+      let pdfUrl = null;
+
+      if (clicked.href && !clicked.clicked) {
+        // Direct href — visit it (it'll redirect to the signed Shippo URL)
+        const directPage = await context.newPage();
+        await directPage.goto(clicked.href, { waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => {});
+        pdfUrl = directPage.url();
+        await directPage.close();
+      } else {
+        const popup = await popupPromise;
+        if (!popup) { process.stdout.write('no popup\n'); continue; }
+        await popup.waitForLoadState('domcontentloaded', { timeout: 15000 }).catch(() => {});
+        pdfUrl = popup.url();
+        await popup.close().catch(() => {});
+      }
+
+      if (!pdfUrl || !pdfUrl.includes('.pdf')) {
+        process.stdout.write(`no pdf url (got ${pdfUrl?.slice(0,60)})\n`);
+        continue;
+      }
+
+      // Download the PDF using Node https (the URL is signed, no auth needed)
+      const pdfBytes = await downloadUrlToBuffer(pdfUrl);
+      const pdfPath = path.join(tmpDir, `${String(i+1).padStart(3,'0')}_${o.size}_${o.orderId}.pdf`);
+      fs.writeFileSync(pdfPath, pdfBytes);
+      collected.push({ order: o, pdfPath });
+      process.stdout.write(`ok (${Math.round(pdfBytes.length/1024)}kb)\n`);
+    } catch (e) {
+      process.stdout.write(`error: ${e.message.slice(0,60)}\n`);
+    }
+    await page.waitForTimeout(600);
+  }
+
+  await browser.close();
+
+  if (!collected.length) {
+    console.log('\nNo labels were downloaded. Check that the button text matches what Depop shows.');
+    return;
+  }
+
+  console.log(`\nMerging ${collected.length} labels into one PDF...`);
+  const { PDFDocument } = require('pdf-lib');
+  const merged = await PDFDocument.create();
+  for (const { pdfPath } of collected) {
+    try {
+      const bytes = fs.readFileSync(pdfPath);
+      const doc = await PDFDocument.load(bytes);
+      const pages = await merged.copyPages(doc, doc.getPageIndices());
+      pages.forEach(pg => merged.addPage(pg));
+    } catch (e) {
+      console.log(`  skipped ${pdfPath}: ${e.message}`);
+    }
+  }
+
+  const today = new Date().toISOString().split('T')[0];
+  const outPath = path.join(__dirname, `labels-${today}-${account.username}.pdf`);
+  fs.writeFileSync(outPath, await merged.save());
+
+  console.log(`\n✓ Done! Saved ${collected.length} labels to:`);
+  console.log(`   ${outPath}`);
+  console.log('\nOpen that PDF → Ctrl+P → pick your Polono printer → print.');
+  console.log('Pages are sorted by size so you can pack in order as they come out.');
+}
+
+// Helper: download a URL to a Buffer (handles http + https + redirects)
+function downloadUrlToBuffer(url, redirectsLeft = 5) {
+  return new Promise((resolve, reject) => {
+    const mod = url.startsWith('https:') ? https : http;
+    mod.get(url, (res) => {
+      if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location && redirectsLeft > 0) {
+        res.resume();
+        return resolve(downloadUrlToBuffer(res.headers.location, redirectsLeft - 1));
+      }
+      if (res.statusCode !== 200) {
+        res.resume();
+        return reject(new Error(`HTTP ${res.statusCode}`));
+      }
+      const chunks = [];
+      res.on('data', c => chunks.push(c));
+      res.on('end', () => resolve(Buffer.concat(chunks)));
+      res.on('error', reject);
+    }).on('error', reject);
+  });
+}
+
 function extractSize(text) {
   if (!text) return null;
   const m = text.match(/\b(XXL|XL|Small|Medium|Large|\bS\b|\bM\b|\bL\b)\b/i);
@@ -678,7 +850,8 @@ async function main() {
   console.log('  2. Mass edit descriptions on an account');
   console.log('  3. Check account statuses');
   console.log('  4. Scrape orders (for labels)');
-  const action = await ask('\nEnter choice (1/2/3/4): ');
+  console.log('  5. Download & merge shipping labels (sorted by size)');
+  const action = await ask('\nEnter choice (1/2/3/4/5): ');
 
   if (action === '2') {
     await runMassEdit();
@@ -691,6 +864,10 @@ async function main() {
   }
   if (action === '4') {
     await runScrapeOrders();
+    return;
+  }
+  if (action === '5') {
+    await runDownloadLabels();
     return;
   }
 
