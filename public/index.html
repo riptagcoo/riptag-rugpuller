@@ -1040,7 +1040,9 @@ async function renderTracker(){
   el.innerHTML = '<div class="empty"><div class="empty-ico">⏳</div>Loading...</div>';
   try {
     const r = await fetch('/api/tracker');
-    trackerData = await r.json();
+    const raw = await r.json();
+    // Server returns {accounts:[...]} but tolerate raw array too
+    trackerData = Array.isArray(raw) ? raw : (raw.accounts || []);
 
     // Stats
     const totalEarnings = trackerData.reduce((a,t) => a + parseFloat(t.earnings||0), 0);
@@ -1181,58 +1183,7 @@ async function deleteTracker(id){
   renderTracker();
 }
 
-// ─── RUGPULL TRACKER ─────────────────────────────────────────
-async function renderTracker(){
-  const el=document.getElementById('tracker-list');
-  el.innerHTML='<div class="empty"><div class="empty-ico">⏳</div>Loading...</div>';
-  try{
-    const r=await fetch('/api/tracker');
-    const d=await r.json();
-    const accts=d.accounts||[];
-    if(!accts.length){el.innerHTML='<div class="empty"><div class="empty-ico">📊</div><div class="empty-title">No accounts yet</div>Connect accounts via the Chrome extension.</div>';return;}
-
-    // Summary stats
-    const totalEarnings=accts.reduce((a,x)=>a+(parseFloat(x.earnings)||0),0);
-    const banned=accts.filter(a=>a.status==='banned').length;
-    const live=accts.filter(a=>a.status==='live').length;
-    const pendingPayout=accts.filter(a=>a.payoutDate&&new Date(a.payoutDate)>new Date()).length;
-
-    el.innerHTML=`<div class="stats-grid" style="margin-bottom:20px;">
-      <div class="stat-card"><div class="stat-n">${accts.length}</div><div class="stat-lbl">total accounts</div></div>
-      <div class="stat-card"><div class="stat-n g">${live}</div><div class="stat-lbl">live</div></div>
-      <div class="stat-card"><div class="stat-n" style="color:var(--red);">${banned}</div><div class="stat-lbl">banned</div></div>
-      <div class="stat-card"><div class="stat-n v">$${totalEarnings.toFixed(0)}</div><div class="stat-lbl">total earnings</div></div>
-    </div>`+accts.map(a=>{
-      const today=new Date();
-      const payoutDate=a.payoutDate?new Date(a.payoutDate):null;
-      const payoutDays=payoutDate?Math.ceil((payoutDate-today)/(1000*60*60*24)):null;
-      const payoutText=payoutDate?(payoutDays>0?`In ${payoutDays} days (${payoutDate.toLocaleDateString('en-US',{month:'short',day:'numeric'})})`:`Ready (${payoutDate.toLocaleDateString('en-US',{month:'short',day:'numeric'})})`):null;
-      const sc=a.status==='live'?'status-live':a.status==='banned'?'status-banned':'status-unknown';
-      const st=a.status==='live'?'● Live':a.status==='banned'?'✕ Banned':'? Unknown';
-      return `<div class="acct-card" style="margin-bottom:10px;">
-  <div style="display:flex;align-items:center;gap:16px;padding:18px 22px;cursor:pointer;" onclick="openTrackerModal('${a.id}')">
-    <div style="width:44px;height:44px;border-radius:11px;background:linear-gradient(135deg,rgba(0,229,160,0.12),rgba(167,139,250,0.08));border:1px solid rgba(0,229,160,0.18);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:var(--green);flex-shrink:0;">${a.username.substring(0,2).toUpperCase()}</div>
-    <div style="flex:1;min-width:0;">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
-        <span style="font-size:15px;font-weight:700;letter-spacing:-0.02em;">@${a.username}</span>
-        <span class="badge ${sc}">${st}</span>
-        ${a.email?`<span style="font-size:11px;color:var(--ink-3);font-family:var(--mono);">${a.email}</span>`:''}
-      </div>
-      <div style="display:flex;gap:24px;">
-        <div><div style="font-size:10px;color:var(--ink-3);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:3px;">Earnings</div><div style="font-size:13px;font-weight:700;color:var(--green);">$${a.earnings||'0'}</div></div>
-        ${a.bannedAt?`<div><div style="font-size:10px;color:var(--ink-3);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:3px;">Banned</div><div style="font-size:12px;color:var(--red);">${new Date(a.bannedAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</div></div>`:''}
-        ${payoutText?`<div><div style="font-size:10px;color:var(--ink-3);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:3px;">Payout</div><div style="font-size:12px;color:${payoutDays<=0?'var(--green)':'var(--amber)'};">${payoutText}</div></div>`:''}
-        <div><div style="font-size:10px;color:var(--ink-3);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:3px;">Connected</div><div style="font-size:12px;color:var(--ink-3);font-family:var(--mono);">${new Date(a.connectedAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</div></div>
-      </div>
-    </div>
-    <button class="btn xs ghost" onclick="event.stopPropagation();openTrackerModal('${a.id}')">✏ Edit</button>
-  </div>
-</div>`;
-    }).join('');
-  }catch(err){el.innerHTML='<div class="empty">Error: '+err.message+'</div>';}
-}
-
-
+// (Duplicate renderTracker removed — single canonical version lives above.)
 // saveTrackerRecord replaced by saveTracker()
 
 // ─── SOLD & LABELS ───────────────────────────────────────────
