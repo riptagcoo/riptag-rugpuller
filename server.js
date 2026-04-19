@@ -856,6 +856,28 @@ app.post('/api/replier/generate', async (req, res) => {
   }
 });
 
+// ─── MARINATOR HEARTBEAT + STATS ──────────────────────────────
+// In-memory map of accountId -> latest stats.  Lives only as long as
+// the server process, which is fine for a status indicator.
+const marinatorState = {};
+app.post('/api/marinator/heartbeat', (req, res) => {
+  const { accountId, ...stats } = req.body || {};
+  if (accountId) {
+    marinatorState[accountId] = { ...stats, lastSeen: new Date().toISOString() };
+    broadcast({ type: 'marinator-heartbeat', accountId, stats: marinatorState[accountId] });
+  }
+  res.json({ ok: true });
+});
+app.get('/api/marinator/status', (req, res) => {
+  // Mark accounts as alive if their last heartbeat was within 90s
+  const now = Date.now();
+  const out = {};
+  for (const [id, s] of Object.entries(marinatorState)) {
+    out[id] = { ...s, alive: s.lastSeen && (now - new Date(s.lastSeen).getTime()) < 90000 };
+  }
+  res.json({ accounts: out });
+});
+
 // Replier heartbeat
 let lastReplierHeartbeat = null;
 app.post('/api/replier/heartbeat', (req, res) => {
