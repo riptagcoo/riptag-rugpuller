@@ -762,28 +762,48 @@ async function runDownloadLabels() {
     return;
   }
 
-  console.log(`\nMerging ${collected.length} labels into one PDF...`);
+  // Group the downloaded labels by size, then save one PDF per size group
   const { PDFDocument } = require('pdf-lib');
-  const merged = await PDFDocument.create();
-  for (const { pdfPath } of collected) {
-    try {
-      const bytes = fs.readFileSync(pdfPath);
-      const doc = await PDFDocument.load(bytes);
-      const pages = await merged.copyPages(doc, doc.getPageIndices());
-      pages.forEach(pg => merged.addPage(pg));
-    } catch (e) {
-      console.log(`  skipped ${pdfPath}: ${e.message}`);
-    }
+  const bySize = {};
+  for (const item of collected) {
+    const s = item.order.size || 'Unknown';
+    (bySize[s] = bySize[s] || []).push(item);
   }
 
   const today = new Date().toISOString().split('T')[0];
-  const outPath = path.join(__dirname, `labels-${today}-${account.username}.pdf`);
-  fs.writeFileSync(outPath, await merged.save());
+  const sizeOrder = ['S', 'M', 'L', 'XL', 'XXL', '?', 'Unknown'];
+  const outputs = [];
 
-  console.log(`\n✓ Done! Saved ${collected.length} labels to:`);
-  console.log(`   ${outPath}`);
-  console.log('\nOpen that PDF → Ctrl+P → pick your Polono printer → print.');
-  console.log('Pages are sorted by size so you can pack in order as they come out.');
+  console.log(`\nMerging ${collected.length} labels into ${Object.keys(bySize).length} size-grouped PDFs...`);
+
+  for (const size of sizeOrder) {
+    const group = bySize[size];
+    if (!group?.length) continue;
+
+    const merged = await PDFDocument.create();
+    for (const { pdfPath } of group) {
+      try {
+        const bytes = fs.readFileSync(pdfPath);
+        const doc = await PDFDocument.load(bytes);
+        const pages = await merged.copyPages(doc, doc.getPageIndices());
+        pages.forEach(pg => merged.addPage(pg));
+      } catch (e) {
+        console.log(`  skipped ${pdfPath}: ${e.message}`);
+      }
+    }
+
+    const tag = size === '?' ? 'MULTI' : size;
+    const outPath = path.join(__dirname, `labels-${today}-${account.username}-${tag}.pdf`);
+    fs.writeFileSync(outPath, await merged.save());
+    outputs.push({ size: tag, count: group.length, path: outPath });
+  }
+
+  console.log(`\n✓ Done! Saved ${outputs.length} PDF${outputs.length===1?'':'s'}:\n`);
+  for (const o of outputs) {
+    console.log(`   ${o.size.padEnd(6)} (${o.count} label${o.count===1?'':'s'}) → ${o.path}`);
+  }
+  console.log('\nOpen each PDF → Ctrl+P → pick your Polono printer → print.');
+  console.log('Each file is one size group — pack that batch, move to the next file.');
 }
 
 // Helper: download a URL to a Buffer (handles http + https + redirects)
