@@ -647,6 +647,8 @@ tr:hover td { background: rgba(255,255,255,0.015); }
     <div class="topbar-right">
       <button class="btn ghost sm" onclick="openEditSetModal()">✏ Edit</button>
       <button class="btn ghost sm" onclick="buildListings()">⚙ Build Listings</button>
+      <button class="btn ghost sm" onclick="resetSet(currentSetId)" title="Mark all listings unposted so you can redeploy to another account">♻ Reset</button>
+      <button class="btn ghost sm danger" onclick="deleteSet(currentSetId)">🗑 Delete</button>
       <button class="btn primary" onclick="deploySet()">▶ Deploy</button>
     </div>
   </div>
@@ -1903,7 +1905,32 @@ async function saveSet(){
   closeModal('set-modal');await loadSets();renderOverview();if(editingSetId)renderCurrentSet();
 }
 
-async function deleteSet(id){if(!confirm('Delete this set?'))return;await fetch('/api/sets/'+id,{method:'DELETE'});await loadSets();renderOverview();if(currentSetId===id)showPage('overview');}
+async function deleteSet(id){
+  if(!confirm('Delete this set? This cannot be undone.'))return;
+  try{
+    const r=await fetch('/api/sets/'+id,{method:'DELETE'});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok){ alert('Delete failed: '+(d.error||('HTTP '+r.status))); return; }
+    await loadSets();
+    renderOverview();
+    renderSidebarSets();
+    if(currentSetId===id) showPage('overview');
+    glog('Set deleted','ok');
+  }catch(e){ alert('Delete failed: '+e.message); }
+}
+
+async function resetSet(id){
+  if(!confirm('Reset this set? All listings will be marked as unposted so you can deploy it again (e.g. to a new account). Your listings, descriptions, and prices are kept — only posted-status is cleared.'))return;
+  try{
+    const r=await fetch('/api/sets/'+id+'/reset',{method:'POST'});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok){ alert('Reset failed: '+(d.error||('HTTP '+r.status))); return; }
+    await loadSets();
+    if(currentSetId===id) renderCurrentSet();
+    renderOverview();
+    glog('Set reset — '+(d.listings||0)+' listings back to pending','ok');
+  }catch(e){ alert('Reset failed: '+e.message); }
+}
 async function deleteAccount(id){if(!confirm('Remove this account?'))return;await fetch('/api/accounts/'+id,{method:'DELETE'});await loadAccounts();}
 function openProxyModal(accountId,currentProxy){document.getElementById('pm-account-id').value=accountId;document.getElementById('pm-proxy').value=currentProxy||'';document.getElementById('proxy-modal').classList.remove('hidden');}
 async function saveProxy(){const id=document.getElementById('pm-account-id').value;const proxy=document.getElementById('pm-proxy').value.trim();await fetch('/api/accounts/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({proxy})});closeModal('proxy-modal');await loadAccounts();}
