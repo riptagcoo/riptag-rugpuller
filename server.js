@@ -180,8 +180,41 @@ app.put('/api/sets/:id', async (req, res) => {
 });
 
 app.delete('/api/sets/:id', async (req, res) => {
-  await pool.query('DELETE FROM sets WHERE id=$1', [req.params.id]);
-  res.json({ ok: true });
+  try {
+    const r = await pool.query('DELETE FROM sets WHERE id=$1 RETURNING id', [req.params.id]);
+    if (!r.rowCount) return res.status(404).json({ error: 'Set not found', id: req.params.id });
+    broadcast({ type: 'set', action: 'deleted', id: req.params.id });
+    res.json({ ok: true, deletedId: req.params.id });
+  } catch (err) {
+    console.error('DELETE /api/sets failed:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Reset a set's posted state so it can be redeployed to another account
+app.post('/api/sets/:id/reset', async (req, res) => {
+  try {
+    const r = await pool.query('SELECT data FROM sets WHERE id=$1', [req.params.id]);
+    if (!r.rows.length) return res.status(404).json({ error: 'Set not found' });
+    const set = r.rows[0].data;
+    // Mark every listing as un-posted, clear deployedAt, reset status
+    if (Array.isArray(set.listings)) {
+      set.listings = set.listings.map(l => ({
+        ...l,
+        posted: false,
+        postedAt: null,
+        postedToListingId: null
+      }));
+    }
+    set.deployedAt = null;
+    set.status = 'ready';
+    await pool.query('UPDATE sets SET data=$1 WHERE id=$2', [JSON.stringify(set), req.params.id]);
+    broadcast({ type: 'set', action: 'reset', id: req.params.id });
+    res.json({ ok: true, listings: (set.listings || []).length });
+  } catch (err) {
+    console.error('POST /api/sets/:id/reset failed:', err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ─── BUILD LISTINGS ───────────────────────────────────────────
