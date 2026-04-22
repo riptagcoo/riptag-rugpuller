@@ -501,19 +501,90 @@ async function refreshOneListing(page, listing, localPhotos) {
     await page.waitForTimeout(3500);
   }
 
-  // Depop's edit form uses CSS-module class names (confirmed via DOM recon):
+  // Depop's edit form uses CSS-module class names:
   //   .styles_dndContainer__xxx  = photo tile (drag-drop container)
-  //   .styles_delete__xxx        = delete button on each tile (icon, no text)
-  //   .styles_crop__xxx          = crop button on each tile
-  //   NO <input type="file"> — uploads go through a native file chooser.
+  //   .styles_delete__xxx        = delete button on each tile
+  //   NO <input type="file"> — uploads go through drag-and-drop only.
+  //
+  // The dndContainer only exists when at least one photo is present — so
+  // we DROP new photos first (using an existing tile's parent as anchor),
+  // then delete the old ones. Order matters here; if we delete first, the
+  // dropzone selector disappears.
+  if (!localPhotos.length) throw new Error('no local photos to upload');
+
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.waitForTimeout(1000);
 
-  // Step A: Delete existing photos by clicking the styles_delete__ icon
-  // buttons. We click the first one each loop because the DOM re-indexes
-  // after each deletion.
-  let removed = 0, loops = 0;
-  while (loops < 20) {
+  const mimeFor = (p) => {
+    const ext = (p.split('.').pop() || '').toLowerCase();
+    return ({
+      jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png',
+      heic: 'image/heic', heif: 'image/heif', webp: 'image/webp', gif: 'image/gif'
+    })[ext] || 'application/octet-stream';
+  };
+  const filesData = localPhotos.map(p => ({
+    name: path.basename(p),
+    mimeType: mimeFor(p),
+    data: fs.readFileSync(p).toString('base64')
+  }));
+
+  // Step A: count existing tiles BEFORE the drop so we know how many to
+  // delete after.
+  const tilesBefore = await page.evaluate(() =>
+    document.querySelectorAll('[class*="dndContainer"]').length
+  );
+
+  // Step B: Drop new photos onto the tile container (its parent is the
+  // dropzone). Dispatches dragenter/dragover/drop with real File objects.
+  const dropResult = await page.evaluate(async (filesData) => {
+    const firstTile = document.querySelector('[class*="dndContainer"]');
+    if (!firstTile) return { ok: false, reason: 'no photo tiles to anchor the drop' };
+    const dropTarget = firstTile.parentElement || firstTile;
+
+    const files = filesData.map(f => {
+      const binary = atob(f.data);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      return new File([bytes], f.name, { type: f.mimeType });
+    });
+
+    const dt = new DataTransfer();
+    for (const f of files) dt.items.add(f);
+
+    // Fire events on both the dropTarget (container) and firstTile in case
+    // the handler is attached to one specifically.
+    const fire = (target, type) => {
+      const evt = new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: dt });
+      target.dispatchEvent(evt);
+    };
+    for (const target of [dropTarget, firstTile]) {
+      fire(target, 'dragenter');
+      fire(target, 'dragover');
+      fire(target, 'drop');
+    }
+    return { ok: true, dropTargetClass: (dropTarget.className || '').slice(0, 100) };
+  }, filesData);
+
+  if (!dropResult.ok) {
+    throw new Error('drop-simulate failed: ' + dropResult.reason);
+  }
+
+  // Wait for Depop to render the new tiles (upload + thumbnail processing).
+  await page.waitForTimeout(8000);
+
+  // Step C: verify that new tiles actually appeared.
+  const tilesAfter = await page.evaluate(() =>
+    document.querySelectorAll('[class*="dndContainer"]').length
+  );
+
+  if (tilesAfter <= tilesBefore) {
+    throw new Error(`drop didn\'t add photos (${tilesBefore} before, ${tilesAfter} after — Depop may not have accepted the drop)`);
+  }
+
+  // Step D: delete the OLD tiles. We delete `tilesBefore` tiles from the
+  // start of the list — assumes old photos are first, new are appended.
+  let removed = 0;
+  for (let i = 0; i < tilesBefore; i++) {
     const removedThis = await page.evaluate(() => {
       const deleteBtn = document.querySelector('button[class*="styles_delete"]');
       if (!deleteBtn) return false;
@@ -522,70 +593,8 @@ async function refreshOneListing(page, listing, localPhotos) {
     });
     if (!removedThis) break;
     removed++;
-    loops++;
-    await page.waitForTimeout(600);
+    await page.waitForTimeout(700);
   }
-
-  if (!localPhotos.length) throw new Error('no local photos to upload');
-
-  // Step B: Upload via simulated drag-and-drop. Depop's uploader has no
-  // <input type="file"> and doesn't open a file chooser on click. We build
-  // real File objects in the browser from the bytes of our local photos,
-  // then dispatch dragenter/dragover/drop events on the dropzone.
-  const mimeFor = (p) => {
-    const ext = (p.split('.').pop() || '').toLowerCase();
-    return ({
-      jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png',
-      heic: 'image/heic', heif: 'image/heif', webp: 'image/webp', gif: 'image/gif'
-    })[ext] || 'application/octet-stream';
-  };
-
-  const filesData = localPhotos.map(p => ({
-    name: path.basename(p),
-    mimeType: mimeFor(p),
-    data: fs.readFileSync(p).toString('base64')
-  }));
-
-  const dropResult = await page.evaluate(async (filesData) => {
-    // Find the drop zone. Prefer the main photo container, fall back to any
-    // element with a dnd / dropzone class.
-    const dropzone =
-      document.querySelector('[class*="dndContainer"]') ||
-      document.querySelector('[class*="Dropzone"]') ||
-      document.querySelector('[class*="dropzone"]');
-    if (!dropzone) return { ok: false, reason: 'no dropzone element found' };
-
-    // Rebuild File objects from base64
-    const files = filesData.map(f => {
-      const binary = atob(f.data);
-      const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-      return new File([bytes], f.name, { type: f.mimeType });
-    });
-
-    // Build a DataTransfer loaded with our files
-    const dt = new DataTransfer();
-    for (const f of files) dt.items.add(f);
-
-    // Fire the drag sequence. dragenter + dragover prime the handler,
-    // drop actually delivers the files.
-    const fire = (type) => {
-      const evt = new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: dt });
-      dropzone.dispatchEvent(evt);
-    };
-    fire('dragenter');
-    fire('dragover');
-    fire('drop');
-
-    return { ok: true, dropzoneClass: dropzone.className };
-  }, filesData);
-
-  if (!dropResult.ok) {
-    throw new Error('drop-simulate failed: ' + dropResult.reason);
-  }
-
-  // Give Depop time to process the uploads and render new tiles
-  await page.waitForTimeout(7000);
 
   // Click Save. The recon showed <button type="submit">Save changes</button>
   const saved = await page.evaluate(() => {
