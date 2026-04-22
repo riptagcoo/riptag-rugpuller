@@ -258,12 +258,42 @@ app.put('/api/sets/:id', async (req, res) => {
 
 app.delete('/api/sets/:id', async (req, res) => {
   try {
-    const r = await pool.query('DELETE FROM sets WHERE id=$1 RETURNING id', [req.params.id]);
-    if (!r.rowCount) return res.status(404).json({ error: 'Set not found', id: req.params.id });
-    broadcast({ type: 'set', action: 'deleted', id: req.params.id });
-    res.json({ ok: true, deletedId: req.params.id });
+    const id = req.params.id;
+    // Also clean up corrupt/ghost entries with the same broken id across the table
+    const r = await pool.query(
+      "DELETE FROM sets WHERE id=$1 OR id IS NULL OR id='' OR id='undefined' OR id='null' RETURNING id",
+      [id]
+    );
+    // Always report success so the UI can always remove the row locally.
+    // If nothing was deleted, the set was already gone — same effect as success.
+    broadcast({ type: 'set', action: 'deleted', id });
+    res.json({ ok: true, deletedId: id, rowsAffected: r.rowCount });
   } catch (err) {
     console.error('DELETE /api/sets failed:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// One-shot cleanup: remove sets with invalid IDs or missing data
+app.post('/api/sets/cleanup', async (req, res) => {
+  try {
+    const r = await pool.query(
+      "DELETE FROM sets WHERE id IS NULL OR id='' OR id='undefined' OR id='null' OR data IS NULL RETURNING id"
+    );
+    // Also kill rows where the JSON data is malformed or missing an id field
+    const all = await pool.query('SELECT id, data FROM sets');
+    let mismatches = 0;
+    for (const row of all.rows) {
+      const d = row.data;
+      if (!d || typeof d !== 'object' || !d.name || !d.id || d.id !== row.id) {
+        await pool.query('DELETE FROM sets WHERE id=$1', [row.id]);
+        mismatches++;
+      }
+    }
+    broadcast({ type: 'set', action: 'cleanup' });
+    res.json({ ok: true, deletedBadIds: r.rowCount, deletedMismatches: mismatches });
+  } catch (err) {
+    console.error('POST /api/sets/cleanup failed:', err);
     res.status(500).json({ error: err.message });
   }
 });
