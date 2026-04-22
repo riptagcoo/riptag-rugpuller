@@ -843,9 +843,82 @@ async function runQuickRefresh() {
   const page = await context.newPage();
 
   try {
-    console.log(`\nLoading @${account.username}'s shop page...`);
-    await page.goto(`https://www.depop.com/${account.username}/`, { waitUntil: 'domcontentloaded', timeout: 30000 });
-    await page.waitForTimeout(3000);
+    // Step 1: go to the home feed first so the session cookies fully take effect
+    console.log(`\nStep 1: loading https://www.depop.com/ to establish session...`);
+    await page.goto('https://www.depop.com/', { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForTimeout(2500);
+
+    // Read the detected logged-in username from the page (the avatar/nav
+    // usually links to the owner's profile). If it differs from what the
+    // dashboard has, warn the user before doing anything destructive.
+    const loggedInUsername = await page.evaluate(() => {
+      const links = [...document.querySelectorAll('a[href]')];
+      const banned = new Set(['login','signup','explore','sell','products','messages','sellinghub','category','search','help','about','careers','community','blog','','favorites']);
+      for (const a of links) {
+        const h = (a.getAttribute('href') || '').replace(/^\//, '').replace(/\/.*/, '');
+        if (h && !banned.has(h.toLowerCase()) && /^[a-zA-Z0-9_]{2,30}$/.test(h)) {
+          // First such link in the nav is typically the logged-in profile link
+          return h;
+        }
+      }
+      return null;
+    }).catch(() => null);
+
+    if (loggedInUsername) {
+      console.log(`Step 2: detected logged-in profile link: /${loggedInUsername}/`);
+      if (loggedInUsername.toLowerCase() !== account.username.toLowerCase()) {
+        console.log(`\n⚠ MISMATCH: browser is logged in as @${loggedInUsername}, but the`);
+        console.log(`   dashboard has this account as @${account.username}.`);
+        console.log('   Cookies load for the logged-in account; the dashboard username is wrong.');
+        const fix = await ask(`Use the detected username @${loggedInUsername} for this run? (y/n): `);
+        if (fix.toLowerCase() === 'y') {
+          account.username = loggedInUsername;
+          try { await apiPut(`/api/accounts/${account.id}`, { username: loggedInUsername }); console.log(`   ✓ Updated dashboard username to @${loggedInUsername}`); } catch {}
+        }
+      }
+    } else {
+      console.log('Step 2: could not auto-detect profile link — cookies may not be fully logged in.');
+    }
+
+    // Step 3: try several URLs in order until one actually shows product tiles
+    const candidates = [
+      `https://www.depop.com/${account.username}/`,
+      `https://www.depop.com/${account.username.toLowerCase()}/`,
+      'https://www.depop.com/sellinghub/',
+      'https://www.depop.com/sellinghub/listings/'
+    ];
+
+    let landedOn = null;
+    for (const url of candidates) {
+      console.log(`Step 3: trying ${url} ...`);
+      try {
+        const resp = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        await page.waitForTimeout(2500);
+        const status = resp ? resp.status() : 0;
+        const title = await page.title().catch(() => '');
+        const count = await page.$$eval('a[href*="/products/"]', as => as.length).catch(() => 0);
+        console.log(`   status ${status} · title "${title.slice(0,60)}" · ${count} product links visible`);
+        if (status !== 404 && !/not found|page not found|404/i.test(title) && count > 0) {
+          landedOn = url;
+          break;
+        }
+      } catch (e) {
+        console.log(`   failed: ${e.message.slice(0, 80)}`);
+      }
+    }
+
+    if (!landedOn) {
+      console.log('\n❌ Could not find a page with listings on it for this account.');
+      console.log('   Things to check:');
+      console.log(`     1. Is the username "${account.username}" correct? If not, fix it in the Accounts tab.`);
+      console.log('     2. Is the account actually live on Depop (not banned/suspended)?');
+      console.log('     3. Are cookies still valid? Reconnect via the Chrome extension if needed.');
+      await ask('\nPress ENTER to close browser...');
+      await browser.close();
+      return;
+    }
+
+    console.log(`\n✓ Using ${landedOn}`);
 
     // Scroll to lazy-load everything
     let prev = 0, same = 0;
@@ -859,9 +932,12 @@ async function runQuickRefresh() {
     const productUrls = await page.$$eval('a[href*="/products/"]', as =>
       [...new Set(as.map(a => a.href).filter(h => /\/products\/[^/]+\/[^/?#]+/.test(h)))]
     ).catch(() => []);
-    console.log(`\nFound ${productUrls.length} listings on the shop page.`);
+    console.log(`\nFound ${productUrls.length} listings after scrolling.`);
     if (!productUrls.length) {
-      console.log('Nothing to refresh. Make sure the shop is loaded and logged in.');
+      console.log('The page loaded but no listings are visible. The shop might be empty, or the');
+      console.log('product links use a different URL pattern. Send me the page URL + title and');
+      console.log('I\'ll update the selector.');
+      await ask('\nPress ENTER to close browser...');
       await browser.close();
       return;
     }
