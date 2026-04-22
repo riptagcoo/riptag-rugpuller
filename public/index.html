@@ -1,4 +1,4 @@
-\<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
@@ -1629,7 +1629,15 @@ function updateRunStatus(alive){
   else{pill.className='status-pill';lbl.textContent='RUN.bat offline';}
 }
 
-async function init(){await Promise.all([loadSets(),loadAccounts(),checkDrive(),checkDaemon()]);connectSSE();renderOverview();setInterval(checkDaemon,30000);}
+async function init(){
+  // One-shot cleanup of any ghost/invalid set rows from earlier versions.
+  // Harmless if there are none.
+  try{ await fetch('/api/sets/cleanup',{method:'POST'}); }catch{}
+  await Promise.all([loadSets(),loadAccounts(),checkDrive(),checkDaemon()]);
+  connectSSE();
+  renderOverview();
+  setInterval(checkDaemon,30000);
+}
 
 function connectSSE(){
   const es=new EventSource('/api/stream');
@@ -1679,7 +1687,13 @@ function connectSSE(){
   };
 }
 
-async function loadSets(){const r=await fetch('/api/sets').catch(()=>({json:()=>[]}));sets=await r.json().catch(()=>[]);renderSidebarSets();return sets;}
+async function loadSets(){
+  const r=await fetch('/api/sets').catch(()=>({json:()=>[]}));
+  sets=await r.json().catch(()=>[]);
+  pruneGhostSets();
+  renderSidebarSets();
+  return sets;
+}
 async function loadAccounts(){const r=await fetch('/api/accounts').catch(()=>({json:()=>[]}));accounts=await r.json().catch(()=>[]);renderAccounts();return accounts;}
 async function checkDrive(){const r=await fetch('/api/drive/status').catch(()=>({json:()=>({})}));const d=await r.json().catch(()=>({}));const btn=document.getElementById('drive-btn');const lbl=document.getElementById('drive-label');if(d.connected){btn.classList.add('connected');lbl.textContent='Drive Connected ✓';}else{btn.className='drive-pill';lbl.textContent='Connect Drive';}}
 
@@ -1986,17 +2000,34 @@ async function saveSet(){
 }
 
 async function deleteSet(id){
+  if(!id || id==='undefined' || id==='null'){
+    // Ghost row with bad id — silently run server cleanup + refresh
+    try{ await fetch('/api/sets/cleanup',{method:'POST'}); }catch{}
+    await loadSets(); renderOverview(); renderSidebarSets();
+    glog('Cleaned up invalid set','ok');
+    return;
+  }
   if(!confirm('Delete this set? This cannot be undone.'))return;
   try{
     const r=await fetch('/api/sets/'+id,{method:'DELETE'});
-    const d=await r.json().catch(()=>({}));
-    if(!r.ok){ alert('Delete failed: '+(d.error||('HTTP '+r.status))); return; }
+    // 200 = deleted, 404 = already gone — both are fine from the UI's perspective
+    if(!r.ok && r.status!==404){
+      const d=await r.json().catch(()=>({}));
+      alert('Delete failed: '+(d.error||('HTTP '+r.status)));
+      return;
+    }
     await loadSets();
     renderOverview();
     renderSidebarSets();
     if(currentSetId===id) showPage('overview');
     glog('Set deleted','ok');
   }catch(e){ alert('Delete failed: '+e.message); }
+}
+
+// Kill any local sets without a real id/name so they don't render as ghosts
+function pruneGhostSets(){
+  if(!Array.isArray(sets)) return;
+  sets=sets.filter(s=>s && s.id && s.id!=='undefined' && s.id!=='null' && s.name);
 }
 
 async function resetSet(id){
