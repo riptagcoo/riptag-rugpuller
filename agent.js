@@ -476,67 +476,102 @@ async function runStatusCheck() {
 // stay intact because we're editing the same listing, not re-creating.
 
 // Refresh one listing. Returns true on success.
+// `listing.depopUrl` may be EITHER a public product URL (legacy) or an
+// edit URL (/products/edit/{slug}/). If public, we click Edit to navigate;
+// if it's already an edit URL, we skip that step.
 async function refreshOneListing(page, listing, localPhotos) {
   await page.goto(listing.depopUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
-  await page.waitForTimeout(2500);
+  await page.waitForTimeout(3000);
 
-  // Click the Edit button on the listing page (owner only sees this)
-  const editClicked = await page.evaluate(() => {
-    const els = [...document.querySelectorAll('button, a')];
-    for (const el of els) {
-      const t = (el.innerText || '').trim().toLowerCase();
-      const aria = (el.getAttribute('aria-label') || '').toLowerCase();
-      if (/^edit$/.test(t) || /^edit listing$/i.test(t) || /^edit$/.test(aria)) {
-        el.click(); return true;
-      }
-    }
-    return false;
-  });
-  if (!editClicked) throw new Error('no edit button');
-  await page.waitForTimeout(3500);
-
-  // Delete existing photos (click every "Remove"/"Delete" button we see)
-  let removed = 0, loops = 0;
-  while (loops < 15) {
-    const removedThis = await page.evaluate(() => {
-      const buttons = [...document.querySelectorAll('button')];
-      for (const b of buttons) {
-        const aria = (b.getAttribute('aria-label') || '').toLowerCase();
-        const t = (b.innerText || '').trim().toLowerCase();
-        if (/^(remove|delete)( photo| image)?$/i.test(aria) ||
-            /^(remove|delete)$/i.test(t) ||
-            aria.startsWith('remove ') || aria.startsWith('delete ')) {
-          b.click(); return true;
+  const onEditPage = /\/products\/edit\//.test(page.url());
+  if (!onEditPage) {
+    // Click the Edit button on the public listing page (owner only sees this)
+    const editClicked = await page.evaluate(() => {
+      const els = [...document.querySelectorAll('button, a')];
+      for (const el of els) {
+        const t = (el.innerText || '').trim().toLowerCase();
+        const aria = (el.getAttribute('aria-label') || '').toLowerCase();
+        if (/^edit$/.test(t) || /^edit listing$/i.test(t) || /^edit$/.test(aria)) {
+          el.click(); return true;
         }
       }
       return false;
     });
+    if (!editClicked) throw new Error('no edit button');
+    await page.waitForTimeout(3500);
+  }
+
+  // Depop's edit form uses CSS-module class names (confirmed via DOM recon):
+  //   .styles_dndContainer__xxx  = photo tile (drag-drop container)
+  //   .styles_delete__xxx        = delete button on each tile (icon, no text)
+  //   .styles_crop__xxx          = crop button on each tile
+  //   NO <input type="file"> — uploads go through a native file chooser.
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.waitForTimeout(1000);
+
+  // Step A: Delete existing photos by clicking the styles_delete__ icon
+  // buttons. We click the first one each loop because the DOM re-indexes
+  // after each deletion.
+  let removed = 0, loops = 0;
+  while (loops < 20) {
+    const removedThis = await page.evaluate(() => {
+      const deleteBtn = document.querySelector('button[class*="styles_delete"]');
+      if (!deleteBtn) return false;
+      deleteBtn.click();
+      return true;
+    });
     if (!removedThis) break;
     removed++;
     loops++;
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(600);
   }
 
-  // Upload fresh full-res photos
   if (!localPhotos.length) throw new Error('no local photos to upload');
-  const fileInput = await page.$('input[type="file"]');
-  if (!fileInput) throw new Error('no file input');
-  await fileInput.setInputFiles(localPhotos);
-  await page.waitForTimeout(4000);
 
-  // Save / Publish
+  // Step B: Upload new photos via the native file chooser. Depop has no
+  // <input type="file"> in the DOM — we listen for the native dialog and
+  // drive it via Playwright's filechooser event.
+  const fileChooserPromise = page.waitForEvent('filechooser', { timeout: 10000 }).catch(() => null);
+
+  // Click the photo upload area. After all photos are deleted there's
+  // usually an "Add photos" / empty drop zone that opens the file picker.
+  await page.evaluate(() => {
+    // Prefer an explicit add/upload button if present
+    const addBtn = [...document.querySelectorAll('button, label, div[role="button"]')].find(el => {
+      const t = (el.innerText || '').trim().toLowerCase();
+      return /^(add photo|upload photo|upload|add photos)$/i.test(t);
+    });
+    if (addBtn) { try { addBtn.click(); return; } catch {} }
+    // Fallback: click the dnd container itself (some implementations treat
+    // a click on the drop zone as "open file picker")
+    const dndZone = document.querySelector('[class*="dndContainer"], [class*="Dropzone"], [class*="dropzone"]');
+    if (dndZone) { try { dndZone.click(); } catch {} }
+  });
+
+  const chooser = await fileChooserPromise;
+  if (!chooser) {
+    throw new Error('file chooser did not appear after clicking the upload area');
+  }
+  await chooser.setFiles(localPhotos);
+  // Give Depop time to upload + render the new tiles
+  await page.waitForTimeout(6000);
+
+  // Click Save. The recon showed <button type="submit">Save changes</button>
   const saved = await page.evaluate(() => {
-    const els = [...document.querySelectorAll('button')];
+    const els = [...document.querySelectorAll('button, [role="button"]')];
     for (const el of els) {
       const t = (el.innerText || '').trim().toLowerCase();
-      if (/^(save|save changes|update|publish|update listing)$/i.test(t)) {
+      if (/^(save changes|save|update|publish|update listing|save listing)$/i.test(t) && !el.disabled) {
         el.click(); return true;
       }
     }
+    // Fallback: click any submit button
+    const submit = document.querySelector('button[type="submit"]:not(:disabled)');
+    if (submit) { submit.click(); return true; }
     return false;
   });
   if (!saved) throw new Error('no save button');
-  await page.waitForTimeout(3500);
+  await page.waitForTimeout(4000);
   return { removed };
 }
 
@@ -843,104 +878,63 @@ async function runQuickRefresh() {
   const page = await context.newPage();
 
   try {
-    // Step 1: go to the home feed first so the session cookies fully take effect
-    console.log(`\nStep 1: loading https://www.depop.com/ to establish session...`);
-    await page.goto('https://www.depop.com/', { waitUntil: 'domcontentloaded', timeout: 30000 });
-    await page.waitForTimeout(2500);
+    // Owner view — listings with edit buttons are on the Selling Hub's
+    // Active listings page. This avoids 404s from the public profile.
+    const hubUrl = 'https://www.depop.com/sellinghub/selling/active/';
+    console.log(`\nStep 1: loading ${hubUrl} ...`);
+    const resp = await page.goto(hubUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForTimeout(3500);
 
-    // Read the detected logged-in username from the page (the avatar/nav
-    // usually links to the owner's profile). If it differs from what the
-    // dashboard has, warn the user before doing anything destructive.
-    const loggedInUsername = await page.evaluate(() => {
-      const links = [...document.querySelectorAll('a[href]')];
-      const banned = new Set(['login','signup','explore','sell','products','messages','sellinghub','category','search','help','about','careers','community','blog','','favorites']);
-      for (const a of links) {
-        const h = (a.getAttribute('href') || '').replace(/^\//, '').replace(/\/.*/, '');
-        if (h && !banned.has(h.toLowerCase()) && /^[a-zA-Z0-9_]{2,30}$/.test(h)) {
-          // First such link in the nav is typically the logged-in profile link
-          return h;
-        }
-      }
-      return null;
-    }).catch(() => null);
-
-    if (loggedInUsername) {
-      console.log(`Step 2: detected logged-in profile link: /${loggedInUsername}/`);
-      if (loggedInUsername.toLowerCase() !== account.username.toLowerCase()) {
-        console.log(`\n⚠ MISMATCH: browser is logged in as @${loggedInUsername}, but the`);
-        console.log(`   dashboard has this account as @${account.username}.`);
-        console.log('   Cookies load for the logged-in account; the dashboard username is wrong.');
-        const fix = await ask(`Use the detected username @${loggedInUsername} for this run? (y/n): `);
-        if (fix.toLowerCase() === 'y') {
-          account.username = loggedInUsername;
-          try { await apiPut(`/api/accounts/${account.id}`, { username: loggedInUsername }); console.log(`   ✓ Updated dashboard username to @${loggedInUsername}`); } catch {}
-        }
-      }
-    } else {
-      console.log('Step 2: could not auto-detect profile link — cookies may not be fully logged in.');
-    }
-
-    // Step 3: try several URLs in order until one actually shows product tiles
-    const candidates = [
-      `https://www.depop.com/${account.username}/`,
-      `https://www.depop.com/${account.username.toLowerCase()}/`,
-      'https://www.depop.com/sellinghub/',
-      'https://www.depop.com/sellinghub/listings/'
-    ];
-
-    let landedOn = null;
-    for (const url of candidates) {
-      console.log(`Step 3: trying ${url} ...`);
-      try {
-        const resp = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-        await page.waitForTimeout(2500);
-        const status = resp ? resp.status() : 0;
-        const title = await page.title().catch(() => '');
-        const count = await page.$$eval('a[href*="/products/"]', as => as.length).catch(() => 0);
-        console.log(`   status ${status} · title "${title.slice(0,60)}" · ${count} product links visible`);
-        if (status !== 404 && !/not found|page not found|404/i.test(title) && count > 0) {
-          landedOn = url;
-          break;
-        }
-      } catch (e) {
-        console.log(`   failed: ${e.message.slice(0, 80)}`);
-      }
-    }
-
-    if (!landedOn) {
-      console.log('\n❌ Could not find a page with listings on it for this account.');
-      console.log('   Things to check:');
-      console.log(`     1. Is the username "${account.username}" correct? If not, fix it in the Accounts tab.`);
-      console.log('     2. Is the account actually live on Depop (not banned/suspended)?');
-      console.log('     3. Are cookies still valid? Reconnect via the Chrome extension if needed.');
+    const status = resp ? resp.status() : 0;
+    const title = await page.title().catch(() => '');
+    console.log(`   status ${status} · title "${title.slice(0, 60)}"`);
+    if (status === 404 || /not found|page not found|404/i.test(title)) {
+      console.log('\n❌ Selling Hub returned 404. Cookies may be expired — reconnect via the');
+      console.log('   Chrome extension and try again.');
       await ask('\nPress ENTER to close browser...');
       await browser.close();
       return;
     }
 
-    console.log(`\n✓ Using ${landedOn}`);
-
-    // Scroll to lazy-load everything
+    // Scroll to lazy-load all rows. The hub uses class "listingRow" based
+    // on the DOM recon; count edit-anchor hrefs instead (more reliable).
     let prev = 0, same = 0;
-    for (let i = 0; i < 40 && same < 3; i++) {
+    for (let i = 0; i < 60 && same < 3; i++) {
       await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
       await page.waitForTimeout(1200);
-      const c = await page.$$eval('a[href*="/products/"]', as => as.length).catch(() => 0);
+      const c = await page.$$eval('a[href*="/products/edit/"]', as => as.length).catch(() => 0);
       if (c === prev) same++; else { same = 0; prev = c; }
     }
 
-    const productUrls = await page.$$eval('a[href*="/products/"]', as =>
-      [...new Set(as.map(a => a.href).filter(h => /\/products\/[^/]+\/[^/?#]+/.test(h)))]
-    ).catch(() => []);
-    console.log(`\nFound ${productUrls.length} listings after scrolling.`);
-    if (!productUrls.length) {
-      console.log('The page loaded but no listings are visible. The shop might be empty, or the');
-      console.log('product links use a different URL pattern. Send me the page URL + title and');
-      console.log('I\'ll update the selector.');
+    // Harvest edit URLs directly from the hub page (anchors like
+    // /products/edit/{slug}/?redirect=/sellinghub/selling/active/)
+    const editUrls = await page.$$eval('a[href*="/products/edit/"]', as => {
+      const hrefs = as.map(a => a.getAttribute('href') || a.href || '').filter(Boolean);
+      // Strip the ?redirect= query so we just get /products/edit/{slug}/
+      const clean = hrefs.map(h => {
+        const abs = h.startsWith('http') ? h : 'https://www.depop.com' + h;
+        try {
+          const u = new URL(abs);
+          return u.origin + u.pathname.replace(/\/$/, '') + '/';
+        } catch { return abs; }
+      });
+      return [...new Set(clean)];
+    }).catch(() => []);
+
+    console.log(`\nFound ${editUrls.length} edit URLs on the Selling Hub.`);
+    if (!editUrls.length) {
+      console.log('The hub loaded but no edit links were visible. Possible causes:');
+      console.log('  · Cookies expired (reconnect via the Chrome extension)');
+      console.log('  · Account has no active listings');
+      console.log('  · Depop changed the markup (send me a fresh DOM recon)');
       await ask('\nPress ENTER to close browser...');
       await browser.close();
       return;
     }
+
+    // Use the edit URLs as our "product URLs" — the refresh flow will
+    // navigate straight to them.
+    const productUrls = editUrls;
 
     // Build a "synthetic listing" with 4 random photos for a given URL
     const makeRandomListing = (url) => {
