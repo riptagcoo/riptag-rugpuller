@@ -1149,7 +1149,9 @@ function toggleTracker(id){
 }
 
 function openTrackerModal(id){
-  const t = id ? trackerData.find(x=>x.id===id) : null;
+  // Find the record in trackerData first, then fall back to accounts so the
+  // Edit button works from the Accounts tab even if Tracker hasn't been opened.
+  const t = id ? (trackerData.find(x=>x.id===id) || accounts.find(x=>x.id===id)) : null;
   document.getElementById('tracker-modal-title').textContent = t ? 'Edit Account' : 'Add Account';
   document.getElementById('tm-id').value = id||'';
   document.getElementById('tm-username').value = t?.username||'';
@@ -1176,7 +1178,11 @@ async function saveTracker(){
   if(id) await fetch('/api/tracker/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   else await fetch('/api/tracker',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   closeModal('tracker-modal');
-  renderTracker();
+  // Username propagates to every tab — refresh all views that show accounts
+  await loadAccounts();
+  if(typeof renderTracker==='function') renderTracker();
+  if(typeof renderSchedule==='function' && currentPage==='schedule') renderSchedule();
+  glog('Account saved','ok');
 }
 
 async function deleteTracker(id){
@@ -1696,15 +1702,30 @@ function renderSidebarSets(){
 function renderAccounts(){
   const el=document.getElementById('accounts-list');
   if(!accounts.length){el.innerHTML='<div class="empty" style="padding:20px;">No accounts connected yet.</div>';return;}
-  el.innerHTML=accounts.map(a=>`
+  // Keep trackerData in sync so the Edit modal can find this account even if
+  // the user hasn't opened the Tracker tab yet.
+  trackerData=accounts.slice();
+  el.innerHTML=accounts.map(a=>{
+    const depopUrl='https://www.depop.com/'+encodeURIComponent(a.username)+'/';
+    return `
     <div class="acct-card">
       <div class="acct-header">
-        <div class="acct-avatar">${a.username.substring(0,2).toUpperCase()}</div>
-        <div style="flex:1;"><div style="font-weight:600;font-size:13px;">@${a.username}</div><div style="font-size:11px;color:var(--muted);font-family:var(--mono);">${new Date(a.connectedAt).toLocaleDateString()}${a.proxy?' · 🔒 Proxy set':''}</div></div>
+        <div class="acct-avatar">${(a.username||'??').substring(0,2).toUpperCase()}</div>
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:600;font-size:13px;">@${a.username||'(no username)'}</div>
+          <div style="font-size:11px;color:var(--muted);font-family:var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+            <a href="${depopUrl}" target="_blank" style="color:var(--ink-3);text-decoration:none;" title="Open this shop on Depop">${depopUrl}</a>
+            ${a.email?' · '+a.email:''}
+            ${a.proxy?' · 🔒 Proxy set':''}
+            · connected ${new Date(a.connectedAt).toLocaleDateString()}
+          </div>
+        </div>
+        <button class="btn sm" onclick="openTrackerModal('${a.id}')">✏ Edit</button>
         <button class="btn sm" onclick="openProxyModal('${a.id}','${a.proxy||''}')">🔒 ${a.proxy?'Edit':'Add'} Proxy</button>
         <button class="btn sm" style="color:var(--red);" onclick="deleteAccount('${a.id}')">Remove</button>
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 function renderSchedule(){
