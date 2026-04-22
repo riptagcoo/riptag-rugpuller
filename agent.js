@@ -734,6 +734,179 @@ async function runRefreshPhotos() {
 // jitter is used in a few places — define once for runRefreshPhotos
 function jitter(min, max) { return min + Math.floor(Math.random() * (max - min)); }
 
+// ─── QUICK REFRESH (aka YOLO refresh) ─────────────────────────
+// Scans the seller's shop page and replaces the photos on EVERY
+// listing it finds with 4 random full-res photos drawn from the
+// pool of a chosen set. Does NOT try to match listing → photo by
+// size. Use when you just want to kill the blurry photos in one
+// shot and don't care that the "size M" listing might end up with
+// any of the photos from the set. Preserves likes/views/saves
+// because we edit existing listings — we don't re-list.
+async function runQuickRefresh() {
+  const sets = await apiGet('/api/sets');
+  if (!sets.length) { console.log('No sets.'); return; }
+  console.log('\nPick a set to pull photos from (the "photo pool"):');
+  sets.forEach((s, i) => {
+    const photoCount = (s.listings || []).reduce((a, l) => a + (l.photos?.length || 0), 0);
+    console.log(`  ${i+1}. ${s.name} — ${(s.listings||[]).length} listings, ${photoCount} photos in pool`);
+  });
+  const choice = await ask('\nSet number: ');
+  const set = sets[parseInt(choice) - 1];
+  if (!set) { console.log('Invalid.'); return; }
+
+  // Pool: every UNIQUE photo across all listings in the set
+  const allPhotos = [];
+  const seen = new Set();
+  for (const l of (set.listings || [])) {
+    for (const p of (l.photos || [])) {
+      if (p && p.driveId && !seen.has(p.driveId)) {
+        seen.add(p.driveId);
+        allPhotos.push(p);
+      }
+    }
+  }
+  if (!allPhotos.length) {
+    console.log('This set has no photos. Build listings first (via the dashboard), then retry.');
+    return;
+  }
+  console.log(`\nPhoto pool: ${allPhotos.length} unique photos from set "${set.name}"`);
+
+  // Which account's shop to refresh (default to the set's account, but allow override)
+  const accounts = await apiGet('/api/accounts');
+  let account = accounts.find(a => a.id === set.accountId);
+  if (!account) {
+    console.log('\nSet has no assigned account. Pick an account:');
+    accounts.forEach((a, i) => console.log(`  ${i+1}. @${a.username}`));
+    const ac = await ask('\nAccount number: ');
+    account = accounts[parseInt(ac) - 1];
+  } else {
+    const useThis = await ask(`Target shop: @${account.username}. Use this account? (y/n): `);
+    if (useThis.toLowerCase() !== 'y') {
+      console.log('\nPick an account:');
+      accounts.forEach((a, i) => console.log(`  ${i+1}. @${a.username}`));
+      const ac = await ask('\nAccount number: ');
+      account = accounts[parseInt(ac) - 1];
+    }
+  }
+  if (!account || !account.cookies?.length) {
+    console.log('Account missing or has no cookies.');
+    return;
+  }
+
+  console.log('\n══════════════════════════════════════════');
+  console.log(` QUICK REFRESH — @${account.username}`);
+  console.log('══════════════════════════════════════════');
+  console.log(' For EVERY listing visible on the shop page:');
+  console.log('   1. Open the listing');
+  console.log('   2. Click Edit');
+  console.log('   3. Remove existing (blurry) photos');
+  console.log('   4. Upload 4 RANDOM full-res photos from the set\'s pool');
+  console.log('   5. Save');
+  console.log(' Description, price, size are NOT touched.');
+  console.log(' Likes/views/saves stay because we\'re editing, not re-listing.');
+  console.log(' Photos go on listings randomly — size M listing may get any photo.');
+  console.log('══════════════════════════════════════════');
+
+  const go = await ask('\nContinue? (y/n): ');
+  if (go.toLowerCase() !== 'y') { console.log('Cancelled.'); return; }
+
+  const tmpDir = path.join(__dirname, 'tmp', 'quickrefresh', set.id);
+  fs.ensureDirSync(tmpDir);
+  fs.emptyDirSync(tmpDir);
+  const photoCache = {};
+
+  console.log(`\nOpening browser for @${account.username}...`);
+  const browser = await chromium.launch({ headless: false, slowMo: 50 });
+  const context = await browser.newContext();
+  const clean = account.cookies.map(c => ({
+    name: c.name, value: c.value, domain: c.domain,
+    path: c.path || '/', secure: c.secure || false, httpOnly: c.httpOnly || false,
+    sameSite: ['Strict','Lax','None'].includes(c.sameSite) ? c.sameSite : 'Lax'
+  }));
+  await context.addCookies(clean);
+  const page = await context.newPage();
+
+  try {
+    console.log(`\nLoading @${account.username}'s shop page...`);
+    await page.goto(`https://www.depop.com/${account.username}/`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForTimeout(3000);
+
+    // Scroll to lazy-load everything
+    let prev = 0, same = 0;
+    for (let i = 0; i < 40 && same < 3; i++) {
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+      await page.waitForTimeout(1200);
+      const c = await page.$$eval('a[href*="/products/"]', as => as.length).catch(() => 0);
+      if (c === prev) same++; else { same = 0; prev = c; }
+    }
+
+    const productUrls = await page.$$eval('a[href*="/products/"]', as =>
+      [...new Set(as.map(a => a.href).filter(h => /\/products\/[^/]+\/[^/?#]+/.test(h)))]
+    ).catch(() => []);
+    console.log(`\nFound ${productUrls.length} listings on the shop page.`);
+    if (!productUrls.length) {
+      console.log('Nothing to refresh. Make sure the shop is loaded and logged in.');
+      await browser.close();
+      return;
+    }
+
+    // Build a "synthetic listing" with 4 random photos for a given URL
+    const makeRandomListing = (url) => {
+      const shuffled = [...allPhotos].sort(() => Math.random() - 0.5);
+      return { id: 'quick-' + Math.random().toString(36).slice(2, 8), size: '?', depopUrl: url, photos: shuffled.slice(0, 4) };
+    };
+
+    // ── TEST on listing 1 first ──
+    const testUrl = productUrls[0];
+    const testListing = makeRandomListing(testUrl);
+    console.log(`\n▶ TEST: refreshing 1 listing first`);
+    console.log(`   ${testUrl}`);
+    const testLocal = await getListingLocalPhotos(testListing, tmpDir, photoCache);
+    for (const lp of testLocal) {
+      try { console.log(`   · ${path.basename(lp)} — ${Math.round(fs.statSync(lp).size / 1024)} KB`); } catch {}
+    }
+
+    let ok = 0;
+    try {
+      const res = await refreshOneListing(page, testListing, testLocal);
+      console.log(`\n   ✓ TEST PASSED (removed ${res.removed} old, uploaded ${testLocal.length} new)`);
+      ok++;
+    } catch (e) {
+      console.log(`\n   ✗ TEST FAILED: ${e.message}`);
+      console.log('   Check the browser window to see what went wrong.');
+      await ask('\nPress ENTER to close browser...');
+      await browser.close();
+      return;
+    }
+
+    if (productUrls.length > 1) {
+      const doAll = await ask(`\nTest passed. Refresh remaining ${productUrls.length - 1} listings? (y/n): `);
+      if (doAll.toLowerCase() === 'y') {
+        for (let i = 1; i < productUrls.length; i++) {
+          const url = productUrls[i];
+          const listing = makeRandomListing(url);
+          const short = url.split('/').slice(-2).join('/');
+          process.stdout.write(`[${i+1}/${productUrls.length}] ${short} ... `);
+          try {
+            const local = await getListingLocalPhotos(listing, tmpDir, photoCache);
+            await refreshOneListing(page, listing, local);
+            ok++;
+            process.stdout.write('✓\n');
+          } catch (e) {
+            process.stdout.write(`✗ ${e.message.slice(0, 60)}\n`);
+          }
+          await page.waitForTimeout(jitter(1500, 3500));
+        }
+      }
+    }
+
+    console.log(`\n✅ Quick-refreshed ${ok}/${productUrls.length} listings on @${account.username}`);
+  } finally {
+    await browser.close().catch(() => {});
+    await fs.remove(tmpDir).catch(() => {});
+  }
+}
+
 // ─── PHOTO RESOLUTION TEST ────────────────────────────────────
 // Downloads one photo via the new full-res endpoint and reports the
 // file size. If you see something tiny (< 30 KB) the blur fix isn't
@@ -1249,9 +1422,10 @@ async function main() {
   console.log('  3. Check account statuses');
   console.log('  4. Scrape orders (for labels)');
   console.log('  5. Download & merge shipping labels (sorted by size)');
-  console.log('  6. Refresh photos on a deployed set (keep likes/views)');
+  console.log('  6. Refresh photos on a deployed set (match by size)');
   console.log('  7. TEST: download one photo at full res (verify blur fix)');
-  const action = await ask('\nEnter choice (1-7): ');
+  console.log('  8. Quick Refresh: replace blurry photos on EVERY listing in shop (random)');
+  const action = await ask('\nEnter choice (1-8): ');
 
   if (action === '2') {
     await runMassEdit();
@@ -1276,6 +1450,10 @@ async function main() {
   }
   if (action === '7') {
     await runPhotoResolutionTest();
+    return;
+  }
+  if (action === '8') {
+    await runQuickRefresh();
     return;
   }
 
