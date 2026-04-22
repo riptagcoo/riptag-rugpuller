@@ -94,10 +94,11 @@ body::after {
   flex-shrink: 0;
   overflow: hidden;
 }
-.sb-logo img {
+.sb-logo img, .sb-logo svg {
   width: 100%; height: 100%;
   object-fit: contain;
   padding: 4px;
+  display: block;
   /* Turn the black logo white so it reads on the green gradient */
   filter: brightness(0) invert(1);
 }
@@ -344,9 +345,52 @@ select.input option:checked, #sold-account-select option:checked {
 .badge-draft { background: var(--glass); color: var(--ink-3); border: 1px solid var(--glass-border); }
 .badge-deployed { background: var(--green-dim); color: var(--green); border: 1px solid rgba(0,229,160,0.2); }
 .badge-deploying { background: var(--amber-dim); color: var(--amber); border: 1px solid rgba(251,191,36,0.2); }
-.badge-rugpull { background: var(--green-dim); color: var(--green); border: 1px solid rgba(0,229,160,0.2); }
-.badge-riptag { background: var(--violet-dim); color: var(--violet); border: 1px solid rgba(167,139,250,0.2); }
-.status-live { background: var(--green-dim); color: var(--green); border: 1px solid rgba(0,229,160,0.2); }
+/* Rugpull = purple, Riptag.co = orange. Breaks up the all-green UI so
+   categories are easier to scan at a glance. */
+.badge-rugpull { background: rgba(167,139,250,0.14); color: #b59eff; border: 1px solid rgba(167,139,250,0.28); }
+.badge-riptag  { background: rgba(255,159,67,0.14);  color: #ffaf68; border: 1px solid rgba(255,159,67,0.28); }
+.status-live   { background: var(--green-dim); color: var(--green); border: 1px solid rgba(0,229,160,0.2); }
+
+/* ── Animated speed switcher (Stealth / Balanced / Fast) ──────── */
+.speed-switcher {
+  display: flex; gap: 0; position: relative;
+  background: var(--glass); border: 1px solid var(--glass-border);
+  border-radius: 9px; padding: 3px;
+}
+.speed-switcher .speed-indicator {
+  position: absolute; top: 3px; bottom: 3px; left: 0;
+  background: var(--green-dim);
+  border-radius: 7px;
+  transform: translateX(0);
+  width: 0;
+  transition: transform 0.32s cubic-bezier(0.4, 0, 0.2, 1),
+              width     0.32s cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: none;
+  z-index: 0;
+}
+.speed-switcher .speed-opt {
+  position: relative; z-index: 1;
+  padding: 5px 12px; border-radius: 7px;
+  font-size: 11px; font-weight: 600; cursor: pointer;
+  color: var(--ink-3);
+  transition: color 0.28s ease, transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  user-select: none;
+  white-space: nowrap;
+}
+.speed-switcher .speed-opt:hover:not(.active) { color: var(--ink-2); }
+.speed-switcher .speed-opt.active { color: var(--green); transform: scale(1.02); }
+
+/* Print button — amber/orange so it visually pops next to the Edit ghost */
+.btn.print, .btn.amber {
+  background: linear-gradient(135deg, #ffaf68, #ff8a3c);
+  color: #281202;
+  border-color: transparent;
+  box-shadow: 0 0 18px rgba(255,159,67,0.35);
+}
+.btn.print:hover:not(:disabled), .btn.amber:hover:not(:disabled) {
+  box-shadow: 0 0 26px rgba(255,159,67,0.55), 0 4px 14px rgba(0,0,0,0.3);
+  transform: translateY(-1px);
+}
 .status-banned { background: var(--red-dim); color: var(--red); border: 1px solid rgba(248,113,113,0.2); }
 .status-unknown { background: var(--glass); color: var(--ink-3); border: 1px solid var(--glass-border); }
 
@@ -500,7 +544,18 @@ tr:hover td { background: rgba(255,255,255,0.015); }
 <!-- SIDEBAR -->
 <div class="sidebar">
   <div class="sb-brand">
-    <div class="sb-logo"><img src="/logo.png" alt="Riptag" onerror="this.style.display='none';this.parentElement.textContent='🏄';"/></div>
+    <div class="sb-logo" title="Riptag">
+      <svg viewBox="0 0 50 50" xmlns="http://www.w3.org/2000/svg" aria-label="Riptag" preserveAspectRatio="xMidYMid meet">
+        <defs>
+          <mask id="tagHole">
+            <rect width="100%" height="100%" fill="white"/>
+            <circle cx="34" cy="17" r="3" fill="black"/>
+          </mask>
+        </defs>
+        <!-- Riptag price-tag mark: rectangle with angular point on the right, circular tag hole -->
+        <path d="M6,12 L30,12 L46,25 L30,38 L6,38 Z" fill="black" mask="url(#tagHole)"/>
+      </svg>
+    </div>
     <div>
       <div class="sb-title">Riptag</div>
       <div class="sb-version">v2.3 · Set Manager</div>
@@ -519,9 +574,8 @@ tr:hover td { background: rgba(255,255,255,0.015); }
     <div class="sb-add" onclick="openNewSetModal()"><span>＋</span>New Set</div>
     <div style="margin-top:16px;border-top:1px solid var(--glass-border);padding-top:12px;">
       <div class="sb-item" id="nav-tracker" onclick="showPage('tracker')" style="margin-bottom:4px;"><span class="ico">◈</span>Rugpull Tracker</div>
-      <div class="sb-item" onclick="showPage('replier')" id="nav-replier" style="position:relative;">
+      <div class="sb-item" onclick="showPage('replier')" id="nav-replier">
         <span class="ico">◎</span>Riptag Replier
-        <span style="font-size:9px;font-family:var(--mono);background:linear-gradient(135deg,var(--violet),var(--green));-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-left:auto;font-weight:700;letter-spacing:0.05em;">SOON</span>
       </div>
     </div>
   </div>
@@ -698,10 +752,11 @@ tr:hover td { background: rgba(255,255,255,0.015); }
     </div>
     <div class="topbar-right">
       <div id="replier-status-pill" class="status-pill" style="margin-right:8px;"><span class="dot"></span><span id="replier-status-label">Agent offline</span></div>
-      <div style="display:flex;gap:4px;background:var(--glass);border:1px solid var(--glass-border);border-radius:9px;padding:3px;margin-right:4px;">
-        <div onclick="setReplierSpeed('stealth')" id="speed-stealth" style="padding:5px 12px;border-radius:7px;font-size:11px;font-weight:600;cursor:pointer;color:var(--ink-3);">🥷 Stealth</div>
-        <div onclick="setReplierSpeed('balanced')" id="speed-balanced" style="padding:5px 12px;border-radius:7px;font-size:11px;font-weight:600;cursor:pointer;background:var(--green-dim);color:var(--green);">⚖️ Balanced</div>
-        <div onclick="setReplierSpeed('fast')" id="speed-fast" style="padding:5px 12px;border-radius:7px;font-size:11px;font-weight:600;cursor:pointer;color:var(--ink-3);">⚡ Fast</div>
+      <div id="speed-switcher" class="speed-switcher" style="margin-right:4px;">
+        <div class="speed-indicator" id="speed-indicator"></div>
+        <div class="speed-opt" onclick="setReplierSpeed('stealth')" id="speed-stealth">🥷 Stealth</div>
+        <div class="speed-opt active" onclick="setReplierSpeed('balanced')" id="speed-balanced">⚖️ Balanced</div>
+        <div class="speed-opt" onclick="setReplierSpeed('fast')" id="speed-fast">⚡ Fast</div>
       </div>
       <span id="ai-key-pill" style="font-size:10px;font-family:var(--mono);color:var(--ink-3);padding:4px 8px;border-radius:6px;background:var(--glass);border:1px solid var(--glass-border);margin-right:4px;">AI: checking…</span>
       <button class="btn ghost sm" onclick="openAITestModal()">🤖 Test AI</button>
@@ -964,7 +1019,7 @@ async function renderActiveThisWeek(){
     </div>
     <div style="display:flex;gap:6px;flex-shrink:0;" onclick="event.stopPropagation();">
       ${acctEditBtn}
-      <button class="btn xs primary" onclick="printAllLabelsForAccount('${a.accountId}','${a.username}')" title="Download & merge shipping labels sorted by size">🖨 Print</button>
+      <button class="btn xs print" onclick="printAllLabelsForAccount('${a.accountId}','${a.username}')" title="Download & merge shipping labels sorted by size">🖨 Print</button>
     </div>
     <div class="expand-arrow" style="color:var(--ink-3);font-size:12px;margin-left:8px;flex-shrink:0;">${ie?'▾':'▸'}</div>
   </div>
@@ -1431,15 +1486,20 @@ async function setReplierSpeed(speed){
 function setSpeedUI(speed){
   ['stealth','balanced','fast'].forEach(s=>{
     const el=document.getElementById('speed-'+s);
-    if(!el)return;
-    if(s===speed){
-      el.style.background='var(--green-dim)';
-      el.style.color='var(--green)';
-    }else{
-      el.style.background='transparent';
-      el.style.color='var(--ink-3)';
-    }
+    if(!el) return;
+    el.classList.toggle('active', s===speed);
+    // Clear any legacy inline styles from the old setSpeedUI
+    el.style.background='';
+    el.style.color='';
   });
+  // Slide the pill indicator under the active option
+  const indicator=document.getElementById('speed-indicator');
+  const activeEl=document.getElementById('speed-'+speed);
+  if(indicator && activeEl){
+    // offsetLeft is relative to the positioned parent (.speed-switcher)
+    indicator.style.transform=`translateX(${activeEl.offsetLeft}px)`;
+    indicator.style.width=activeEl.offsetWidth+'px';
+  }
 }
 
 async function toggleReplierAccount(accountId, enabled){
