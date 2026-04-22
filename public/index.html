@@ -1888,7 +1888,7 @@ function renderListingsTable(set){
   Object.values(groups).forEach((group,gi)=>{
     rows+=`<tr style="background:rgba(255,255,255,0.01);"><td colspan="6" style="padding:6px 12px;font-size:11px;color:var(--faint);font-family:var(--mono);">GROUP ${gi+1}</td></tr>`;
     group.forEach(l=>{rows+=`<tr onclick="openListingModal('${l.id}')">
-      <td><div class="thumb">${l.photos?.[0]?.thumb?'<img src="'+l.photos[0].thumb+'" alt=""/>':'👕'}</div></td>
+      <td><div class="thumb">${l.photos?.[0]?.driveId?'<img src="/api/drive/file/'+l.photos[0].driveId+'" alt="" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement(\'span\'),{textContent:\'👕\'}))"/>':(l.photos?.[0]?.thumb?'<img src="'+l.photos[0].thumb+'" alt="" loading="lazy"/>':'👕')}</div></td>
       <td><span style="font-family:var(--mono);font-size:12px;background:var(--s3);padding:2px 8px;border-radius:4px;">${l.size}</span></td>
       <td style="font-family:var(--mono);">$${l.customPrice||l.price}</td>
       <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:12px;">${(l.customDescription||l.description||'').substring(0,50)}…</td>
