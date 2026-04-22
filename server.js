@@ -43,7 +43,16 @@ async function initDB() {
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true }));
-app.use(session({ secret: SESSION_SECRET, resave: false, saveUninitialized: true, cookie: { maxAge: 7 * 24 * 60 * 60 * 1000 } }));
+// Dashboard + Drive session lasts 90 days and rolls — every request
+// refreshes the expiration, so as long as you use the dashboard at least
+// once every 90 days you stay logged in (and Drive stays connected).
+app.use(session({
+  secret: SESSION_SECRET,
+  resave: false,
+  saveUninitialized: true,
+  rolling: true,
+  cookie: { maxAge: 90 * 24 * 60 * 60 * 1000 }
+}));
 
 // CORS
 app.use((req, res, next) => {
@@ -177,10 +186,26 @@ app.get('/api/drive/file/:id', async (req, res) => {
 });
 
 app.get('/api/drive/status', async (req, res) => {
-  const connected = !!req.session.googleTokens;
-  // Auto-persist the session's tokens to DB so non-session callers
-  // (agent.js) can download Drive files via /api/drive/file/:id.
-  if (connected) {
+  // Treat Drive as "connected" if we have tokens in EITHER the browser
+  // session OR the DB. The DB copy has a refresh_token so it stays valid
+  // indefinitely — the access_token inside auto-refreshes on each call
+  // via googleapis' built-in OAuth2Client.
+  let connected = !!req.session.googleTokens;
+  let source = connected ? 'session' : null;
+
+  if (!connected) {
+    try {
+      const r = await pool.query("SELECT data FROM sets WHERE id='__google_tokens__'");
+      if (r.rows.length) {
+        connected = true;
+        source = 'db';
+        // Warm the session from DB so future calls are fast and the user
+        // feels "logged in" to Drive again without re-auth
+        req.session.googleTokens = r.rows[0].data;
+      }
+    } catch {}
+  } else {
+    // Session has tokens — also mirror to DB so agent.js works
     try {
       const tokensJson = JSON.stringify(req.session.googleTokens);
       const exists = await pool.query("SELECT id FROM sets WHERE id='__google_tokens__'");
@@ -189,9 +214,9 @@ app.get('/api/drive/status', async (req, res) => {
       } else {
         await pool.query("INSERT INTO sets (id, data) VALUES ('__google_tokens__', $1)", [tokensJson]);
       }
-    } catch (e) { /* non-fatal */ }
+    } catch { /* non-fatal */ }
   }
-  res.json({ connected });
+  res.json({ connected, source });
 });
 
 app.get('/api/drive/folders', async (req, res) => {
