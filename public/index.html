@@ -741,7 +741,10 @@ tr:hover td { background: rgba(255,255,255,0.015); }
       <div class="field"><label>Email</label><input class="input" id="tm-email" placeholder="email@gmail.com"/></div>
       <div class="field"><label>Password</label><input class="input" id="tm-password" placeholder="password"/></div>
     </div>
-    <div class="field"><label>Authenticator ID / 2FA Backup Code</label><input class="input" id="tm-authid" placeholder="2FA backup code"/></div>
+    <div class="grid-2">
+      <div class="field"><label>Amount Sold (# of orders)</label><input class="input" id="tm-soldcount" type="number" placeholder="0"/></div>
+      <div class="field"><label>Authenticator ID / 2FA Backup Code</label><input class="input" id="tm-authid" placeholder="2FA backup code"/></div>
+    </div>
     <div class="field"><label>Date Banned (leave blank if still active)</label><input class="input" id="tm-banned" type="date"/></div>
     <div class="field"><label>Notes</label><textarea class="input" id="tm-notes" rows="3" placeholder="Any notes..."></textarea></div>
     <div class="modal-actions">
@@ -942,9 +945,7 @@ async function renderActiveThisWeek(){
       const ie=expandedAccounts.has(a.accountId);
       const av=a.username.substring(0,2).toUpperCase();
       const catBadge=a.category&&a.category!=='null'?`<span class="badge badge-${a.category}">${a.category==='riptag'?'riptag.co':'rugpull'}</span>`:'';
-      const descBtn=a.setId&&a.setId!=='null'?`<button class="btn xs ghost" onclick="openDescSchedule('${a.setId}')" title="Schedule evergreen description switch">Desc</button>`:'';
-      const massEditBtn=a.setId&&a.setId!=='null'?`<button class="btn xs ghost" onclick="openMassEditBtn('${a.accountId}','${a.setId}','${a.username}')" title="Mass-edit all descriptions on this account">Mass Edit</button>`:'';
-      const acctEditBtn=`<button class="btn xs ghost" onclick="openTrackerModal('${a.accountId}')" title="Edit account details (username, email, password, notes)">✏ Edit Acct</button>`;
+      const acctEditBtn=`<button class="btn xs ghost" onclick="openTrackerModal('${a.accountId}')" title="Edit account details (username, email, amount sold, earnings, notes)">✏ Edit</button>`;
       return `<div class="acct-card" id="card-${a.accountId}">
   <div style="display:flex;align-items:center;gap:16px;padding:20px 22px;cursor:pointer;" data-acid="${a.accountId}" onclick="toggleAccount(this.dataset.acid)">
     <div style="width:46px;height:46px;border-radius:12px;background:linear-gradient(135deg,rgba(0,229,160,0.12),rgba(167,139,250,0.08));border:1px solid rgba(0,229,160,0.18);display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;color:var(--green);flex-shrink:0;">${av}</div>
@@ -963,9 +964,6 @@ async function renderActiveThisWeek(){
     </div>
     <div style="display:flex;gap:6px;flex-shrink:0;" onclick="event.stopPropagation();">
       ${acctEditBtn}
-      ${descBtn}
-      ${massEditBtn}
-      <button class="btn xs ghost" id="chk-${a.accountId}" data-acid="${a.accountId}" data-uname="${a.username}" onclick="checkOneStatus(this.dataset.acid,this.dataset.uname,this)">Check</button>
       <button class="btn xs primary" onclick="printAllLabelsForAccount('${a.accountId}','${a.username}')" title="Download & merge shipping labels sorted by size">🖨 Print</button>
     </div>
     <div class="expand-arrow" style="color:var(--ink-3);font-size:12px;margin-left:8px;flex-shrink:0;">${ie?'▾':'▸'}</div>
@@ -1217,6 +1215,7 @@ function openTrackerModal(id){
   document.getElementById('tm-password').value = t?.password||'';
   document.getElementById('tm-authid').value = t?.authId||'';
   document.getElementById('tm-earnings').value = t?.earnings||'';
+  document.getElementById('tm-soldcount').value = (t?.soldCount ?? '') === 0 ? '0' : (t?.soldCount || '');
   document.getElementById('tm-banned').value = t?.bannedAt?t.bannedAt.split('T')[0]:'';
   document.getElementById('tm-notes').value = t?.notes||'';
   document.getElementById('tracker-modal').classList.remove('hidden');
@@ -1230,6 +1229,7 @@ async function saveTracker(){
     password: document.getElementById('tm-password').value,
     authId: document.getElementById('tm-authid').value.trim(),
     earnings: document.getElementById('tm-earnings').value||'0',
+    soldCount: (function(){ const v=document.getElementById('tm-soldcount').value; return v===''?undefined:parseInt(v,10)||0; })(),
     bannedAt: document.getElementById('tm-banned').value||null,
     notes: document.getElementById('tm-notes').value.trim()
   };
@@ -1775,25 +1775,30 @@ function renderSidebarSets(){
 function renderAccounts(){
   const el=document.getElementById('accounts-list');
   if(!accounts.length){el.innerHTML='<div class="empty" style="padding:20px;">No accounts connected yet.</div>';return;}
-  // Keep trackerData in sync so the Edit modal can find this account even if
-  // the user hasn't opened the Tracker tab yet.
+  // Keep trackerData in sync for any edit flows elsewhere
   trackerData=accounts.slice();
   el.innerHTML=accounts.map(a=>{
     const depopUrl='https://www.depop.com/'+encodeURIComponent(a.username)+'/';
+    const hasCookies=Array.isArray(a.cookies)&&a.cookies.length>0;
+    const banned=a.status==='banned'||!!a.bannedAt;
+    // Status dot: red = banned, green = live cookies, gray = no cookies/unknown
+    const dotColor=banned?'#ff5c5c':(hasCookies?'var(--green)':'var(--ink-3)');
+    const dotGlow=banned?'0 0 6px rgba(255,92,92,0.6)':(hasCookies?'0 0 6px var(--green-glow,rgba(0,229,160,0.55))':'none');
+    const statusLabel=banned?'Banned':(hasCookies?'Cookies fresh':'No cookies');
     return `
     <div class="acct-card">
       <div class="acct-header">
+        <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${dotColor};box-shadow:${dotGlow};flex-shrink:0;margin-right:2px;" title="${statusLabel}"></span>
         <div class="acct-avatar">${(a.username||'??').substring(0,2).toUpperCase()}</div>
         <div style="flex:1;min-width:0;">
           <div style="font-weight:600;font-size:13px;">@${a.username||'(no username)'}</div>
           <div style="font-size:11px;color:var(--muted);font-family:var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
-            <a href="${depopUrl}" target="_blank" style="color:var(--ink-3);text-decoration:none;" title="Open this shop on Depop">${depopUrl}</a>
-            ${a.email?' · '+a.email:''}
-            ${a.proxy?' · 🔒 Proxy set':''}
+            <span style="color:${dotColor};">● ${statusLabel}</span>
             · connected ${new Date(a.connectedAt).toLocaleDateString()}
+            ${a.email?' · '+a.email:''}
+            ${a.proxy?' · 🔒 Proxy':''}
           </div>
         </div>
-        <button class="btn sm" onclick="openTrackerModal('${a.id}')">✏ Edit</button>
         <button class="btn sm" onclick="openProxyModal('${a.id}','${a.proxy||''}')">🔒 ${a.proxy?'Edit':'Add'} Proxy</button>
         <button class="btn sm" style="color:var(--red);" onclick="deleteAccount('${a.id}')">Remove</button>
       </div>
