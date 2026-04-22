@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+\<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
@@ -942,8 +942,9 @@ async function renderActiveThisWeek(){
       const ie=expandedAccounts.has(a.accountId);
       const av=a.username.substring(0,2).toUpperCase();
       const catBadge=a.category&&a.category!=='null'?`<span class="badge badge-${a.category}">${a.category==='riptag'?'riptag.co':'rugpull'}</span>`:'';
-      const descBtn=a.setId&&a.setId!=='null'?`<button class="btn xs ghost" onclick="openDescSchedule(this)" data-setid="${a.setId}">Desc</button>`:'';
-      const editBtn=a.setId&&a.setId!=='null'?`<button class="btn xs ghost" onclick="openMassEditBtn(this)" data-accountid="${a.accountId}" data-setid="${a.setId}" data-username="${a.username}">Edit</button>`:'';
+      const descBtn=a.setId&&a.setId!=='null'?`<button class="btn xs ghost" onclick="openDescSchedule('${a.setId}')" title="Schedule evergreen description switch">Desc</button>`:'';
+      const massEditBtn=a.setId&&a.setId!=='null'?`<button class="btn xs ghost" onclick="openMassEditBtn('${a.accountId}','${a.setId}','${a.username}')" title="Mass-edit all descriptions on this account">Mass Edit</button>`:'';
+      const acctEditBtn=`<button class="btn xs ghost" onclick="openTrackerModal('${a.accountId}')" title="Edit account details (username, email, password, notes)">✏ Edit Acct</button>`;
       return `<div class="acct-card" id="card-${a.accountId}">
   <div style="display:flex;align-items:center;gap:16px;padding:20px 22px;cursor:pointer;" data-acid="${a.accountId}" onclick="toggleAccount(this.dataset.acid)">
     <div style="width:46px;height:46px;border-radius:12px;background:linear-gradient(135deg,rgba(0,229,160,0.12),rgba(167,139,250,0.08));border:1px solid rgba(0,229,160,0.18);display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;color:var(--green);flex-shrink:0;">${av}</div>
@@ -961,9 +962,11 @@ async function renderActiveThisWeek(){
       </div>
     </div>
     <div style="display:flex;gap:6px;flex-shrink:0;" onclick="event.stopPropagation();">
-      ${descBtn}${editBtn}
+      ${acctEditBtn}
+      ${descBtn}
+      ${massEditBtn}
       <button class="btn xs ghost" id="chk-${a.accountId}" data-acid="${a.accountId}" data-uname="${a.username}" onclick="checkOneStatus(this.dataset.acid,this.dataset.uname,this)">Check</button>
-      <button class="btn xs primary" onclick="printAllLabelsForAccount(this)" data-accountid="${a.accountId}" data-username="${a.username}">🖨 Print</button>
+      <button class="btn xs primary" onclick="printAllLabelsForAccount('${a.accountId}','${a.username}')" title="Download & merge shipping labels sorted by size">🖨 Print</button>
     </div>
     <div class="expand-arrow" style="color:var(--ink-3);font-size:12px;margin-left:8px;flex-shrink:0;">${ie?'▾':'▸'}</div>
   </div>
@@ -1030,6 +1033,61 @@ async function checkOneStatus(accountId, username, btn){
 async function checkAllStatuses(){
   glog('Run node agent.js → option 3 to check all statuses','hi');
   alert('To check account statuses:\n\n1. Open Command Prompt\n2. Run: node agent.js\n3. Select option 3 (Check account statuses)\n\nThe agent will open each profile in a real browser and accurately detect live vs banned.');
+}
+
+// ─── Active Accounts action buttons ──────────────────────────
+// Most of these point to local terminal workflows because the Railway
+// server has no browser; the agent runs on your Windows machine.
+
+function openDescSchedule(setId){
+  const s = sets.find(x => x.id === setId);
+  const name = s ? s.name : 'this set';
+  // Simple scheduler: set a date in the set's `descriptionSwitchDate` field.
+  const current = s && s.descriptionSwitchDate ? s.descriptionSwitchDate.split('T')[0] : '';
+  const date = prompt(
+    'Schedule evergreen description switch for "' + name + '"\n\n' +
+    'On this date, the daemon will mass-edit every listing\'s description to the\n' +
+    'set\'s evergreen description (makes the account look less like a fresh drop).\n\n' +
+    'Enter a date (YYYY-MM-DD), or leave blank to clear the schedule:',
+    current
+  );
+  if (date === null) return; // cancel
+  const body = { descriptionSwitchDate: date ? date : null };
+  fetch('/api/sets/' + setId, { method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) })
+    .then(r => r.json())
+    .then(() => {
+      glog(date ? 'Description switch scheduled for ' + date : 'Description schedule cleared', 'ok');
+      loadSets();
+    })
+    .catch(e => alert('Failed: ' + e.message));
+}
+
+function openMassEditBtn(accountId, setId, username){
+  const s = sets.find(x => x.id === setId);
+  const name = s ? s.name : 'this set';
+  alert(
+    'Mass-edit all descriptions on @' + username + '\'s listings for set "' + name + '"\n\n' +
+    'This has to run locally because it uses a browser (Playwright):\n\n' +
+    '1. Open Command Prompt in your Riptag-Rugpuller folder\n' +
+    '2. Run: node agent.js\n' +
+    '3. Choose option 2 (Mass edit descriptions on an account)\n' +
+    '4. Pick @' + username + ' and "' + name + '"\n\n' +
+    'Tip: to schedule this automatically on a future date, use the "Desc" button' +
+    ' to set a switch date — the daemon will run it for you.'
+  );
+}
+
+function printAllLabelsForAccount(accountId, username){
+  alert(
+    'Download + merge shipping labels (PDFs sorted by size) for @' + username + '\n\n' +
+    'This has to run locally because it uses a browser (Playwright):\n\n' +
+    '1. Open Command Prompt in your Riptag-Rugpuller folder\n' +
+    '2. Run: node agent.js\n' +
+    '3. Choose option 5 (Download & merge shipping labels)\n' +
+    '4. Pick @' + username + '\n\n' +
+    'You\'ll get one PDF per size (S / M / L / XL / XXL / MULTI) in your project folder,\n' +
+    'ready to open and send to your Polono printer.'
+  );
 }
 
 // ─── RUGPULL TRACKER ─────────────────────────────────────────
@@ -1182,6 +1240,7 @@ async function saveTracker(){
   await loadAccounts();
   if(typeof renderTracker==='function') renderTracker();
   if(typeof renderSchedule==='function' && currentPage==='schedule') renderSchedule();
+  if(typeof renderActiveThisWeek==='function' && currentPage==='active') renderActiveThisWeek();
   glog('Account saved','ok');
 }
 
