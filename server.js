@@ -111,8 +111,47 @@ app.get('/auth/google/callback', async (req, res) => {
   try {
     const { tokens } = await getOAuth2Client().getToken(req.query.code);
     req.session.googleTokens = tokens;
+    // Also persist tokens so non-session callers (agent.js with x-api-key) can use them
+    try {
+      const exists = await pool.query("SELECT id FROM sets WHERE id='__google_tokens__'");
+      if (exists.rows.length) await pool.query("UPDATE sets SET data=$1 WHERE id='__google_tokens__'", [JSON.stringify(tokens)]);
+      else await pool.query("INSERT INTO sets (id, data) VALUES ('__google_tokens__', $1)", [JSON.stringify(tokens)]);
+    } catch (e) { console.error('failed to persist google tokens:', e.message); }
     res.redirect('/?connected=drive');
   } catch { res.redirect('/?error=auth'); }
+});
+
+// Pull stored Google tokens (session first, DB fallback for agent.js)
+async function getGoogleTokens(req) {
+  if (req && req.session && req.session.googleTokens) return req.session.googleTokens;
+  try {
+    const r = await pool.query("SELECT data FROM sets WHERE id='__google_tokens__'");
+    if (r.rows.length) return r.rows[0].data;
+  } catch {}
+  return null;
+}
+
+// Proxy a full-resolution Drive file download. agent.js uses this so listings
+// get sharp images instead of 200px thumbnails.
+app.get('/api/drive/file/:id', async (req, res) => {
+  try {
+    const tokens = await getGoogleTokens(req);
+    if (!tokens) return res.status(401).json({ error: 'Drive not connected — sign in via the dashboard first.' });
+    const drive = google.drive({ version: 'v3', auth: getOAuth2Client(tokens) });
+    const meta = await drive.files.get({ fileId: req.params.id, fields: 'mimeType, name, size' });
+    const driveRes = await drive.files.get(
+      { fileId: req.params.id, alt: 'media' },
+      { responseType: 'stream' }
+    );
+    res.setHeader('Content-Type', meta.data.mimeType || 'application/octet-stream');
+    res.setHeader('Content-Disposition', `inline; filename="${(meta.data.name || 'file').replace(/[^\w.-]/g, '_')}"`);
+    if (meta.data.size) res.setHeader('Content-Length', meta.data.size);
+    driveRes.data.on('error', err => { console.error('drive stream error:', err.message); try { res.end(); } catch {} });
+    driveRes.data.pipe(res);
+  } catch (err) {
+    console.error('GET /api/drive/file failed:', err.message);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.get('/api/drive/status', (req, res) => res.json({ connected: !!req.session.googleTokens }));
