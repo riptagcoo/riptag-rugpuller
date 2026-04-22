@@ -528,33 +528,64 @@ async function refreshOneListing(page, listing, localPhotos) {
 
   if (!localPhotos.length) throw new Error('no local photos to upload');
 
-  // Step B: Upload new photos via the native file chooser. Depop has no
-  // <input type="file"> in the DOM — we listen for the native dialog and
-  // drive it via Playwright's filechooser event.
-  const fileChooserPromise = page.waitForEvent('filechooser', { timeout: 10000 }).catch(() => null);
+  // Step B: Upload via simulated drag-and-drop. Depop's uploader has no
+  // <input type="file"> and doesn't open a file chooser on click. We build
+  // real File objects in the browser from the bytes of our local photos,
+  // then dispatch dragenter/dragover/drop events on the dropzone.
+  const mimeFor = (p) => {
+    const ext = (p.split('.').pop() || '').toLowerCase();
+    return ({
+      jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png',
+      heic: 'image/heic', heif: 'image/heif', webp: 'image/webp', gif: 'image/gif'
+    })[ext] || 'application/octet-stream';
+  };
 
-  // Click the photo upload area. After all photos are deleted there's
-  // usually an "Add photos" / empty drop zone that opens the file picker.
-  await page.evaluate(() => {
-    // Prefer an explicit add/upload button if present
-    const addBtn = [...document.querySelectorAll('button, label, div[role="button"]')].find(el => {
-      const t = (el.innerText || '').trim().toLowerCase();
-      return /^(add photo|upload photo|upload|add photos)$/i.test(t);
+  const filesData = localPhotos.map(p => ({
+    name: path.basename(p),
+    mimeType: mimeFor(p),
+    data: fs.readFileSync(p).toString('base64')
+  }));
+
+  const dropResult = await page.evaluate(async (filesData) => {
+    // Find the drop zone. Prefer the main photo container, fall back to any
+    // element with a dnd / dropzone class.
+    const dropzone =
+      document.querySelector('[class*="dndContainer"]') ||
+      document.querySelector('[class*="Dropzone"]') ||
+      document.querySelector('[class*="dropzone"]');
+    if (!dropzone) return { ok: false, reason: 'no dropzone element found' };
+
+    // Rebuild File objects from base64
+    const files = filesData.map(f => {
+      const binary = atob(f.data);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      return new File([bytes], f.name, { type: f.mimeType });
     });
-    if (addBtn) { try { addBtn.click(); return; } catch {} }
-    // Fallback: click the dnd container itself (some implementations treat
-    // a click on the drop zone as "open file picker")
-    const dndZone = document.querySelector('[class*="dndContainer"], [class*="Dropzone"], [class*="dropzone"]');
-    if (dndZone) { try { dndZone.click(); } catch {} }
-  });
 
-  const chooser = await fileChooserPromise;
-  if (!chooser) {
-    throw new Error('file chooser did not appear after clicking the upload area');
+    // Build a DataTransfer loaded with our files
+    const dt = new DataTransfer();
+    for (const f of files) dt.items.add(f);
+
+    // Fire the drag sequence. dragenter + dragover prime the handler,
+    // drop actually delivers the files.
+    const fire = (type) => {
+      const evt = new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: dt });
+      dropzone.dispatchEvent(evt);
+    };
+    fire('dragenter');
+    fire('dragover');
+    fire('drop');
+
+    return { ok: true, dropzoneClass: dropzone.className };
+  }, filesData);
+
+  if (!dropResult.ok) {
+    throw new Error('drop-simulate failed: ' + dropResult.reason);
   }
-  await chooser.setFiles(localPhotos);
-  // Give Depop time to upload + render the new tiles
-  await page.waitForTimeout(6000);
+
+  // Give Depop time to process the uploads and render new tiles
+  await page.waitForTimeout(7000);
 
   // Click Save. The recon showed <button type="submit">Save changes</button>
   const saved = await page.evaluate(() => {
