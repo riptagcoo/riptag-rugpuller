@@ -131,12 +131,34 @@ async function getGoogleTokens(req) {
   return null;
 }
 
+// Quick diagnostic — lets you tell from the dashboard whether the
+// persisted Drive tokens are available for agent.js use.
+app.get('/api/drive/check-tokens', async (req, res) => {
+  const sessionTokens = !!(req.session && req.session.googleTokens);
+  let dbTokens = false;
+  try {
+    const r = await pool.query("SELECT id FROM sets WHERE id='__google_tokens__'");
+    dbTokens = r.rows.length > 0;
+  } catch {}
+  res.json({
+    sessionTokens,
+    dbTokens,
+    readyForAgent: dbTokens,
+    hint: dbTokens ? 'agent.js can download full-res photos' :
+          sessionTokens ? 'RECONNECT Drive — your current tokens are in the browser session only, not in the DB. Click Connect Drive again to persist them.' :
+          'Drive not connected at all — click Connect Drive in the dashboard.'
+  });
+});
+
 // Proxy a full-resolution Drive file download. agent.js uses this so listings
 // get sharp images instead of 200px thumbnails.
 app.get('/api/drive/file/:id', async (req, res) => {
   try {
     const tokens = await getGoogleTokens(req);
-    if (!tokens) return res.status(401).json({ error: 'Drive not connected — sign in via the dashboard first.' });
+    if (!tokens) return res.status(401).json({
+      error: 'Drive tokens not available for agent.js. Click "Connect Drive" in the dashboard to re-auth — this will persist the tokens to the database so agent.js can use them.',
+      hint: 'Visit /api/drive/check-tokens in your browser to diagnose.'
+    });
     const drive = google.drive({ version: 'v3', auth: getOAuth2Client(tokens) });
     const meta = await drive.files.get({ fileId: req.params.id, fields: 'mimeType, name, size' });
     const driveRes = await drive.files.get(
@@ -154,7 +176,23 @@ app.get('/api/drive/file/:id', async (req, res) => {
   }
 });
 
-app.get('/api/drive/status', (req, res) => res.json({ connected: !!req.session.googleTokens }));
+app.get('/api/drive/status', async (req, res) => {
+  const connected = !!req.session.googleTokens;
+  // Auto-persist the session's tokens to DB so non-session callers
+  // (agent.js) can download Drive files via /api/drive/file/:id.
+  if (connected) {
+    try {
+      const tokensJson = JSON.stringify(req.session.googleTokens);
+      const exists = await pool.query("SELECT id FROM sets WHERE id='__google_tokens__'");
+      if (exists.rows.length) {
+        await pool.query("UPDATE sets SET data=$1 WHERE id='__google_tokens__'", [tokensJson]);
+      } else {
+        await pool.query("INSERT INTO sets (id, data) VALUES ('__google_tokens__', $1)", [tokensJson]);
+      }
+    } catch (e) { /* non-fatal */ }
+  }
+  res.json({ connected });
+});
 
 app.get('/api/drive/folders', async (req, res) => {
   if (!req.session.googleTokens) return res.status(401).json({ error: 'Not authenticated' });
