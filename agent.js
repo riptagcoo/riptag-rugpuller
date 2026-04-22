@@ -793,19 +793,35 @@ async function runQuickRefresh() {
     return;
   }
 
+  const shopUrl = `https://www.depop.com/${account.username}/`;
   console.log('\n══════════════════════════════════════════');
   console.log(` QUICK REFRESH — @${account.username}`);
   console.log('══════════════════════════════════════════');
-  console.log(' For EVERY listing visible on the shop page:');
-  console.log('   1. Open the listing');
-  console.log('   2. Click Edit');
-  console.log('   3. Remove existing (blurry) photos');
-  console.log('   4. Upload 4 RANDOM full-res photos from the set\'s pool');
-  console.log('   5. Save');
+  console.log(` Target shop URL: ${shopUrl}`);
+  console.log('');
+  console.log(' !! IMPORTANT !! Open this URL in a browser BEFORE continuing.');
+  console.log(' Make sure it\'s YOUR shop (listings you recognize, logged-in view).');
+  console.log(' If this takes you to a stranger\'s shop, your account\'s username in');
+  console.log(' the dashboard is wrong — cancel and fix it under the Accounts tab.');
+  console.log('');
+  console.log(' What this does:');
+  console.log('   1. Opens each listing on that shop');
+  console.log('   2. Clicks Edit');
+  console.log('   3. Removes the existing (blurry) photos');
+  console.log('   4. Uploads 4 RANDOM full-res photos from the set\'s pool');
+  console.log('   5. Saves');
   console.log(' Description, price, size are NOT touched.');
   console.log(' Likes/views/saves stay because we\'re editing, not re-listing.');
   console.log(' Photos go on listings randomly — size M listing may get any photo.');
   console.log('══════════════════════════════════════════');
+
+  const confirmShop = await ask(`\nType the username shown on your actual Depop shop (without the @) to confirm: `);
+  if (confirmShop.trim().replace(/^@/, '').toLowerCase() !== account.username.toLowerCase()) {
+    console.log(`\n❌ Mismatch. You typed "${confirmShop}" but dashboard has "${account.username}".`);
+    console.log('   If "' + account.username + '" is not your actual Depop shop, cancel and fix the');
+    console.log('   username under the Accounts tab in the dashboard.');
+    return;
+  }
 
   const go = await ask('\nContinue? (y/n): ');
   if (go.toLowerCase() !== 'y') { console.log('Cancelled.'); return; }
