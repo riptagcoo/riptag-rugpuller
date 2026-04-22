@@ -85,17 +85,60 @@ function downloadFile(url, dest) {
   return new Promise((resolve, reject) => {
     fs.ensureDirSync(path.dirname(dest));
     const file = fs.createWriteStream(dest);
-    const mod = url.startsWith('https') ? https : http;
-    mod.get(url, res => {
-      if (res.statusCode === 302 || res.statusCode === 301) {
+    const urlObj = new URL(url);
+    const mod = urlObj.protocol === 'https:' ? https : http;
+    const opts = { hostname: urlObj.hostname, path: urlObj.pathname + urlObj.search, headers: { 'x-api-key': '1010' } };
+    mod.get(opts, res => {
+      if ([301, 302, 303, 307, 308].includes(res.statusCode)) {
         file.close();
         fs.remove(dest).then(() => downloadFile(res.headers.location, dest).then(resolve).catch(reject));
+        return;
+      }
+      if (res.statusCode !== 200) {
+        file.close();
+        fs.remove(dest).then(() => reject(new Error(`HTTP ${res.statusCode} for ${url}`)));
         return;
       }
       res.pipe(file);
       file.on('finish', () => { file.close(); resolve(dest); });
     }).on('error', err => { fs.unlink(dest, () => {}); reject(err); });
   });
+}
+
+// Download a full-resolution Drive file via the dashboard's proxy.
+// This replaces the old "use photo.thumb" approach which gave us 200px
+// thumbnails (blurry on Depop).
+async function downloadDriveFile(driveId, dest) {
+  const url = `${DASHBOARD_URL}/api/drive/file/${driveId}`;
+  await downloadFile(url, dest);
+  return dest;
+}
+
+// Build the ORDERED list of local photo paths for one listing.
+// Cache is keyed by driveId so each unique photo downloads once even if
+// it's reused across listings. Each listing keeps its own cover ordering.
+async function getListingLocalPhotos(listing, tmpDir, cache) {
+  fs.ensureDirSync(tmpDir);
+  const out = [];
+  for (let j = 0; j < (listing.photos || []).length; j++) {
+    const p = listing.photos[j];
+    if (!p || !p.driveId) continue;
+    let localPath = cache[p.driveId];
+    if (!localPath) {
+      // Preserve extension when we can — Depop's HEIC handling is finicky
+      const ext = (p.name && p.name.match(/\.([a-zA-Z0-9]+)$/)?.[1]) || 'jpg';
+      localPath = path.join(tmpDir, `${p.driveId}.${ext.toLowerCase()}`);
+      try {
+        await downloadDriveFile(p.driveId, localPath);
+        cache[p.driveId] = localPath;
+      } catch (e) {
+        console.log(`  ⚠ photo ${j+1} (${p.name}) download failed: ${e.message}`);
+        continue;
+      }
+    }
+    if (fs.existsSync(localPath)) out.push(localPath);
+  }
+  return out;
 }
 
 // Click a combobox input and select option by index (1-based)
@@ -424,6 +467,200 @@ async function runStatusCheck() {
 
   await browser.close();
   console.log('\n✓ Done. Dashboard updated with statuses.');
+}
+
+// ─── PHOTO REFRESH ────────────────────────────────────────────
+// For each posted listing in a set, opens its Depop edit page,
+// removes the existing photos, and uploads fresh full-res ones.
+// Description, price, size, etc. are NOT touched. Likes/views/follows
+// stay intact because we're editing the same listing, not re-creating.
+async function runRefreshPhotos() {
+  const sets = await apiGet('/api/sets');
+  if (!sets.length) { console.log('No sets.'); return; }
+  console.log('\nPick a set to refresh photos on:');
+  sets.forEach((s, i) => {
+    const posted = (s.listings || []).filter(l => l.posted && l.depopUrl).length;
+    console.log(`  ${i+1}. ${s.name} — ${posted} posted listings with URLs`);
+  });
+  const choice = await ask('\nSet number: ');
+  const set = sets[parseInt(choice) - 1];
+  if (!set) { console.log('Invalid.'); return; }
+
+  const targets = (set.listings || []).filter(l => l.posted && l.depopUrl);
+  if (!targets.length) {
+    console.log('\nNo listings have a saved Depop URL. The refresh feature only works on listings');
+    console.log('that were posted by the latest agent.js (which captures the URL after posting).');
+    console.log('For older listings, you\'ll need to redeploy them via option 1.');
+    return;
+  }
+
+  const accounts = await apiGet('/api/accounts');
+  const account = accounts.find(a => a.id === set.accountId);
+  if (!account || !account.cookies?.length) {
+    console.log('Account for this set is missing or has no cookies.');
+    return;
+  }
+
+  console.log(`\nWill refresh photos on ${targets.length} listings for @${account.username}.`);
+  console.log('Likes, views, and follows stay because we\'re editing — not re-listing.');
+  const go = await ask('Continue? (y/n): ');
+  if (go.toLowerCase() !== 'y') { console.log('Cancelled.'); return; }
+
+  const tmpDir = path.join(__dirname, 'tmp', 'refresh', set.id);
+  fs.ensureDirSync(tmpDir);
+  fs.emptyDirSync(tmpDir);
+  const photoCache = {};
+
+  console.log(`\nOpening browser for @${account.username}...`);
+  const browser = await chromium.launch({ headless: false, slowMo: 50 });
+  const context = await browser.newContext();
+  if (account.cookies?.length) {
+    const clean = account.cookies.map(c => ({
+      name: c.name, value: c.value, domain: c.domain,
+      path: c.path || '/', secure: c.secure || false, httpOnly: c.httpOnly || false,
+      sameSite: ['Strict','Lax','None'].includes(c.sameSite) ? c.sameSite : 'Lax'
+    }));
+    await context.addCookies(clean);
+  }
+  const page = await context.newPage();
+
+  let ok = 0;
+  for (let i = 0; i < targets.length; i++) {
+    const listing = targets[i];
+    process.stdout.write(`[${i+1}/${targets.length}] ${listing.size} ${listing.depopUrl} ... `);
+    try {
+      await page.goto(listing.depopUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      await page.waitForTimeout(2500);
+
+      // Click the Edit button on the listing page
+      const editClicked = await page.evaluate(() => {
+        const els = [...document.querySelectorAll('button, a')];
+        for (const el of els) {
+          const t = (el.innerText || '').trim().toLowerCase();
+          const aria = (el.getAttribute('aria-label') || '').toLowerCase();
+          if (/^edit$/.test(t) || /^edit listing$/i.test(t) || /^edit$/.test(aria)) {
+            el.click(); return true;
+          }
+        }
+        return false;
+      });
+      if (!editClicked) { process.stdout.write('no edit button\n'); continue; }
+      await page.waitForTimeout(3500);
+
+      // Delete existing photos. Look for any "remove"/"delete"/X button on each
+      // existing photo tile, click them all in turn.
+      let removed = 0, attempts = 0;
+      while (attempts < 12) {
+        const removedThis = await page.evaluate(() => {
+          const buttons = [...document.querySelectorAll('button')];
+          for (const b of buttons) {
+            const aria = (b.getAttribute('aria-label') || '').toLowerCase();
+            const t = (b.innerText || '').trim().toLowerCase();
+            if (/^(remove|delete)( photo| image)?$/i.test(aria) ||
+                /^(remove|delete)$/i.test(t) ||
+                aria.startsWith('remove ') || aria.startsWith('delete ')) {
+              b.click(); return true;
+            }
+          }
+          return false;
+        });
+        if (!removedThis) break;
+        removed++;
+        attempts++;
+        await page.waitForTimeout(500);
+      }
+      if (removed) process.stdout.write(`(removed ${removed} old) `);
+
+      // Upload the new photos (full res via the new helper)
+      const localPhotos = await getListingLocalPhotos(listing, tmpDir, photoCache);
+      if (!localPhotos.length) { process.stdout.write('no photos to upload\n'); continue; }
+      const fileInput = await page.$('input[type="file"]');
+      if (!fileInput) { process.stdout.write('no file input\n'); continue; }
+      await fileInput.setInputFiles(localPhotos);
+      await page.waitForTimeout(4000);
+
+      // Save / Publish — match a Save Changes / Update / Publish button
+      const saved = await page.evaluate(() => {
+        const els = [...document.querySelectorAll('button')];
+        for (const el of els) {
+          const t = (el.innerText || '').trim().toLowerCase();
+          if (/^(save|save changes|update|publish|update listing)$/i.test(t)) {
+            el.click(); return true;
+          }
+        }
+        return false;
+      });
+      if (!saved) { process.stdout.write('no save button\n'); continue; }
+      await page.waitForTimeout(3500);
+      ok++;
+      process.stdout.write('✓\n');
+    } catch (e) {
+      process.stdout.write(`error: ${e.message.slice(0, 60)}\n`);
+    }
+    await page.waitForTimeout(1500);
+  }
+
+  await browser.close();
+  await fs.remove(tmpDir).catch(() => {});
+  console.log(`\n✅ Refreshed ${ok}/${targets.length} listings`);
+}
+
+// ─── PHOTO RESOLUTION TEST ────────────────────────────────────
+// Downloads one photo via the new full-res endpoint and reports the
+// file size. If you see something tiny (< 30 KB) the blur fix isn't
+// active. Real full-res photos from a phone are usually 500 KB - 5 MB.
+async function runPhotoResolutionTest() {
+  const sets = await apiGet('/api/sets');
+  if (!sets.length) { console.log('No sets to test.'); return; }
+  console.log('\nPick a set to test:');
+  sets.forEach((s, i) => console.log(`  ${i+1}. ${s.name} (${(s.listings||[]).length} listings)`));
+  const choice = await ask('\nSet number: ');
+  const set = sets[parseInt(choice) - 1];
+  if (!set || !(set.listings || []).length) { console.log('Invalid.'); return; }
+
+  const listing = set.listings[0];
+  if (!listing.photos?.length) { console.log('First listing has no photos.'); return; }
+
+  const photo = listing.photos[0];
+  console.log(`\nTesting download of: ${photo.name}  (driveId: ${photo.driveId})`);
+  console.log(`Old (blurry) URL would be: ${photo.thumb || '(none)'}`);
+  console.log(`New (full-res) URL:        ${DASHBOARD_URL}/api/drive/file/${photo.driveId}\n`);
+
+  const tmpDir = path.join(__dirname, 'tmp', 'res-test');
+  fs.ensureDirSync(tmpDir);
+  fs.emptyDirSync(tmpDir);
+
+  // Old way (thumbnail) — for comparison
+  if (photo.thumb) {
+    const oldPath = path.join(tmpDir, 'OLD-thumb.jpg');
+    try {
+      await downloadFile(photo.thumb, oldPath);
+      const oldKb = Math.round(fs.statSync(oldPath).size / 1024);
+      console.log(`OLD (thumbnail):  ${oldKb} KB  →  ${oldPath}`);
+    } catch (e) { console.log(`OLD thumbnail: download failed (${e.message})`); }
+  }
+
+  // New way (full res)
+  const newPath = path.join(tmpDir, `NEW-fullres-${photo.driveId}.${(photo.name?.split('.').pop() || 'jpg').toLowerCase()}`);
+  try {
+    await downloadDriveFile(photo.driveId, newPath);
+    const newKb = Math.round(fs.statSync(newPath).size / 1024);
+    console.log(`NEW (full res):   ${newKb} KB  →  ${newPath}`);
+    console.log('');
+    if (newKb < 30) {
+      console.log('⚠ Still tiny. The /api/drive/file endpoint may not be deployed yet,');
+      console.log('  or your Google Drive isn\'t connected. Reconnect in the dashboard.');
+    } else if (newKb < 100) {
+      console.log('🤔 Bigger than a thumbnail but smaller than a normal phone photo.');
+      console.log('  Photo might just be small. Open it to check sharpness.');
+    } else {
+      console.log(`✓ Looks like full resolution (${newKb} KB). Open it to confirm sharpness:`);
+      console.log(`  ${newPath}`);
+    }
+  } catch (e) {
+    console.log(`NEW full-res download FAILED: ${e.message}`);
+    console.log('Most likely: server not redeployed yet, or Google Drive not connected.');
+  }
 }
 
 async function runScrapeOrders() {
@@ -883,7 +1120,9 @@ async function main() {
   console.log('  3. Check account statuses');
   console.log('  4. Scrape orders (for labels)');
   console.log('  5. Download & merge shipping labels (sorted by size)');
-  const action = await ask('\nEnter choice (1/2/3/4/5): ');
+  console.log('  6. Refresh photos on a deployed set (keep likes/views)');
+  console.log('  7. TEST: download one photo at full res (verify blur fix)');
+  const action = await ask('\nEnter choice (1-7): ');
 
   if (action === '2') {
     await runMassEdit();
@@ -900,6 +1139,14 @@ async function main() {
   }
   if (action === '5') {
     await runDownloadLabels();
+    return;
+  }
+  if (action === '6') {
+    await runRefreshPhotos();
+    return;
+  }
+  if (action === '7') {
+    await runPhotoResolutionTest();
     return;
   }
 
@@ -942,6 +1189,8 @@ async function main() {
   await page.goto('https://www.depop.com/', { waitUntil: 'networkidle' });
   await page.waitForTimeout(2000);
 
+  // Cache keyed by driveId (one entry per unique photo file). Each listing
+  // builds its own ORDERED array so different sizes get their own covers.
   const photoCache = {};
   let successCount = 0;
 
@@ -949,25 +1198,23 @@ async function main() {
   console.log('Testing with 1 listing first...\n');
   const testListing = pending[0];
 
-  if (!photoCache[testListing.groupId]) {
-    const localPhotos = [];
-    for (let j = 0; j < (testListing.photos || []).length; j++) {
-      const photo = testListing.photos[j];
-      if (photo.thumb) {
-        const localPath = path.join(tmpDir, `${testListing.groupId}_${j}.jpg`);
-        try { await downloadFile(photo.thumb, localPath); localPhotos.push(localPath); console.log(`Photo ${j+1} downloaded`); }
-        catch (e) { console.log(`Photo ${j+1} failed: ${e.message}`); }
-      }
-    }
-    photoCache[testListing.groupId] = localPhotos;
+  console.log(`Downloading ${(testListing.photos || []).length} photos at full resolution...`);
+  const testLocalPhotos = await getListingLocalPhotos(testListing, tmpDir, photoCache);
+  for (const lp of testLocalPhotos) {
+    try { console.log(`  · ${path.basename(lp)} — ${Math.round(fs.statSync(lp).size / 1024)} KB`); } catch {}
   }
 
   try {
-    const success = await postListing(page, testListing, photoCache[testListing.groupId] || []);
+    const success = await postListing(page, testListing, testLocalPhotos);
     if (success) {
       successCount++;
       console.log('\n  ✓ TEST PASSED');
-      await apiPut(`/api/sets/${set.id}/listings/${testListing.id}`, { posted: true });
+      const depopUrl = page.url();
+      const looksLikeProduct = /depop\.com\/[^/]+\/[^/?#]+/.test(depopUrl);
+      await apiPut(`/api/sets/${set.id}/listings/${testListing.id}`, {
+        posted: true, postedAt: new Date().toISOString(),
+        depopUrl: looksLikeProduct ? depopUrl : null
+      });
     } else {
       console.log('\n  ✗ TEST FAILED - check browser window');
     }
@@ -980,24 +1227,19 @@ async function main() {
         const listing = pending[i];
         process.stdout.write(`[${i+1}/${pending.length}] ${listing.size} G${listing.groupIndex+1}... `);
 
-        if (!photoCache[listing.groupId]) {
-          const localPhotos = [];
-          for (let j = 0; j < (listing.photos || []).length; j++) {
-            const photo = listing.photos[j];
-            if (photo.thumb) {
-              const localPath = path.join(tmpDir, `${listing.groupId}_${j}.jpg`);
-              try { await downloadFile(photo.thumb, localPath); localPhotos.push(localPath); } catch {}
-            }
-          }
-          photoCache[listing.groupId] = localPhotos;
-        }
+        const localPhotos = await getListingLocalPhotos(listing, tmpDir, photoCache);
 
         try {
-          const success = await postListing(page, listing, photoCache[listing.groupId] || []);
+          const success = await postListing(page, listing, localPhotos);
           if (success) {
             successCount++;
+            const depopUrl = page.url();
+            const looksLikeProduct = /depop\.com\/[^/]+\/[^/?#]+/.test(depopUrl);
+            await apiPut(`/api/sets/${set.id}/listings/${listing.id}`, {
+              posted: true, postedAt: new Date().toISOString(),
+              depopUrl: looksLikeProduct ? depopUrl : null
+            });
             process.stdout.write('✓\n');
-            await apiPut(`/api/sets/${set.id}/listings/${listing.id}`, { posted: true });
           } else { process.stdout.write('✗\n'); }
         } catch (err) { process.stdout.write(`✗ ${err.message}\n`); }
 
@@ -1107,25 +1349,20 @@ if (process.argv.includes('--daemon')) {
 
         for (let i = 0; i < pending.length; i++) {
           const listing = pending[i];
-          if (!photoCache[listing.groupId]) {
-            const localPhotos = [];
-            for (let j = 0; j < (listing.photos||[]).length; j++) {
-              const photo = listing.photos[j];
-              if (photo.thumb) {
-                const localPath = path.join(tmpDir, `${listing.groupId}_${j}.jpg`);
-                try { await downloadFile(photo.thumb, localPath); localPhotos.push(localPath); } catch {}
-              }
-            }
-            photoCache[listing.groupId] = localPhotos;
-          }
+          const localPhotos = await getListingLocalPhotos(listing, tmpDir, photoCache);
 
           await postProgress({ type: 'deploy', setId: set.id, status: 'posting', message: `Posting ${i+1}/${pending.length}: Size ${listing.size}`, progress: Math.round(((i+1)/pending.length)*100) });
 
           try {
-            const success = await postListing(page, listing, photoCache[listing.groupId]||[]);
+            const success = await postListing(page, listing, localPhotos);
             if (success) {
               successCount++;
-              await apiPut(`/api/sets/${set.id}/listings/${listing.id}`, { posted: true });
+              const depopUrl = page.url();
+              const looksLikeProduct = /depop\.com\/[^/]+\/[^/?#]+/.test(depopUrl);
+              await apiPut(`/api/sets/${set.id}/listings/${listing.id}`, {
+                posted: true, postedAt: new Date().toISOString(),
+                depopUrl: looksLikeProduct ? depopUrl : null
+              });
               await postProgress({ type: 'deploy', setId: set.id, status: 'posted', message: `✓ Posted: ${listing.size}`, listingId: listing.id });
             }
           } catch (err) { await postProgress({ type: 'deploy', setId: set.id, status: 'error', message: err.message }); }
