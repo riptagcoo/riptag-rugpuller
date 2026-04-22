@@ -474,25 +474,165 @@ async function runStatusCheck() {
 // removes the existing photos, and uploads fresh full-res ones.
 // Description, price, size, etc. are NOT touched. Likes/views/follows
 // stay intact because we're editing the same listing, not re-creating.
+
+// Refresh one listing. Returns true on success.
+async function refreshOneListing(page, listing, localPhotos) {
+  await page.goto(listing.depopUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+  await page.waitForTimeout(2500);
+
+  // Click the Edit button on the listing page (owner only sees this)
+  const editClicked = await page.evaluate(() => {
+    const els = [...document.querySelectorAll('button, a')];
+    for (const el of els) {
+      const t = (el.innerText || '').trim().toLowerCase();
+      const aria = (el.getAttribute('aria-label') || '').toLowerCase();
+      if (/^edit$/.test(t) || /^edit listing$/i.test(t) || /^edit$/.test(aria)) {
+        el.click(); return true;
+      }
+    }
+    return false;
+  });
+  if (!editClicked) throw new Error('no edit button');
+  await page.waitForTimeout(3500);
+
+  // Delete existing photos (click every "Remove"/"Delete" button we see)
+  let removed = 0, loops = 0;
+  while (loops < 15) {
+    const removedThis = await page.evaluate(() => {
+      const buttons = [...document.querySelectorAll('button')];
+      for (const b of buttons) {
+        const aria = (b.getAttribute('aria-label') || '').toLowerCase();
+        const t = (b.innerText || '').trim().toLowerCase();
+        if (/^(remove|delete)( photo| image)?$/i.test(aria) ||
+            /^(remove|delete)$/i.test(t) ||
+            aria.startsWith('remove ') || aria.startsWith('delete ')) {
+          b.click(); return true;
+        }
+      }
+      return false;
+    });
+    if (!removedThis) break;
+    removed++;
+    loops++;
+    await page.waitForTimeout(500);
+  }
+
+  // Upload fresh full-res photos
+  if (!localPhotos.length) throw new Error('no local photos to upload');
+  const fileInput = await page.$('input[type="file"]');
+  if (!fileInput) throw new Error('no file input');
+  await fileInput.setInputFiles(localPhotos);
+  await page.waitForTimeout(4000);
+
+  // Save / Publish
+  const saved = await page.evaluate(() => {
+    const els = [...document.querySelectorAll('button')];
+    for (const el of els) {
+      const t = (el.innerText || '').trim().toLowerCase();
+      if (/^(save|save changes|update|publish|update listing)$/i.test(t)) {
+        el.click(); return true;
+      }
+    }
+    return false;
+  });
+  if (!saved) throw new Error('no save button');
+  await page.waitForTimeout(3500);
+  return { removed };
+}
+
+// For posted listings without depopUrl, scan the seller's shop page
+// and try to match each product to a DB listing by size. Safe for
+// single-group sets; warns the user for multi-group ones.
+async function backfillDepopUrls(set, account, page) {
+  const posted = (set.listings || []).filter(l => l.posted);
+  const needsUrl = posted.filter(l => !l.depopUrl);
+  if (!needsUrl.length) return { alreadyHave: posted.length, backfilled: 0 };
+
+  const sizeCounts = {};
+  for (const l of needsUrl) sizeCounts[l.size] = (sizeCounts[l.size] || 0) + 1;
+  const ambiguousSizes = Object.entries(sizeCounts).filter(([,n]) => n > 1).map(([s]) => s);
+
+  if (ambiguousSizes.length) {
+    console.log(`\n⚠ This set has multiple listings per size (sizes: ${ambiguousSizes.join(', ')}).`);
+    console.log('  Back-fill matches by size, so we can\'t tell which specific listing is which.');
+    console.log('  If you proceed, some listings may get the wrong photos swapped in.');
+    const go = await ask('  Proceed anyway? (y/n): ');
+    if (go.toLowerCase() !== 'y') return { abort: true };
+  }
+
+  console.log(`\nScanning @${account.username}'s shop page for ${needsUrl.length} listings...`);
+  await page.goto(`https://www.depop.com/${account.username}/`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+  await page.waitForTimeout(3000);
+
+  // Infinite-scroll until all products load
+  let prev = 0, same = 0;
+  for (let i = 0; i < 30 && same < 3; i++) {
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await page.waitForTimeout(1200);
+    const c = await page.$$eval('a[href*="/products/"]', as => as.length).catch(() => 0);
+    if (c === prev) same++; else { same = 0; prev = c; }
+  }
+
+  const productUrls = await page.$$eval('a[href*="/products/"]', as =>
+    [...new Set(as.map(a => a.href).filter(h => /\/products\/[^/]+\/[^/?#]+/.test(h)))]
+  ).catch(() => []);
+  console.log(`  found ${productUrls.length} listings on the shop page`);
+
+  const remaining = new Map(needsUrl.map(l => [l.id, l]));
+  let backfilled = 0;
+
+  for (const url of productUrls) {
+    if (!remaining.size) break;
+    try {
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      await page.waitForTimeout(1200);
+
+      // Extract size from the product page
+      const size = await page.evaluate(() => {
+        const SIZES = ['S','M','L','XL','XXL'];
+        const candidates = [...document.querySelectorAll('p, span, div, li, button')];
+        for (const el of candidates) {
+          const t = (el.textContent || '').trim().toUpperCase();
+          if (SIZES.includes(t)) return t;
+        }
+        return null;
+      });
+      if (!size) continue;
+
+      // Grab the first unmatched DB listing with this size
+      let match = null;
+      for (const l of remaining.values()) {
+        if (l.size === size) { match = l; break; }
+      }
+      if (!match) continue;
+
+      await apiPut(`/api/sets/${set.id}/listings/${match.id}`, { depopUrl: url });
+      match.depopUrl = url;
+      remaining.delete(match.id);
+      backfilled++;
+      process.stdout.write(`  ✓ ${size} → ${url.split('/').slice(-2).join('/')}\n`);
+    } catch { /* keep going */ }
+  }
+
+  console.log(`\nBack-fill complete. Matched ${backfilled}/${needsUrl.length} listings.`);
+  if (remaining.size) {
+    console.log(`  ${remaining.size} listings could not be matched. They'll be skipped in refresh.`);
+  }
+  return { alreadyHave: posted.length - needsUrl.length, backfilled };
+}
+
 async function runRefreshPhotos() {
   const sets = await apiGet('/api/sets');
   if (!sets.length) { console.log('No sets.'); return; }
   console.log('\nPick a set to refresh photos on:');
   sets.forEach((s, i) => {
-    const posted = (s.listings || []).filter(l => l.posted && l.depopUrl).length;
-    console.log(`  ${i+1}. ${s.name} — ${posted} posted listings with URLs`);
+    const posted = (s.listings || []).filter(l => l.posted).length;
+    const withUrl = (s.listings || []).filter(l => l.posted && l.depopUrl).length;
+    console.log(`  ${i+1}. ${s.name} — ${posted} posted (${withUrl} with URLs saved)`);
   });
   const choice = await ask('\nSet number: ');
   const set = sets[parseInt(choice) - 1];
   if (!set) { console.log('Invalid.'); return; }
-
-  const targets = (set.listings || []).filter(l => l.posted && l.depopUrl);
-  if (!targets.length) {
-    console.log('\nNo listings have a saved Depop URL. The refresh feature only works on listings');
-    console.log('that were posted by the latest agent.js (which captures the URL after posting).');
-    console.log('For older listings, you\'ll need to redeploy them via option 1.');
-    return;
-  }
 
   const accounts = await apiGet('/api/accounts');
   const account = accounts.find(a => a.id === set.accountId);
@@ -501,16 +641,7 @@ async function runRefreshPhotos() {
     return;
   }
 
-  console.log(`\nWill refresh photos on ${targets.length} listings for @${account.username}.`);
-  console.log('Likes, views, and follows stay because we\'re editing — not re-listing.');
-  const go = await ask('Continue? (y/n): ');
-  if (go.toLowerCase() !== 'y') { console.log('Cancelled.'); return; }
-
-  const tmpDir = path.join(__dirname, 'tmp', 'refresh', set.id);
-  fs.ensureDirSync(tmpDir);
-  fs.emptyDirSync(tmpDir);
-  const photoCache = {};
-
+  // Launch browser once — reuse for backfill + refresh
   console.log(`\nOpening browser for @${account.username}...`);
   const browser = await chromium.launch({ headless: false, slowMo: 50 });
   const context = await browser.newContext();
@@ -524,86 +655,84 @@ async function runRefreshPhotos() {
   }
   const page = await context.newPage();
 
-  let ok = 0;
-  for (let i = 0; i < targets.length; i++) {
-    const listing = targets[i];
-    process.stdout.write(`[${i+1}/${targets.length}] ${listing.size} ${listing.depopUrl} ... `);
-    try {
-      await page.goto(listing.depopUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
-      await page.waitForTimeout(2500);
-
-      // Click the Edit button on the listing page
-      const editClicked = await page.evaluate(() => {
-        const els = [...document.querySelectorAll('button, a')];
-        for (const el of els) {
-          const t = (el.innerText || '').trim().toLowerCase();
-          const aria = (el.getAttribute('aria-label') || '').toLowerCase();
-          if (/^edit$/.test(t) || /^edit listing$/i.test(t) || /^edit$/.test(aria)) {
-            el.click(); return true;
-          }
-        }
-        return false;
-      });
-      if (!editClicked) { process.stdout.write('no edit button\n'); continue; }
-      await page.waitForTimeout(3500);
-
-      // Delete existing photos. Look for any "remove"/"delete"/X button on each
-      // existing photo tile, click them all in turn.
-      let removed = 0, attempts = 0;
-      while (attempts < 12) {
-        const removedThis = await page.evaluate(() => {
-          const buttons = [...document.querySelectorAll('button')];
-          for (const b of buttons) {
-            const aria = (b.getAttribute('aria-label') || '').toLowerCase();
-            const t = (b.innerText || '').trim().toLowerCase();
-            if (/^(remove|delete)( photo| image)?$/i.test(aria) ||
-                /^(remove|delete)$/i.test(t) ||
-                aria.startsWith('remove ') || aria.startsWith('delete ')) {
-              b.click(); return true;
-            }
-          }
-          return false;
-        });
-        if (!removedThis) break;
-        removed++;
-        attempts++;
-        await page.waitForTimeout(500);
+  try {
+    // If any posted listings don't have a URL saved, offer to back-fill from the shop page
+    const postedNoUrl = (set.listings || []).filter(l => l.posted && !l.depopUrl).length;
+    if (postedNoUrl) {
+      console.log(`\n${postedNoUrl} posted listings don't have saved Depop URLs.`);
+      const doFill = await ask('Scan the shop page to find them? (y/n): ');
+      if (doFill.toLowerCase() === 'y') {
+        const res = await backfillDepopUrls(set, account, page);
+        if (res.abort) { console.log('Aborted.'); await browser.close(); return; }
+        // Refresh the set from DB now that URLs are saved
+        const freshSets = await apiGet('/api/sets');
+        const fresh = freshSets.find(s => s.id === set.id);
+        if (fresh) set.listings = fresh.listings;
       }
-      if (removed) process.stdout.write(`(removed ${removed} old) `);
-
-      // Upload the new photos (full res via the new helper)
-      const localPhotos = await getListingLocalPhotos(listing, tmpDir, photoCache);
-      if (!localPhotos.length) { process.stdout.write('no photos to upload\n'); continue; }
-      const fileInput = await page.$('input[type="file"]');
-      if (!fileInput) { process.stdout.write('no file input\n'); continue; }
-      await fileInput.setInputFiles(localPhotos);
-      await page.waitForTimeout(4000);
-
-      // Save / Publish — match a Save Changes / Update / Publish button
-      const saved = await page.evaluate(() => {
-        const els = [...document.querySelectorAll('button')];
-        for (const el of els) {
-          const t = (el.innerText || '').trim().toLowerCase();
-          if (/^(save|save changes|update|publish|update listing)$/i.test(t)) {
-            el.click(); return true;
-          }
-        }
-        return false;
-      });
-      if (!saved) { process.stdout.write('no save button\n'); continue; }
-      await page.waitForTimeout(3500);
-      ok++;
-      process.stdout.write('✓\n');
-    } catch (e) {
-      process.stdout.write(`error: ${e.message.slice(0, 60)}\n`);
     }
-    await page.waitForTimeout(1500);
-  }
 
-  await browser.close();
-  await fs.remove(tmpDir).catch(() => {});
-  console.log(`\n✅ Refreshed ${ok}/${targets.length} listings`);
+    const targets = (set.listings || []).filter(l => l.posted && l.depopUrl);
+    if (!targets.length) {
+      console.log('\nNo listings have a saved Depop URL. Either redeploy them via option 1,');
+      console.log('or re-run this and say yes to the shop-page scan.');
+      await browser.close();
+      return;
+    }
+
+    const tmpDir = path.join(__dirname, 'tmp', 'refresh', set.id);
+    fs.ensureDirSync(tmpDir);
+    fs.emptyDirSync(tmpDir);
+    const photoCache = {};
+
+    // TEST on listing 1, ask to continue, then batch the rest
+    const testListing = targets[0];
+    console.log(`\n▶ TEST: refreshing 1 listing first (size ${testListing.size})...`);
+    const testLocal = await getListingLocalPhotos(testListing, tmpDir, photoCache);
+    for (const lp of testLocal) {
+      try { console.log(`  · ${path.basename(lp)} — ${Math.round(fs.statSync(lp).size / 1024)} KB`); } catch {}
+    }
+
+    let ok = 0;
+    try {
+      const res = await refreshOneListing(page, testListing, testLocal);
+      console.log(`\n  ✓ TEST PASSED (removed ${res.removed} old photos, uploaded ${testLocal.length} new)`);
+      ok++;
+    } catch (e) {
+      console.log(`\n  ✗ TEST FAILED: ${e.message}`);
+      console.log('  Check the browser window to see what went wrong.');
+      await ask('\nPress ENTER to close browser...');
+      await browser.close();
+      return;
+    }
+
+    if (targets.length > 1) {
+      const doAll = await ask(`\nTest passed. Refresh remaining ${targets.length - 1} listings? (y/n): `);
+      if (doAll.toLowerCase() === 'y') {
+        for (let i = 1; i < targets.length; i++) {
+          const listing = targets[i];
+          process.stdout.write(`[${i+1}/${targets.length}] ${listing.size} ... `);
+          try {
+            const local = await getListingLocalPhotos(listing, tmpDir, photoCache);
+            await refreshOneListing(page, listing, local);
+            ok++;
+            process.stdout.write('✓\n');
+          } catch (e) {
+            process.stdout.write(`✗ ${e.message.slice(0, 60)}\n`);
+          }
+          await page.waitForTimeout(jitter(1500, 3500));
+        }
+      }
+    }
+
+    console.log(`\n✅ Refreshed ${ok}/${targets.length} listings`);
+    await fs.remove(tmpDir).catch(() => {});
+  } finally {
+    await browser.close().catch(() => {});
+  }
 }
+
+// jitter is used in a few places — define once for runRefreshPhotos
+function jitter(min, max) { return min + Math.floor(Math.random() * (max - min)); }
 
 // ─── PHOTO RESOLUTION TEST ────────────────────────────────────
 // Downloads one photo via the new full-res endpoint and reports the
