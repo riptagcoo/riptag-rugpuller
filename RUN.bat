@@ -1,5 +1,5 @@
 @echo off
-cd /d "C:\Users\New User\Documents\riptag-rugpuller"
+cd /d "%~dp0"
 echo.
 echo  Riptag Rugpuller - Manual Deploy
 echo  Select a set to deploy manually
