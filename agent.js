@@ -401,13 +401,35 @@ async function massEditDescriptions(set, newDescription) {
       return;
     }
 
+    // Selling Hub paginates with a "Load more" button — scrolling alone
+    // won't reveal listings past the first batch. Click Load More whenever
+    // it's visible, scroll as a fallback for IntersectionObserver loaders,
+    // and stop only once the edit-link count stays flat AND no button
+    // remains.
     let prev = 0, same = 0;
-    for (let i = 0; i < 60 && same < 3; i++) {
+    for (let i = 0; i < 120 && same < 3; i++) {
+      const clicked = await page.evaluate(() => {
+        const els = [...document.querySelectorAll('button, a, [role="button"]')];
+        for (const el of els) {
+          const t = (el.innerText || el.textContent || '').trim().toLowerCase();
+          if (/^(load more|load more items|show more|see more|load next)$/i.test(t) && !el.disabled) {
+            el.scrollIntoView({ block: 'center' });
+            el.click();
+            return true;
+          }
+        }
+        return false;
+      }).catch(() => false);
+      if (clicked) await page.waitForTimeout(1800);
+
       await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-      await page.waitForTimeout(1200);
+      await page.waitForTimeout(1000);
+
       const c = await page.$$eval('a[href*="/products/edit/"]', as => as.length).catch(() => 0);
-      if (c === prev) same++; else { same = 0; prev = c; }
+      if (c === prev && !clicked) same++;
+      else { same = 0; prev = c; }
     }
+    console.log(`   loaded ${prev} listings`);
 
     const editUrls = await page.$$eval('a[href*="/products/edit/"]', as => {
       const hrefs = as.map(a => a.getAttribute('href') || a.href || '').filter(Boolean);
@@ -472,25 +494,47 @@ async function massEditDescriptions(set, newDescription) {
 async function runMassEdit() {
   const sets = await apiGet('/api/sets');
   const accounts = await apiGet('/api/accounts');
-  
+  const templates = await apiGet('/api/description-templates').catch(() => []);
+
   console.log('\nSelect account to mass edit:');
   accounts.forEach((a, i) => console.log(`  ${i+1}. @${a.username}${a.status ? ' ('+a.status+')' : ''}`));
-  
+
   const acctChoice = await ask('\nEnter account number: ');
   const account = accounts[parseInt(acctChoice) - 1];
   if (!account) { console.log('Invalid.'); return; }
 
-  const desc = await ask('\nEnter new description (or press Enter to use set evergreen description):\n> ');
-  
-  if (!desc.trim()) {
-    // Find the set for this account
-    const set = sets.find(s => s.accountId === account.id);
-    if (!set?.evergreenDescription) { console.log('No evergreen description found. Please type one.'); return; }
-    await massEditDescriptions({ ...set, accountId: account.id }, set.evergreenDescription);
+  const set = sets.find(s => s.accountId === account.id) || { accountId: account.id };
+
+  console.log('\nPick a description to deploy:');
+  if (Array.isArray(templates) && templates.length) {
+    templates.forEach((t, i) => {
+      const preview = (t.body || '').replace(/\s+/g, ' ').slice(0, 70);
+      console.log(`  ${i+1}. ${t.name} — ${preview}${(t.body || '').length > 70 ? '…' : ''}`);
+    });
   } else {
-    const set = sets.find(s => s.accountId === account.id) || { accountId: account.id };
-    await massEditDescriptions(set, desc.trim());
+    console.log('  (no templates yet — add them in the dashboard → Descriptions)');
   }
+  if (set.evergreenDescription) console.log('  E. Use this set\'s evergreen description');
+  console.log('  C. Type a custom description');
+
+  const pick = (await ask('\nChoice: ')).trim();
+  let description = null;
+
+  if (pick.toLowerCase() === 'e') {
+    if (!set.evergreenDescription) { console.log('No evergreen description on this account\'s set.'); return; }
+    description = set.evergreenDescription;
+  } else if (pick.toLowerCase() === 'c') {
+    description = (await ask('\nType description (one line):\n> ')).trim();
+    if (!description) { console.log('Empty. Cancelled.'); return; }
+  } else {
+    const idx = parseInt(pick) - 1;
+    const t = templates[idx];
+    if (!t) { console.log('Invalid choice.'); return; }
+    description = t.body;
+    console.log(`\nUsing template: "${t.name}"`);
+  }
+
+  await massEditDescriptions({ ...set, accountId: account.id }, description);
 }
 
 async function runStatusCheck() {

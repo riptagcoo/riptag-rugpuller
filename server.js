@@ -37,6 +37,13 @@ async function initDB() {
       fired_at TIMESTAMPTZ DEFAULT NOW(),
       status TEXT
     );
+    CREATE TABLE IF NOT EXISTS description_templates (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      body TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
   `);
   console.log('✅ Database ready');
 }
@@ -505,6 +512,57 @@ app.put('/api/accounts/:id', async (req, res) => {
 app.delete('/api/accounts/:id', async (req, res) => {
   await pool.query('DELETE FROM accounts WHERE id=$1', [req.params.id]);
   res.json({ ok: true });
+});
+
+// ─── DESCRIPTION TEMPLATES ────────────────────────────────────
+// Named description presets the user creates in the dashboard.
+// Agent fetches them at `runMassEdit` time so the cmd prompt shows
+// a numbered picker instead of a raw text-entry prompt.
+app.get('/api/description-templates', async (req, res) => {
+  try {
+    const r = await pool.query(
+      'SELECT id, name, body, created_at, updated_at FROM description_templates ORDER BY updated_at DESC'
+    );
+    res.json(r.rows);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/description-templates', async (req, res) => {
+  try {
+    const { name, body } = req.body || {};
+    if (!name || !String(name).trim()) return res.status(400).json({ error: 'name required' });
+    if (!body || !String(body).trim()) return res.status(400).json({ error: 'body required' });
+    const id = uuid();
+    await pool.query(
+      'INSERT INTO description_templates (id, name, body) VALUES ($1, $2, $3)',
+      [id, String(name).trim(), String(body)]
+    );
+    res.json({ id, name: String(name).trim(), body: String(body) });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.put('/api/description-templates/:id', async (req, res) => {
+  try {
+    const { name, body } = req.body || {};
+    const r = await pool.query(
+      `UPDATE description_templates
+         SET name = COALESCE($1, name),
+             body = COALESCE($2, body),
+             updated_at = NOW()
+       WHERE id = $3
+       RETURNING id, name, body, updated_at`,
+      [name != null ? String(name).trim() : null, body != null ? String(body) : null, req.params.id]
+    );
+    if (!r.rows.length) return res.status(404).json({ error: 'Not found' });
+    res.json(r.rows[0]);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.delete('/api/description-templates/:id', async (req, res) => {
+  try {
+    await pool.query('DELETE FROM description_templates WHERE id=$1', [req.params.id]);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 // ─── SCHEDULE ─────────────────────────────────────────────────

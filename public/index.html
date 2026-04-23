@@ -567,6 +567,7 @@ tr:hover td { background: rgba(255,255,255,0.015); }
     <div class="sb-item" id="nav-accounts" onclick="showPage('accounts')"><span class="ico">○</span>Accounts</div>
     <div class="sb-item" id="nav-schedule" onclick="showPage('schedule')"><span class="ico">◻</span>Schedule</div>
     <div class="sb-item" id="nav-sold" onclick="showPage('sold')"><span class="ico">▦</span>Sold & Labels</div>
+    <div class="sb-item" id="nav-descriptions" onclick="showPage('descriptions')"><span class="ico">✎</span>Descriptions</div>
     <div class="sb-label">Rugpull</div>
     <div id="sb-rugpull"></div>
     <div class="sb-label">Riptag.co</div>
@@ -688,6 +689,31 @@ tr:hover td { background: rgba(255,255,255,0.015); }
   <div class="page-content">
     <div class="sold-stats hidden" id="sold-stats"></div>
     <div id="sold-content"></div>
+  </div>
+</div>
+
+<!-- DESCRIPTIONS -->
+<div id="page-descriptions" class="hidden">
+  <div class="topbar">
+    <div class="topbar-left">
+      <div class="page-title">Descriptions</div>
+      <div class="page-sub">Templates for mass-edit · Agent picks from here</div>
+    </div>
+  </div>
+  <div class="page-content">
+    <div class="card">
+      <div class="card-title" id="desc-form-title">New template</div>
+      <input class="input" id="desc-name" placeholder="Template name (e.g. Evergreen / Launch / Sale)" style="margin-bottom:10px;" />
+      <textarea class="input" id="desc-body" placeholder="Paste the full description here. Exactly what you want on every listing." style="min-height:140px;width:100%;font-family:inherit;line-height:1.5;"></textarea>
+      <div style="display:flex;gap:8px;margin-top:10px;">
+        <button class="btn primary" id="desc-save-btn" onclick="saveDescriptionTemplate()">Save template</button>
+        <button class="btn ghost" id="desc-cancel-btn" onclick="cancelDescriptionEdit()" style="display:none;">Cancel edit</button>
+      </div>
+    </div>
+    <div class="card" style="margin-top:16px;">
+      <div class="card-title">Saved templates</div>
+      <div id="descriptions-list"><div class="empty" style="padding:20px;">Loading…</div></div>
+    </div>
   </div>
 </div>
 
@@ -1758,7 +1784,7 @@ async function loadAccounts(){const r=await fetch('/api/accounts').catch(()=>({j
 async function checkDrive(){const r=await fetch('/api/drive/status').catch(()=>({json:()=>({})}));const d=await r.json().catch(()=>({}));const btn=document.getElementById('drive-btn');const lbl=document.getElementById('drive-label');if(d.connected){btn.classList.add('connected');lbl.textContent='Drive Connected ✓';}else{btn.className='drive-pill';lbl.textContent='Connect Drive';}}
 
 function showPage(page,setId){
-  ['overview','accounts','schedule','active','sold','tracker','replier','set'].forEach(p=>{document.getElementById('page-'+p).classList.toggle('hidden',p!==page);const nav=document.getElementById('nav-'+p);if(nav)nav.classList.toggle('active',p===page);});
+  ['overview','accounts','schedule','active','sold','descriptions','tracker','replier','set'].forEach(p=>{document.getElementById('page-'+p).classList.toggle('hidden',p!==page);const nav=document.getElementById('nav-'+p);if(nav)nav.classList.toggle('active',p===page);});
   currentPage=page;
   document.querySelectorAll('#page-'+page).forEach(el=>el.classList.add('page-enter'));
   if(page==='set'&&setId){currentSetId=setId;renderCurrentSet();}
@@ -1769,9 +1795,92 @@ function showPage(page,setId){
   if(page==='tracker')renderTracker();
   if(page==='replier')loadReplierPage();
   if(page==='sold')initSoldPage();
-  if(page==='tracker')renderTracker();
-  if(page==='replier')loadReplierPage();
+  if(page==='descriptions')loadDescriptions();
   document.querySelectorAll('.sb-set-item').forEach(el=>el.classList.toggle('active',el.dataset.id===setId));
+}
+
+// ─── DESCRIPTION TEMPLATES ────────────────────────────────────
+let descriptionTemplates = [];
+let editingDescriptionId = null;
+
+async function loadDescriptions(){
+  const listEl = document.getElementById('descriptions-list');
+  try{
+    const r = await fetch('/api/description-templates');
+    descriptionTemplates = await r.json();
+  }catch(e){
+    descriptionTemplates = [];
+  }
+  if(!descriptionTemplates.length){
+    listEl.innerHTML = '<div class="empty" style="padding:20px;">No templates yet. Create your first one above.</div>';
+    return;
+  }
+  listEl.innerHTML = descriptionTemplates.map(t => {
+    const safeName = (t.name||'').replace(/</g,'&lt;');
+    const preview = (t.body||'').replace(/</g,'&lt;').slice(0,240);
+    const overflow = (t.body||'').length > 240 ? '…' : '';
+    return `
+      <div class="card" style="margin-top:10px;padding:14px;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+          <div style="font-weight:600;flex:1;">${safeName}</div>
+          <button class="btn ghost sm" onclick="editDescriptionTemplate('${t.id}')">Edit</button>
+          <button class="btn sm danger" onclick="deleteDescriptionTemplate('${t.id}')">🗑</button>
+        </div>
+        <div style="font-size:12px;color:var(--ink-3);line-height:1.6;white-space:pre-wrap;">${preview}${overflow}</div>
+      </div>`;
+  }).join('');
+}
+
+async function saveDescriptionTemplate(){
+  const name = document.getElementById('desc-name').value.trim();
+  const body = document.getElementById('desc-body').value;
+  if(!name){ alert('Give the template a name.'); return; }
+  if(!body.trim()){ alert('Description body is empty.'); return; }
+  try{
+    if(editingDescriptionId){
+      await fetch('/api/description-templates/' + encodeURIComponent(editingDescriptionId), {
+        method:'PUT',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ name, body })
+      });
+    } else {
+      await fetch('/api/description-templates', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ name, body })
+      });
+    }
+    cancelDescriptionEdit();
+    await loadDescriptions();
+  }catch(e){ alert('Save failed: ' + e.message); }
+}
+
+function editDescriptionTemplate(id){
+  const t = descriptionTemplates.find(x => x.id === id);
+  if(!t) return;
+  editingDescriptionId = id;
+  document.getElementById('desc-form-title').textContent = 'Edit: ' + t.name;
+  document.getElementById('desc-name').value = t.name || '';
+  document.getElementById('desc-body').value = t.body || '';
+  document.getElementById('desc-save-btn').textContent = 'Update template';
+  document.getElementById('desc-cancel-btn').style.display = '';
+  window.scrollTo({ top:0, behavior:'smooth' });
+}
+
+function cancelDescriptionEdit(){
+  editingDescriptionId = null;
+  document.getElementById('desc-form-title').textContent = 'New template';
+  document.getElementById('desc-name').value = '';
+  document.getElementById('desc-body').value = '';
+  document.getElementById('desc-save-btn').textContent = 'Save template';
+  document.getElementById('desc-cancel-btn').style.display = 'none';
+}
+
+async function deleteDescriptionTemplate(id){
+  if(!confirm('Delete this template?')) return;
+  await fetch('/api/description-templates/' + encodeURIComponent(id), { method:'DELETE' });
+  if(editingDescriptionId === id) cancelDescriptionEdit();
+  await loadDescriptions();
 }
 
 function switchTab(tab){
