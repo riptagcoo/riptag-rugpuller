@@ -494,7 +494,20 @@ async function massEditDescriptions(set, newDescription) {
 async function runMassEdit() {
   const sets = await apiGet('/api/sets');
   const accounts = await apiGet('/api/accounts');
-  const templates = await apiGet('/api/description-templates').catch(() => []);
+
+  let templates = [];
+  try {
+    const raw = await apiGet('/api/description-templates');
+    if (Array.isArray(raw)) {
+      templates = raw;
+    } else {
+      console.log('⚠ Templates endpoint returned non-array:', JSON.stringify(raw).slice(0, 200));
+    }
+  } catch (e) {
+    console.log('⚠ Could not load templates from dashboard:', e.message);
+    console.log('  Make sure the Railway deploy has completed with the latest server.js.');
+  }
+  console.log(`(loaded ${templates.length} template(s) from dashboard)`);
 
   console.log('\nSelect account to mass edit:');
   accounts.forEach((a, i) => console.log(`  ${i+1}. @${a.username}${a.status ? ' ('+a.status+')' : ''}`));
