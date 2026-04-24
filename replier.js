@@ -225,37 +225,71 @@ async function checkAccount(account, page, pass = 1) {
       const bubbles = await page.$$(SELECTORS.messageBubble);
       if (!bubbles.length) { log('    · no message bubbles visible'); continue; }
 
-      const lastText = (await bubbles[bubbles.length - 1].innerText().catch(() => '')).trim();
-      if (!lastText) { log('    · last bubble has no text'); continue; }
+      // Grab the text of the last ~10 visible bubbles. We'll figure out which
+      // of those are NEW (haven't been processed yet) so the bot can respond
+      // to the whole burst of messages instead of just the most recent one.
+      const WINDOW = 10;
+      const start = Math.max(0, bubbles.length - WINDOW);
+      const bubbleTexts = [];
+      for (let i = start; i < bubbles.length; i++) {
+        const t = (await bubbles[i].innerText().catch(() => '')).trim();
+        if (t) bubbleTexts.push(t);
+      }
+      if (!bubbleTexts.length) { log('    · no readable bubble text'); continue; }
+
+      const lastText = bubbleTexts[bubbleTexts.length - 1];
 
       const senderUsername = (await page.$eval(
         'header h1, header h2, [data-testid*="conversation-header"] h1, [data-testid*="conversation-header"] h2',
         el => el.innerText.trim()
       ).catch(() => senderId)).replace(/^@/, '');
 
-      // Dedupe: have we already seen exactly this last message?
-      const prev = knownLast.get(senderId);
-      if (prev && prev === lastText) {
-        log(`    · @${senderUsername}: already handled this message`);
+      // Figure out what's NEW: anything visible that we've never recorded
+      // (neither an inbound we logged nor an outbound reply we sent). Use a
+      // Set of every stored message/reply text for this sender.
+      const storedMessages = known.find(c => c.senderId === senderId)?.messages || [];
+      const seenTexts = new Set();
+      for (const m of storedMessages) {
+        const t = (m.message || m.reply || '').trim();
+        if (t) seenTexts.add(t);
+      }
+      const newMessages = bubbleTexts.filter(t => !seenTexts.has(t));
+
+      if (!newMessages.length) {
+        log(`    · @${senderUsername}: nothing new since last sweep`);
         continue;
       }
 
-      // Skip if the last bubble is our own previous outbound reply
-      const myLastReply = known.find(c => c.senderId === senderId)?.messages
-        ?.filter(m => m.direction === 'outbound').slice(-1)[0];
-      if (myLastReply && (myLastReply.reply || '').trim() === lastText) {
-        log(`    · @${senderUsername}: last message is our own reply, no action`);
+      // Guard: if the ONLY "new" bubble is our own previous reply (e.g. we
+      // just sent it and the dashboard record hasn't written yet), skip.
+      const myLastReply = storedMessages.filter(m => m.direction === 'outbound').slice(-1)[0];
+      if (newMessages.length === 1 && myLastReply && (myLastReply.reply || '').trim() === newMessages[0]) {
+        log(`    · @${senderUsername}: last visible bubble is our own reply, no action`);
         continue;
       }
 
-      log(`    · NEW from @${senderUsername}: "${lastText.slice(0, 60)}"`);
+      // Combine the new messages into one piece of context. Claude gets the
+      // full burst so "yo / what do you got / just bought a small" becomes
+      // a single coherent situation to respond to instead of 3 disconnected lines.
+      const combinedMessage = newMessages.length === 1
+        ? newMessages[0]
+        : newMessages.join('\n');
 
-      // Record inbound immediately so the dashboard reflects it
-      await recordMessage(account.id, senderId, senderUsername, 'inbound', lastText, null);
+      if (newMessages.length > 1) {
+        log(`    · NEW BURST from @${senderUsername} (${newMessages.length} messages):`);
+        newMessages.forEach((m, i) => log(`       ${i+1}. ${m.slice(0, 80)}`));
+      } else {
+        log(`    · NEW from @${senderUsername}: "${combinedMessage.slice(0, 60)}"`);
+      }
 
-      // Ask Claude for a reply (include history if we have it)
-      const history = known.find(c => c.senderId === senderId)?.messages || [];
-      const reply = await generateReply(account.id, lastText, history);
+      // Record every new inbound bubble separately so the dashboard
+      // conversation view shows each as its own message.
+      for (const msg of newMessages) {
+        await recordMessage(account.id, senderId, senderUsername, 'inbound', msg, null);
+      }
+
+      // Ask Claude for ONE reply that covers the whole burst of messages
+      const reply = await generateReply(account.id, combinedMessage, storedMessages);
       if (!reply) { log('    · Claude did not return a reply'); continue; }
 
       log(`    · Claude: "${reply.slice(0, 80)}"`);
@@ -282,7 +316,8 @@ async function checkAccount(account, page, pass = 1) {
       }
 
       log(`    ✓ reply sent`);
-      await recordMessage(account.id, senderId, senderUsername, 'outbound', lastText, reply);
+      // Record outbound tied to the combined burst (so dashboard shows what triggered the reply)
+      await recordMessage(account.id, senderId, senderUsername, 'outbound', combinedMessage, reply);
       handled++;
 
       // Breathe before the next thread
