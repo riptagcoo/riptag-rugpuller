@@ -1080,8 +1080,6 @@ app.post('/api/replier/generate', async (req, res) => {
 });
 
 // ─── MARINATOR HEARTBEAT + STATS ──────────────────────────────
-// In-memory map of accountId -> latest stats.  Lives only as long as
-// the server process, which is fine for a status indicator.
 const marinatorState = {};
 app.post('/api/marinator/heartbeat', (req, res) => {
   const { accountId, ...stats } = req.body || {};
@@ -1092,16 +1090,15 @@ app.post('/api/marinator/heartbeat', (req, res) => {
   res.json({ ok: true });
 });
 app.get('/api/marinator/status', (req, res) => {
-  // Mark accounts as alive if their last heartbeat was within 90s
   const now = Date.now();
   const out = {};
   for (const [id, s] of Object.entries(marinatorState)) {
-    out[id] = { ...s, alive: s.lastSeen && (now - new Date(s.lastSeen).getTime()) < 90000 };
+    out[id] = { ...s, alive: !!(s.lastSeen && (now - new Date(s.lastSeen).getTime()) < 90000) };
   }
   res.json({ accounts: out });
 });
 
-// Replier heartbeat
+// ─── REPLIER HEARTBEAT ────────────────────────────────────────
 let lastReplierHeartbeat = null;
 app.post('/api/replier/heartbeat', (req, res) => {
   lastReplierHeartbeat = new Date().toISOString();
@@ -1109,48 +1106,43 @@ app.post('/api/replier/heartbeat', (req, res) => {
   res.json({ ok: true });
 });
 app.get('/api/replier/status', (req, res) => {
-  const alive = lastReplierHeartbeat && (Date.now() - new Date(lastReplierHeartbeat).getTime()) < 90000;
+  const alive = !!(lastReplierHeartbeat && (Date.now() - new Date(lastReplierHeartbeat).getTime()) < 90000);
   res.json({ alive, lastSeen: lastReplierHeartbeat });
 });
 
-// Replier cooldown — called when Depop rate-limits the bot mid-sweep.
-// Puts the account on hold for N minutes so the main loop skips it.
-app.post('/api/replier/cooldown', async (req, res) => {
-  try {
-    const { accountId, minutes } = req.body || {};
-    if (!accountId) return res.status(400).json({ error: 'accountId required' });
-    const mins = Math.max(1, Math.min(60, Number(minutes) || 3));
-    const r = await pool.query('SELECT data FROM accounts WHERE id=$1', [accountId]);
-    if (!r.rows.length) return res.status(404).json({ error: 'Not found' });
-    const acct = r.rows[0].data;
-    acct.cooldownUntil = new Date(Date.now() + mins * 60 * 1000).toISOString();
-    await pool.query('UPDATE accounts SET data=$1 WHERE id=$2', [JSON.stringify(acct), accountId]);
-    broadcast({ type: 'replier-cooldown', accountId, cooldownUntil: acct.cooldownUntil });
-    res.json({ ok: true, cooldownUntil: acct.cooldownUntil });
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
+app.get('/api/ping', (req, res) => res.json({ ok: true, version: '2.3.0' }));
 
-app.get('/api/ping', (req, res) => res.json({ ok: true, version: '2.2.0' }));
-
-// Daemon heartbeat
-let lastHeartbeat = null;
+// ─── DAEMON HEARTBEAT ─────────────────────────────────────────
+let lastDaemonHeartbeat = null;
+let lastRunHeartbeat = null;
 app.post('/api/daemon/heartbeat', (req, res) => {
-  lastHeartbeat = new Date().toISOString();
-  broadcast({ type: 'daemon', status: 'alive', lastSeen: lastHeartbeat });
+  lastDaemonHeartbeat = new Date().toISOString();
+  broadcast({ type: 'daemon', status: 'alive', lastSeen: lastDaemonHeartbeat });
   res.json({ ok: true });
 });
-
-let lastRunHeartbeat = null;
+app.get('/api/daemon/status', (req, res) => {
+  const now = Date.now();
+  const alive = !!(lastDaemonHeartbeat && (now - new Date(lastDaemonHeartbeat).getTime()) < 120000);
+  const runAlive = !!(lastRunHeartbeat && (now - new Date(lastRunHeartbeat).getTime()) < 90000);
+  res.json({ alive, lastSeen: lastDaemonHeartbeat, runAlive });
+});
 app.post('/api/run/heartbeat', (req, res) => {
   lastRunHeartbeat = new Date().toISOString();
   res.json({ ok: true });
 });
-app.get('/api/daemon/status', (req, res) => {
-  const alive = lastHeartbeat && (Date.now() - new Date(lastHeartbeat).getTime()) < 60000;
-  const runAlive = lastRunHeartbeat && (Date.now() - new Date(lastRunHeartbeat).getTime()) < 60000;
-  res.json({ alive, lastSeen: lastHeartbeat, runAlive, runLastSeen: lastRunHeartbeat });
+
+// ─── EVERGREEN DESCRIPTION SWITCHES DUE ───────────────────────
+app.get('/api/description-switches/due', async (req, res) => {
+  try {
+    const r = await pool.query('SELECT data FROM sets');
+    const today = new Date().toISOString().split('T')[0];
+    const due = r.rows.map(row => row.data).filter(s =>
+      s && s.descriptionSwitchDate && s.descriptionSwitchDate <= today && !s.descriptionSwitched
+    );
+    res.json({ due });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-initDB().then(() => {
-  app.listen(PORT, () => console.log(`\n🏄  Riptag Set Manager v2.2\n    http://localhost:${PORT}\n`));
-}).catch(err => { console.error('DB init failed:', err); process.exit(1); });
+// ─── START THE SERVER ─────────────────────────────────────────
+// (PORT is declared at the top of the file)
+app.listen(PORT, () => console.log('🏄 Riptag Rugpuller server on port ' + PORT));
