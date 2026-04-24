@@ -220,11 +220,21 @@ async function checkAccount(account, page) {
     emptyInARow = 0;
 
     const senderId = convoIdFromUrl(firstHref);
-    log(`  · opening unread thread: ${firstHref} (id=${senderId})`);
+    // Strip the inbox's query string when navigating to the thread.
+    // The href came off an /messages/?unread=true page so Depop appended
+    // ?scrollTop=0&unread=true — feeding that back causes the SPA to
+    // detach the frame mid-load, killing the browser context.
+    const threadUrl = (() => {
+      try {
+        const u = new URL(firstHref);
+        return u.origin + u.pathname;
+      } catch { return firstHref; }
+    })();
+    log(`  · opening unread thread: ${threadUrl} (id=${senderId})`);
 
     try {
       // Step 3 — open the thread
-      await page.goto(firstHref, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      await page.goto(threadUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
       try {
         await page.waitForSelector(SELECTORS.messageInput, { timeout: 15000 });
       } catch {
@@ -233,11 +243,17 @@ async function checkAccount(account, page) {
       }
       await page.waitForTimeout(2000);
 
-      const bubbles = await page.$$(SELECTORS.messageBubble);
-      if (!bubbles.length) { log('    · no message bubbles visible'); continue; }
-
-      const lastText = (await bubbles[bubbles.length - 1].innerText().catch(() => '')).trim();
-      if (!lastText) { log('    · last bubble has no text'); continue; }
+      // Grab every message-like element, keep only ones with actual text.
+      // The raw selector matches composer wrappers, timestamps, empty
+      // animation placeholders etc. — all of which can be "last" and
+      // would make lastText empty. Filtering in-browser avoids that.
+      const bubbleTexts = await page.$$eval(SELECTORS.messageBubble, els =>
+        els
+          .map(el => (el.innerText || el.textContent || '').trim())
+          .filter(t => t.length >= 2)
+      ).catch(() => []);
+      if (!bubbleTexts.length) { log('    · no visible message text on this thread'); continue; }
+      const lastText = bubbleTexts[bubbleTexts.length - 1];
 
       const senderUsername = (await page.$eval(
         'header h1, header h2, [data-testid*="conversation-header"] h1, [data-testid*="conversation-header"] h2',
@@ -258,16 +274,31 @@ async function checkAccount(account, page) {
       }
       log(`    · Claude: "${reply.slice(0, 80)}"`);
 
-      // Step 5 — type + send
+      // Step 5 — type + send. Instant, not human-simulated: user wants
+      // reply to go out as fast as possible once Claude answers.
       const input = await page.$(SELECTORS.messageInput);
       if (!input) { log('    · input gone before typing'); continue; }
       await input.click();
-      await page.waitForTimeout(jitter(200, 500));
+      await page.waitForTimeout(150);
 
-      for (const ch of reply) {
-        await page.keyboard.type(ch, { delay: jitter(35, 110) });
+      // Prefer fill() for <textarea>/<input>; fall back to keyboard insertText
+      // for contenteditable divs (which ignore .fill).
+      let filled = false;
+      try {
+        await input.fill(reply);
+        filled = true;
+      } catch {}
+      if (!filled) {
+        try {
+          await page.keyboard.insertText(reply);
+          filled = true;
+        } catch {}
       }
-      await page.waitForTimeout(jitter(500, 1200));
+      if (!filled) {
+        // Last-resort: fast type (no per-char delay)
+        await page.keyboard.type(reply, { delay: 0 });
+      }
+      await page.waitForTimeout(200);
 
       const sendBtn = await page.$(SELECTORS.sendButton);
       if (sendBtn) {
@@ -278,7 +309,7 @@ async function checkAccount(account, page) {
       }
 
       // Wait for the send round-trip to complete before we navigate away
-      await page.waitForTimeout(jitter(2800, 4200));
+      await page.waitForTimeout(1800);
 
       log(`    ✓ reply sent`);
       await recordMessage(account.id, senderId, senderUsername, 'inbound', lastText, null);
@@ -288,7 +319,7 @@ async function checkAccount(account, page) {
       log(`    ⚠ error on ${senderId}: ${e.message}`);
     }
 
-    await page.waitForTimeout(jitter(1500, 3000));
+    await page.waitForTimeout(400);
   }
 
   log(`  · hit MAX_PER_SWEEP (${MAX_PER_SWEEP}) for @${username} — handled ${handled}, will continue next sweep`);
@@ -325,7 +356,7 @@ async function main() {
 
         let browser;
         try {
-          browser = await chromium.launch({ headless: false, slowMo: 30 });
+          browser = await chromium.launch({ headless: false });
           const context = await browser.newContext({
             userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36'
           });
