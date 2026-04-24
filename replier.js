@@ -134,6 +134,33 @@ function convoIdFromUrl(url) {
   return id;
 }
 
+// Depop's inbox has tabs (Messages / Offers) and filter chips (All / Unread).
+// This clicks any element whose visible text matches one of `labels` exactly
+// (case-insensitive, trimmed, allows trailing count like "Unread (3)").
+// Walks up to the nearest clickable ancestor so it still works when the
+// label sits inside a <span> wrapped by a <button>.
+async function clickTabByLabel(page, labels) {
+  const names = labels.map(l => String(l).toLowerCase());
+  return await page.evaluate((names) => {
+    const interactive = ['BUTTON', 'A'];
+    const all = [...document.querySelectorAll('button, a, [role="tab"], [role="button"], span, div')];
+    for (const el of all) {
+      const raw = (el.innerText || el.textContent || '').trim();
+      if (!raw) continue;
+      const clean = raw.toLowerCase().replace(/\s*\(\d+\)\s*$/, '').trim();
+      if (!names.includes(clean)) continue;
+      let target = el;
+      for (let i = 0; i < 4 && target; i++) {
+        if (interactive.includes(target.tagName) || target.getAttribute('role') === 'tab' || target.getAttribute('role') === 'button') break;
+        target = target.parentElement;
+      }
+      (target || el).click();
+      return raw;
+    }
+    return null;
+  }, names).catch(() => null);
+}
+
 async function checkAccount(account, page) {
   const username = account.username;
   log(`→ checking @${username}`);
@@ -142,6 +169,23 @@ async function checkAccount(account, page) {
   try {
     await page.goto('https://www.depop.com/messages/', { waitUntil: 'domcontentloaded', timeout: 30000 });
   } catch (e) { log(`  · could not open inbox: ${e.message}`); return; }
+
+  // Depop sometimes lands on the Offers tab by default. Force the Messages
+  // tab first, then switch to the Unread filter so we only process threads
+  // with new activity.
+  await page.waitForTimeout(2500);
+  const msgsTab = await clickTabByLabel(page, ['Messages', 'All messages', 'Inbox']);
+  if (msgsTab) {
+    log(`  · switched to "${msgsTab}" tab`);
+    await page.waitForTimeout(1500);
+  }
+  const unreadTab = await clickTabByLabel(page, ['Unread']);
+  if (unreadTab) {
+    log(`  · filtered to "${unreadTab}"`);
+    await page.waitForTimeout(1800);
+  } else {
+    log('  · no Unread filter button found — will read the full inbox');
+  }
 
   // Wait up to 20s for real conversation rows to render (React is slow)
   let convoHrefs = [];
