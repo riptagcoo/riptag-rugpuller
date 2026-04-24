@@ -134,129 +134,119 @@ function convoIdFromUrl(url) {
   return id;
 }
 
+// NEW FLOW:
+//   1. Open /messages/?unread=true fresh
+//   2. Pick the FIRST unread conversation
+//   3. Reply to it
+//   4. Navigate back to /messages/?unread=true — the one we just replied
+//      to is now read and drops off the list
+//   5. Repeat until no unread remain (or we hit MAX_PER_SWEEP safety cap)
+//
+// Why the loop-back: harvesting all URLs upfront fought against Depop's SPA
+// (URLs went stale, filter state got lost). Re-entering the unread view each
+// time guarantees we only ever touch conversations that are *actually* still
+// unread right now, including any that arrive mid-sweep.
+const UNREAD_URL = 'https://www.depop.com/messages/?unread=true';
+const MAX_PER_SWEEP = 20;
+
 async function checkAccount(account, page) {
   const username = account.username;
   log(`→ checking @${username}`);
 
-  // Navigate straight to the Unread-filtered inbox. The ?unread=true query
-  // param sets Depop's inbox filter without us having to click any tab, so
-  // we skip the Offers tab and get only threads with new activity.
-  try {
-    await page.goto('https://www.depop.com/messages/?unread=true', { waitUntil: 'domcontentloaded', timeout: 30000 });
-  } catch (e) { log(`  · could not open inbox: ${e.message}`); return; }
-  await page.waitForTimeout(2500);
-
-  // Wait up to 20s for real conversation rows to render (React is slow)
-  let convoHrefs = [];
-  const deadline = Date.now() + 20000;
-  while (Date.now() < deadline) {
-    convoHrefs = await page.$$eval(SELECTORS.conversationLink, links => {
-      const out = [];
-      for (const a of links) {
-        const h = a.getAttribute('href') || a.href || '';
-        out.push(h);
-      }
-      return out;
-    }).catch(() => []);
-    // Keep only real conversation URLs (not the base /messages/ or /messages/new)
-    convoHrefs = [...new Set(convoHrefs)]
-      .map(h => h.startsWith('http') ? h : ('https://www.depop.com' + h))
-      .filter(h => convoIdFromUrl(h));
-    if (convoHrefs.length) break;
-    await page.waitForTimeout(1000);
-  }
-
-  if (!convoHrefs.length) {
-    log(`  · no conversations appeared after 20s — inbox may be empty or selector wrong`);
-    return;
-  }
-
-  log(`  · found ${convoHrefs.length} conversation URL(s)`);
-
-  // Pull what we already recorded so we don't re-reply to the same message
-  const known = await fetchConversations(account.id);
-  const knownLast = new Map();
-  for (const c of known) {
-    const last = c.messages?.[c.messages.length - 1];
-    if (last) knownLast.set(c.senderId, (last.message || last.reply || '').trim());
-  }
-
-  const MAX_CHECK = 10;
   let handled = 0;
+  let emptyInARow = 0;
 
-  for (const href of convoHrefs.slice(0, MAX_CHECK)) {
-    const senderId = convoIdFromUrl(href);
-    log(`  · opening ${senderId}`);
+  for (let round = 0; round < MAX_PER_SWEEP; round++) {
+    // Step 1 — load the unread inbox fresh
+    try {
+      await page.goto(UNREAD_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    } catch (e) {
+      log(`  · could not open unread inbox: ${e.message}`);
+      return;
+    }
+
+    // Verify Depop actually kept the filter (its SPA sometimes strips query args)
+    const currentUrl = page.url();
+    if (!/unread=true/.test(currentUrl)) {
+      log(`  · WARNING: Depop redirected off the unread filter (now on ${currentUrl}). Continuing but will see all threads.`);
+    }
+
+    await page.waitForTimeout(2500);
+
+    // Step 2 — grab the FIRST real conversation link on the page
+    let firstHref = null;
+    const deadline = Date.now() + 10000;
+    while (Date.now() < deadline && !firstHref) {
+      const hrefs = await page.$$eval(SELECTORS.conversationLink, links =>
+        links.map(a => a.getAttribute('href') || a.href || '')
+      ).catch(() => []);
+      firstHref = hrefs
+        .map(h => h.startsWith('http') ? h : ('https://www.depop.com' + h))
+        .find(h => convoIdFromUrl(h)) || null;
+      if (!firstHref) await page.waitForTimeout(800);
+    }
+
+    if (!firstHref) {
+      emptyInARow++;
+      if (emptyInARow >= 2) {
+        log(`  · inbox is clean — handled ${handled} reply(ies) this sweep`);
+        return;
+      }
+      await page.waitForTimeout(2000);
+      continue;
+    }
+    emptyInARow = 0;
+
+    const senderId = convoIdFromUrl(firstHref);
+    log(`  · opening unread thread ${senderId}`);
 
     try {
-      await page.goto(href, { waitUntil: 'domcontentloaded', timeout: 30000 });
-
-      // Wait for the message composer to appear — proof the thread actually loaded
+      // Step 3 — open the thread
+      await page.goto(firstHref, { waitUntil: 'domcontentloaded', timeout: 30000 });
       try {
         await page.waitForSelector(SELECTORS.messageInput, { timeout: 15000 });
       } catch {
-        log('    · composer never appeared, skipping this thread');
+        log('    · composer never appeared, skipping');
         continue;
       }
-      // Let message list finish rendering
       await page.waitForTimeout(2000);
 
-      // Find visible message bubbles
       const bubbles = await page.$$(SELECTORS.messageBubble);
       if (!bubbles.length) { log('    · no message bubbles visible'); continue; }
 
-      // Last visible message on the page
       const lastText = (await bubbles[bubbles.length - 1].innerText().catch(() => '')).trim();
       if (!lastText) { log('    · last bubble has no text'); continue; }
 
-      // Try to grab the other user's display name from the header
       const senderUsername = (await page.$eval(
         'header h1, header h2, [data-testid*="conversation-header"] h1, [data-testid*="conversation-header"] h2',
         el => el.innerText.trim()
       ).catch(() => senderId)).replace(/^@/, '');
 
-      // Dedupe: have we already seen exactly this last message?
-      const prev = knownLast.get(senderId);
-      if (prev && prev === lastText) {
-        log(`    · @${senderUsername}: already handled this message`);
-        continue;
-      }
+      log(`    · from @${senderUsername}: "${lastText.slice(0, 60)}"`);
 
-      // Simple check: if the last bubble's text looks like one we sent, skip.
-      // (Outbound bubbles are usually right-aligned, but without a reliable
-      //  class name we compare against the most recent outbound we recorded.)
-      const myLastReply = known.find(c => c.senderId === senderId)?.messages
-        ?.filter(m => m.direction === 'outbound').slice(-1)[0];
-      if (myLastReply && (myLastReply.reply || '').trim() === lastText) {
-        log(`    · @${senderUsername}: last message is our own reply, no action`);
-        continue;
-      }
-
-      log(`    · NEW from @${senderUsername}: "${lastText.slice(0, 60)}"`);
-
-      // Record inbound immediately so the dashboard reflects it
-      await recordMessage(account.id, senderId, senderUsername, 'inbound', lastText, null);
-
-      // Ask Claude for a reply (include history if we have it)
+      // Step 4 — generate reply
+      const known = await fetchConversations(account.id);
       const history = known.find(c => c.senderId === senderId)?.messages || [];
-      const reply = await generateReply(account.id, lastText, history);
-      if (!reply) { log('    · Claude did not return a reply'); continue; }
 
+      const reply = await generateReply(account.id, lastText, history);
+      if (!reply) {
+        log('    · Claude returned nothing — leaving thread unread not possible (Depop marks it read on open); moving on');
+        await recordMessage(account.id, senderId, senderUsername, 'inbound', lastText, null);
+        continue;
+      }
       log(`    · Claude: "${reply.slice(0, 80)}"`);
 
-      // Focus the input
+      // Step 5 — type + send
       const input = await page.$(SELECTORS.messageInput);
-      if (!input) { log('    · input disappeared before we could type'); continue; }
+      if (!input) { log('    · input gone before typing'); continue; }
       await input.click();
       await page.waitForTimeout(jitter(200, 500));
 
-      // Type human-like
       for (const ch of reply) {
         await page.keyboard.type(ch, { delay: jitter(35, 110) });
       }
       await page.waitForTimeout(jitter(500, 1200));
 
-      // Send: prefer the send button if present, otherwise press Enter
       const sendBtn = await page.$(SELECTORS.sendButton);
       if (sendBtn) {
         try { await sendBtn.click({ timeout: 3000 }); }
@@ -265,18 +255,21 @@ async function checkAccount(account, page) {
         await page.keyboard.press('Enter');
       }
 
+      // Wait for the send round-trip to complete before we navigate away
+      await page.waitForTimeout(jitter(2800, 4200));
+
       log(`    ✓ reply sent`);
+      await recordMessage(account.id, senderId, senderUsername, 'inbound', lastText, null);
       await recordMessage(account.id, senderId, senderUsername, 'outbound', lastText, reply);
       handled++;
-
-      // Breathe before the next thread
-      await page.waitForTimeout(jitter(2500, 5000));
     } catch (e) {
       log(`    ⚠ error on ${senderId}: ${e.message}`);
     }
+
+    await page.waitForTimeout(jitter(1500, 3000));
   }
 
-  log(`  · handled ${handled} new message(s) for @${username}`);
+  log(`  · hit MAX_PER_SWEEP (${MAX_PER_SWEEP}) for @${username} — handled ${handled}, will continue next sweep`);
 }
 
 // ─── Main loop ───────────────────────────────────────────────
