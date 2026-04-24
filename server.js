@@ -1031,17 +1031,59 @@ app.post('/api/replier/generate', async (req, res) => {
 
     // Pick the system prompt. Priority: explicit override → account's category → style arg → rugpull default.
     let systemPrompt = systemOverride && String(systemOverride).trim();
+    let chosenStyle = 'override';
+    let promptSource = 'override';
     if (!systemPrompt) {
       const pr = await pool.query("SELECT data FROM sets WHERE id='__replier_prompts__'");
-      const prompts = pr.rows.length ? pr.rows[0].data : {};
-      let chosenStyle = style;
+      const savedPrompts = pr.rows.length ? pr.rows[0].data : null;
+      chosenStyle = style;
       if (!chosenStyle && accountId) {
         const ar = await pool.query('SELECT data FROM accounts WHERE id=$1', [accountId]);
         if (ar.rows.length) chosenStyle = ar.rows[0].data.category;
       }
       chosenStyle = chosenStyle || 'rugpull';
-      systemPrompt = prompts[chosenStyle] || prompts.rugpull || 'you are a chill depop seller responding to dms in lowercase, casual, say yes to everything, keep it short';
+      // Only use the saved prompt if it's non-empty; fall back otherwise.
+      const saved = savedPrompts && typeof savedPrompts === 'object' ? savedPrompts[chosenStyle] : null;
+      if (saved && String(saved).trim()) {
+        systemPrompt = String(saved).trim();
+        promptSource = 'saved-' + chosenStyle;
+      } else if (savedPrompts && savedPrompts.rugpull && String(savedPrompts.rugpull).trim()) {
+        systemPrompt = String(savedPrompts.rugpull).trim();
+        promptSource = 'saved-rugpull-fallback';
+      } else {
+        systemPrompt = 'you are a chill depop seller responding to dms in lowercase, casual, say yes to everything, keep it short';
+        promptSource = 'inline-fallback';
+      }
     }
+    // ── Anti-repetition layer ─────────────────────────────────
+    // Extract every reply we've already sent in this thread. Append them to
+    // the system prompt with explicit instructions so Claude can see its own
+    // past phrases and vary them instead of saying the same things again.
+    const priorReplies = (Array.isArray(history) ? history : [])
+      .filter(h => h && h.direction === 'outbound')
+      .map(h => (h.reply || h.message || '').trim())
+      .filter(Boolean);
+
+    if (priorReplies.length > 0) {
+      const recent = priorReplies.slice(-6);
+      const priorBlock = recent.map((r, i) => `  ${i + 1}. "${r}"`).join('\n');
+      systemPrompt += `
+
+---
+CONTEXT: this is an ONGOING conversation, not a fresh one. You have already replied ${priorReplies.length} time${priorReplies.length === 1 ? '' : 's'} in this thread. Your most recent replies were:
+${priorBlock}
+
+RULES FOR THIS REPLY:
+• Do NOT repeat verbatim phrases you just used (price quotes, "don't sleep on it", "running low", "check the page", "all sizes", greetings, taglines, etc).
+• Do NOT re-explain what the bundle is if you already described it above.
+• Do NOT re-greet the person ("yo", "yooo", "hey bro") if you already greeted them.
+• This reply should feel like a natural continuation — as if you remember everything you said. Add something NEW or just acknowledge/confirm what they said.
+• If their message is short and casual (e.g. "aight", "cool", "thx"), respond short and casual back — don't turn it into another sales pitch.
+• Keep it tight. One or two sentences max unless they asked something specific.`;
+    }
+
+    // Log to Railway so you can confirm from server logs
+    console.log(`[replier/generate] style=${chosenStyle} source=${promptSource} priorReplies=${priorReplies.length} promptLen=${systemPrompt.length} msg="${String(message).slice(0,60)}"`);
 
     const messages = buildClaudeMessages(message, history);
 
@@ -1072,7 +1114,14 @@ app.post('/api/replier/generate', async (req, res) => {
     res.json({
       reply,
       model: data.model || ANTHROPIC_MODEL,
-      usage: data.usage || null
+      usage: data.usage || null,
+      // Diagnostic info so you can verify the bot is using your saved prompts:
+      prompt: {
+        style: chosenStyle,
+        source: promptSource,         // "saved-rugpull" / "saved-riptag" / "inline-fallback" / "override"
+        length: systemPrompt.length,
+        preview: systemPrompt.slice(0, 120) + (systemPrompt.length > 120 ? '…' : '')
+      }
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
