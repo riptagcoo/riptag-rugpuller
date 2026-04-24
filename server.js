@@ -1113,6 +1113,23 @@ app.get('/api/replier/status', (req, res) => {
   res.json({ alive, lastSeen: lastReplierHeartbeat });
 });
 
+// Replier cooldown — called when Depop rate-limits the bot mid-sweep.
+// Puts the account on hold for N minutes so the main loop skips it.
+app.post('/api/replier/cooldown', async (req, res) => {
+  try {
+    const { accountId, minutes } = req.body || {};
+    if (!accountId) return res.status(400).json({ error: 'accountId required' });
+    const mins = Math.max(1, Math.min(60, Number(minutes) || 3));
+    const r = await pool.query('SELECT data FROM accounts WHERE id=$1', [accountId]);
+    if (!r.rows.length) return res.status(404).json({ error: 'Not found' });
+    const acct = r.rows[0].data;
+    acct.cooldownUntil = new Date(Date.now() + mins * 60 * 1000).toISOString();
+    await pool.query('UPDATE accounts SET data=$1 WHERE id=$2', [JSON.stringify(acct), accountId]);
+    broadcast({ type: 'replier-cooldown', accountId, cooldownUntil: acct.cooldownUntil });
+    res.json({ ok: true, cooldownUntil: acct.cooldownUntil });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 app.get('/api/ping', (req, res) => res.json({ ok: true, version: '2.2.0' }));
 
 // Daemon heartbeat

@@ -15,12 +15,39 @@ const http = require('http');
 const DASHBOARD_URL = process.env.DASHBOARD_URL || 'https://riptag-rugpuller-production.up.railway.app';
 const API_KEY = process.env.DASHBOARD_PASSWORD || '1010';
 
-// ─── Poll interval per speed mode (ms) ────────────────────────
-const SPEED_INTERVALS = {
-  stealth:  { min: 60000, max: 120000 },  // 1–2 min per check
-  balanced: { min: 15000, max: 30000 },   // 15–30 s
-  fast:     { min: 3000,  max: 6000 }     // 3–6 s
+// ─── Speed profiles ─────────────────────────────────────────
+// Each mode controls BOTH the sweep cadence AND the within-thread behavior
+// (typing speed, pre/post-send pauses, per-thread gap). stealth = looks like
+// a distracted human. fast = plausibly a very quick human. We always type
+// character-by-character so the keystroke stream is real — Depop can detect
+// instant `value` writes.
+const SPEED_PROFILES = {
+  stealth:  {
+    sweep:      { min: 60000, max: 120000 },
+    perThread:  { min: 5000,  max: 10000 },
+    preType:    { min: 800,   max: 1800 },
+    charDelay:  { min: 90,    max: 220 },
+    postType:   { min: 600,   max: 1400 },
+    postSend:   { min: 3000,  max: 5000 }
+  },
+  balanced: {
+    sweep:      { min: 15000, max: 30000 },
+    perThread:  { min: 2000,  max: 4500 },
+    preType:    { min: 400,   max: 900 },
+    charDelay:  { min: 40,    max: 100 },
+    postType:   { min: 300,   max: 800 },
+    postSend:   { min: 1800,  max: 3200 }
+  },
+  fast: {
+    sweep:      { min: 3000,  max: 6000 },
+    perThread:  { min: 500,   max: 1500 },
+    preType:    { min: 150,   max: 400 },
+    charDelay:  { min: 15,    max: 45 },
+    postType:   { min: 100,   max: 300 },
+    postSend:   { min: 1200,  max: 2000 }
+  }
 };
+function profileFor(speed) { return SPEED_PROFILES[speed] || SPEED_PROFILES.balanced; }
 
 // ─── Small helpers ─────────────────────────────────────────────
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
@@ -160,10 +187,44 @@ function convoIdFromUrl(url) {
 // unread right now, including any that arrive mid-sweep.
 const UNREAD_URL = 'https://www.depop.com/messages/?unread=true';
 const MAX_PER_SWEEP = 20;
+const COOLDOWN_MINUTES = 3;
 
-async function checkAccount(account, page) {
+// Detect Depop's "you're sending messages too fast / reload / try again" banner
+async function isRateLimited(page) {
+  return await page.evaluate(() => {
+    const text = (document.body && document.body.innerText || '').toLowerCase();
+    return /(sending|sent).{0,20}too (quick|fast|many)|slow down|rate limit|please (try again|reload|refresh)|you can'?t send|message (failed|not sent)/.test(text);
+  }).catch(() => false);
+}
+
+// Best-effort: click any "I'm not a robot" / "Verify" / Turnstile checkbox
+// that's in the main DOM (iframes are out of reach from here — if a real
+// hCaptcha/reCAPTCHA iframe is up, the checkbox is cross-origin and the
+// user will need to solve it manually; we'll still cooldown so we don't
+// spam around it).
+async function tryClickCaptcha(page) {
+  return await page.evaluate(() => {
+    const candidates = [...document.querySelectorAll('input[type="checkbox"], button, [role="checkbox"], [role="button"]')];
+    for (const el of candidates) {
+      const rect = el.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) continue;
+      const own = (el.getAttribute('aria-label') || el.innerText || el.textContent || '').toLowerCase();
+      const parent = (el.closest('[class*="captcha"],[id*="captcha"],[class*="verify"],[class*="challenge"]') || {}).textContent || '';
+      const context = (own + ' ' + String(parent).toLowerCase()).slice(0, 400);
+      if (/verify|not a robot|i'?m human|i am human|captcha|challenge/.test(context)) {
+        el.scrollIntoView({ block: 'center' });
+        el.click();
+        return context.trim().slice(0, 80);
+      }
+    }
+    return null;
+  }).catch(() => null);
+}
+
+async function checkAccount(account, page, speed) {
   const username = account.username;
-  log(`→ checking @${username}`);
+  const prof = profileFor(speed);
+  log(`→ checking @${username} (speed=${speed})`);
 
   let handled = 0;
   let emptyInARow = 0;
@@ -274,31 +335,25 @@ async function checkAccount(account, page) {
       }
       log(`    · Claude: "${reply.slice(0, 80)}"`);
 
-      // Step 5 — type + send. Instant, not human-simulated: user wants
-      // reply to go out as fast as possible once Claude answers.
+      // Before typing: if a captcha showed up on the thread page, try to
+      // click through it (best-effort, since real hCaptcha/reCAPTCHA runs
+      // in a cross-origin iframe we can't reach).
+      const captchaHit = await tryClickCaptcha(page);
+      if (captchaHit) {
+        log(`    · clicked captcha-looking element: "${captchaHit}"`);
+        await page.waitForTimeout(2500);
+      }
+
+      // Step 5 — type + send (HUMAN-LIKE per the current speed profile)
       const input = await page.$(SELECTORS.messageInput);
       if (!input) { log('    · input gone before typing'); continue; }
       await input.click();
-      await page.waitForTimeout(150);
+      await page.waitForTimeout(jitter(prof.preType.min, prof.preType.max));
 
-      // Prefer fill() for <textarea>/<input>; fall back to keyboard insertText
-      // for contenteditable divs (which ignore .fill).
-      let filled = false;
-      try {
-        await input.fill(reply);
-        filled = true;
-      } catch {}
-      if (!filled) {
-        try {
-          await page.keyboard.insertText(reply);
-          filled = true;
-        } catch {}
-      }
-      if (!filled) {
-        // Last-resort: fast type (no per-char delay)
-        await page.keyboard.type(reply, { delay: 0 });
-      }
-      await page.waitForTimeout(200);
+      // Per-character typing, paced by profile. keyboard.type dispatches
+      // real key events so React's onChange / contenteditable handlers fire.
+      await page.keyboard.type(reply, { delay: jitter(prof.charDelay.min, prof.charDelay.max) });
+      await page.waitForTimeout(jitter(prof.postType.min, prof.postType.max));
 
       const sendBtn = await page.$(SELECTORS.sendButton);
       if (sendBtn) {
@@ -308,8 +363,18 @@ async function checkAccount(account, page) {
         await page.keyboard.press('Enter');
       }
 
-      // Wait for the send round-trip to complete before we navigate away
-      await page.waitForTimeout(1800);
+      // Wait for the send round-trip, then check if Depop complained
+      await page.waitForTimeout(jitter(prof.postSend.min, prof.postSend.max));
+
+      if (await isRateLimited(page)) {
+        log(`    ⛔ RATE LIMITED — putting @${username} on ${COOLDOWN_MINUTES}-min cooldown`);
+        await apiPost('/api/replier/cooldown', {
+          accountId: account.id, minutes: COOLDOWN_MINUTES
+        }).catch(() => {});
+        // Still record the inbound so the dashboard reflects what we saw
+        await recordMessage(account.id, senderId, senderUsername, 'inbound', lastText, null);
+        return;
+      }
 
       log(`    ✓ reply sent`);
       await recordMessage(account.id, senderId, senderUsername, 'inbound', lastText, null);
@@ -319,7 +384,7 @@ async function checkAccount(account, page) {
       log(`    ⚠ error on ${senderId}: ${e.message}`);
     }
 
-    await page.waitForTimeout(400);
+    await page.waitForTimeout(jitter(prof.perThread.min, prof.perThread.max));
   }
 
   log(`  · hit MAX_PER_SWEEP (${MAX_PER_SWEEP}) for @${username} — handled ${handled}, will continue next sweep`);
@@ -362,7 +427,7 @@ async function main() {
           });
           await context.addCookies(cleanCookies(account.cookies));
           const page = await context.newPage();
-          await checkAccount(account, page);
+          await checkAccount(account, page, speed);
         } catch (e) {
           log(`⚠ @${account.username} crashed:`, e.message);
         } finally {
@@ -370,8 +435,8 @@ async function main() {
         }
       }
 
-      const interval = SPEED_INTERVALS[speed] || SPEED_INTERVALS.balanced;
-      const waitMs = jitter(interval.min, interval.max);
+      const sweep = profileFor(speed).sweep;
+      const waitMs = jitter(sweep.min, sweep.max);
       log(`💤 next sweep in ${Math.round(waitMs / 1000)}s`);
       await sleep(waitMs);
     } catch (e) {
