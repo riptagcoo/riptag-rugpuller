@@ -126,11 +126,23 @@ const SELECTORS = {
   sendButton:         'button[type="submit"], button[aria-label*="end" i]'
 };
 
-// Extract the conversation ID from a /messages/<id>/ URL
+// Extract the conversation ID from a /messages/<id>/ URL.
+// Depop's inbox has multiple sub-paths that are TABS, not conversations:
+// /messages/offers, /messages/buying, /messages/selling, etc. Those show
+// up in the DOM as `a[href*="/messages/"]` too, so without filtering them
+// the bot was opening the Offers tab, not real threads.
+const MESSAGE_TAB_SEGMENTS = new Set([
+  'inbox', 'new', 'offers', 'buying', 'selling', 'sold', 'bought',
+  'archive', 'archived', 'all', 'notifications', 'requests', 'settings',
+  'filter', 'filters', 'unread', 'read', 'trash', 'spam', 'blocked'
+]);
 function convoIdFromUrl(url) {
   const m = String(url || '').match(/\/messages\/([^/?#]+)/);
   const id = m && m[1];
-  if (!id || id === 'inbox' || id === '' || id === 'new') return null;
+  if (!id) return null;
+  if (MESSAGE_TAB_SEGMENTS.has(id.toLowerCase())) return null;
+  // Tab-like: short all-lowercase-letters paths are never conversation IDs
+  if (/^[a-z]+$/.test(id) && id.length <= 12) return null;
   return id;
 }
 
@@ -173,21 +185,31 @@ async function checkAccount(account, page) {
 
     await page.waitForTimeout(2500);
 
-    // Step 2 — grab the FIRST real conversation link on the page
+    // Step 2 — grab the FIRST real conversation link on the page.
+    // Log what we actually see so we can diagnose if the filter rejects
+    // everything (usually means a selector/markup change on Depop's side).
     let firstHref = null;
+    let allHrefs = [];
     const deadline = Date.now() + 10000;
     while (Date.now() < deadline && !firstHref) {
       const hrefs = await page.$$eval(SELECTORS.conversationLink, links =>
         links.map(a => a.getAttribute('href') || a.href || '')
       ).catch(() => []);
-      firstHref = hrefs
-        .map(h => h.startsWith('http') ? h : ('https://www.depop.com' + h))
-        .find(h => convoIdFromUrl(h)) || null;
+      allHrefs = [...new Set(
+        hrefs.map(h => h.startsWith('http') ? h : ('https://www.depop.com' + h))
+      )];
+      firstHref = allHrefs.find(h => convoIdFromUrl(h)) || null;
       if (!firstHref) await page.waitForTimeout(800);
     }
 
     if (!firstHref) {
       emptyInARow++;
+      if (round === 0 && allHrefs.length) {
+        // First iteration of the sweep and we saw links but none passed the
+        // conversation filter — dump a sample so we can adjust the filter.
+        log(`  · saw ${allHrefs.length} /messages/ link(s) but none look like conversations:`);
+        for (const h of allHrefs.slice(0, 8)) log(`      ${h}`);
+      }
       if (emptyInARow >= 2) {
         log(`  · inbox is clean — handled ${handled} reply(ies) this sweep`);
         return;
@@ -198,7 +220,7 @@ async function checkAccount(account, page) {
     emptyInARow = 0;
 
     const senderId = convoIdFromUrl(firstHref);
-    log(`  · opening unread thread ${senderId}`);
+    log(`  · opening unread thread: ${firstHref} (id=${senderId})`);
 
     try {
       // Step 3 — open the thread
