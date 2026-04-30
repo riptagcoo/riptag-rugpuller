@@ -2182,6 +2182,15 @@ function glog(msg,level){
 // Server already runs /api/sets/cleanup at init; nothing to do client-side.
 function pruneGhostSets(){ /* no-op */ }
 function connectDrive(){ window.location.href='/auth/google'; }
+// getAccountName was referenced inside renderCurrentSet's set-info template
+// but never defined — every render threw ReferenceError before reaching
+// renderListingsTable, which is why the listings panel stayed on its
+// hardcoded default empty state even when set.listings had data.
+function getAccountName(accountId){
+  if(!accountId)return '—';
+  const a=(typeof accounts!=='undefined'&&Array.isArray(accounts))?accounts.find(x=>x.id===accountId):null;
+  return a?('@'+a.username):'—';
+}
 
 async function deleteSet(setId){
   const set=sets.find(s=>s.id===setId);
