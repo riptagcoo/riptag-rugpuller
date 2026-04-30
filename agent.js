@@ -2027,6 +2027,74 @@ if (process.argv.includes('--daemon')) {
     } catch (err) { console.error('Description switch error:', err.message); }
   }
 
+  // Deploy a single set. Used by both the schedule check and the
+  // agent_queue dispatcher. Returns { ok, message }.
+  async function deployOneSet(set, label = '📅 Scheduled') {
+    try {
+      const accounts = await apiGet('/api/accounts');
+      const account = accounts.find(a => a.id === set.accountId);
+      if (!account) return { ok: false, message: 'No account assigned' };
+      const pending = (set.listings || []).filter(l => !l.posted);
+      if (!pending.length) return { ok: false, message: 'No pending listings' };
+
+      await postProgress({ type: 'deploy', setId: set.id, status: 'starting', message: `${label}: ${set.name} — ${pending.length} listings` });
+
+      const { chromium } = require('playwright');
+      const browser = await chromium.launch({ headless: false, slowMo: 50 });
+      const context = await browser.newContext();
+      if (account.cookies?.length) {
+        const clean = account.cookies.map(c => ({ name: c.name, value: c.value, domain: c.domain, path: c.path||'/', secure: c.secure||false, httpOnly: c.httpOnly||false, sameSite: ['Strict','Lax','None'].includes(c.sameSite)?c.sameSite:'Lax' }));
+        await context.addCookies(clean);
+      }
+      const page = await context.newPage();
+      await page.goto('https://www.depop.com/', { waitUntil: 'networkidle' });
+
+      const fs = require('fs-extra');
+      const tmpDir = `./tmp/${set.id}`;
+      fs.ensureDirSync(tmpDir);
+      const photoCache = {};
+      let successCount = 0;
+
+      for (let i = 0; i < pending.length; i++) {
+        const listing = pending[i];
+        const localPhotos = await getListingLocalPhotos(listing, tmpDir, photoCache);
+        await postProgress({ type: 'deploy', setId: set.id, status: 'posting', message: `Posting ${i+1}/${pending.length}: Size ${listing.size}`, progress: Math.round(((i+1)/pending.length)*100) });
+        try {
+          const success = await postListing(page, listing, localPhotos);
+          if (success) {
+            successCount++;
+            const depopUrl = page.url();
+            const looksLikeProduct = /depop\.com\/[^/]+\/[^/?#]+/.test(depopUrl);
+            await apiPut(`/api/sets/${set.id}/listings/${listing.id}`, {
+              posted: true, postedAt: new Date().toISOString(),
+              depopUrl: looksLikeProduct ? depopUrl : null
+            });
+            await postProgress({ type: 'deploy', setId: set.id, status: 'posted', message: `✓ Posted: ${listing.size}`, listingId: listing.id });
+          }
+        } catch (err) { await postProgress({ type: 'deploy', setId: set.id, status: 'error', message: err.message }); }
+        await page.waitForTimeout(2000 + Math.random() * 3000);
+      }
+
+      await browser.close();
+      fs.remove(tmpDir);
+      await postProgress({ type: 'deploy', setId: set.id, status: 'done', message: `Done: ${successCount}/${pending.length} posted`, progress: 100 });
+
+      // Schedule log
+      try {
+        const logBody = JSON.stringify({ setId: set.id, status: 'done' });
+        const logUrl = new URL(DASHBOARD_URL + '/api/schedule/log');
+        const logMod = logUrl.protocol === 'https:' ? require('https') : require('http');
+        const logReq = logMod.request({ hostname: logUrl.hostname, path: logUrl.pathname, method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(logBody), 'x-api-key': '1010' } }, () => {});
+        logReq.write(logBody); logReq.end();
+      } catch {}
+
+      return { ok: true, message: `Posted ${successCount}/${pending.length}` };
+    } catch (err) {
+      console.error('deployOneSet failed:', err.message);
+      return { ok: false, message: err.message };
+    }
+  }
+
   async function checkAndDeploy() {
     try {
       const { due } = await apiGet('/api/schedule/due');
@@ -2105,14 +2173,93 @@ if (process.argv.includes('--daemon')) {
     } catch (err) { console.error('Schedule check error:', err.message); }
   }
 
+  // ─── DASHBOARD COMMAND QUEUE ─────────────────────────────────
+  // The dashboard's Deploy / Check Statuses / Mass Edit / Quick Refresh
+  // buttons push commands to /api/agent/queue. We poll for one command
+  // at a time, run it, and report completion. One in-flight at a time
+  // (busy flag) so two clicks don't open two browsers.
+  let queueBusy = false;
+
+  function postJson(endpoint, body) {
+    return new Promise((resolve) => {
+      const data = JSON.stringify(body || {});
+      const urlObj = new URL(DASHBOARD_URL + endpoint);
+      const mod = urlObj.protocol === 'https:' ? require('https') : require('http');
+      const req = mod.request({
+        hostname: urlObj.hostname,
+        path: urlObj.pathname,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data), 'x-api-key': '1010' }
+      }, (res) => { let d=''; res.on('data', c=>d+=c); res.on('end', ()=>resolve(d)); });
+      req.on('error', () => resolve(null));
+      req.write(data); req.end();
+    });
+  }
+
+  async function processQueue() {
+    if (queueBusy) return;
+    let claim;
+    try {
+      claim = await apiGet('/api/agent/queue/next');
+    } catch { return; }
+    if (!claim || !claim.command) return;
+    queueBusy = true;
+    const cmdId = claim.id;
+    const command = claim.command;
+    const payload = claim.payload || {};
+    console.log(`\n📨 Queue: claimed "${command}" (${cmdId})`);
+    let ok = false;
+    let result = '';
+    try {
+      if (command === 'deploy') {
+        const sets = await apiGet('/api/sets');
+        const set = sets.find(s => s.id === payload.setId);
+        if (!set) { result = 'Set not found'; }
+        else {
+          const r = await deployOneSet(set, '🖱 Dashboard');
+          ok = r.ok; result = r.message;
+        }
+      } else if (command === 'check-statuses') {
+        await runStatusCheck();
+        ok = true; result = 'Status check complete';
+      } else if (command === 'mass-edit') {
+        const sets = await apiGet('/api/sets');
+        const set = sets.find(s => s.id === payload.setId);
+        if (!set) { result = 'Set not found'; }
+        else {
+          const desc = payload.description || set.evergreenDescription || set.description;
+          if (!desc) { result = 'No description provided'; }
+          else { await massEditDescriptions(set, desc); ok = true; result = 'Mass edit complete'; }
+        }
+      } else if (command === 'quick-refresh') {
+        // Existing runQuickRefresh is interactive (asks for set/account).
+        // For the queued version we'd need a non-interactive variant —
+        // for now we just log and skip.
+        result = 'quick-refresh from queue not yet supported — run it from the menu';
+      } else {
+        result = 'Unknown command: ' + command;
+      }
+    } catch (e) {
+      result = 'Error: ' + e.message;
+    } finally {
+      try {
+        await postJson('/api/agent/queue/' + cmdId + '/done', { ok, result });
+      } catch {}
+      console.log(`📨 Queue: "${command}" → ${ok ? '✓' : '✗'} ${result}`);
+      queueBusy = false;
+    }
+  }
+
   console.log('\n🏄  Riptag Rugpuller — Scheduler Daemon');
   console.log(`    Dashboard: ${DASHBOARD_URL}`);
-  console.log('    Checking schedule every minute...\n');
+  console.log('    Checking schedule every minute, queue every 15s...\n');
   sendHeartbeat();
   setInterval(sendHeartbeat, 30000);
   checkAndDeploy();
   setInterval(checkAndDeploy, 60000);
-  // Check for description switches every 30 minutes
   checkDescriptionSwitches();
   setInterval(checkDescriptionSwitches, 30 * 60 * 1000);
+  // Dashboard command queue
+  processQueue();
+  setInterval(processQueue, 15000);
 }

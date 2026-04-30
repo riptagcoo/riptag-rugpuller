@@ -50,6 +50,17 @@ async function initDB() {
       data BYTEA NOT NULL,
       cached_at TIMESTAMPTZ DEFAULT NOW()
     );
+    CREATE TABLE IF NOT EXISTS agent_queue (
+      id TEXT PRIMARY KEY,
+      command TEXT NOT NULL,
+      payload JSONB,
+      status TEXT NOT NULL DEFAULT 'pending',
+      result TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      started_at TIMESTAMPTZ,
+      finished_at TIMESTAMPTZ
+    );
+    CREATE INDEX IF NOT EXISTS agent_queue_pending_idx ON agent_queue(status, created_at);
   `);
   console.log('✅ Database ready');
 }
@@ -1039,6 +1050,77 @@ app.post('/api/replier/speed', (req, res) => {
   replierSpeed = req.body.speed || 'balanced';
   broadcast({ type: 'replier-speed', speed: replierSpeed });
   res.json({ ok: true, speed: replierSpeed });
+});
+
+// ─── AGENT COMMAND QUEUE ──────────────────────────────────────
+// Dashboard pushes commands here (deploy, check-statuses, mass-edit,
+// quick-refresh). The DAEMON.bat process polls /next every 15s, claims
+// one command at a time, executes it locally, and reports completion.
+// This is what makes dashboard buttons actually do things instead of
+// just saying "run agent.js".
+
+app.post('/api/agent/queue', async (req, res) => {
+  try {
+    const { command, payload } = req.body || {};
+    if (!command || typeof command !== 'string') {
+      return res.status(400).json({ error: 'command required' });
+    }
+    const id = uuid();
+    await pool.query(
+      'INSERT INTO agent_queue (id, command, payload) VALUES ($1, $2, $3)',
+      [id, command, JSON.stringify(payload || {})]
+    );
+    broadcast({ type: 'agent-queue', action: 'queued', id, command, payload });
+    res.json({ ok: true, id, command, status: 'pending' });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.get('/api/agent/queue/next', async (req, res) => {
+  try {
+    const r = await pool.query(`
+      UPDATE agent_queue
+         SET status = 'running', started_at = NOW()
+       WHERE id = (
+         SELECT id FROM agent_queue
+          WHERE status = 'pending'
+          ORDER BY created_at ASC
+          LIMIT 1
+          FOR UPDATE SKIP LOCKED
+       )
+       RETURNING id, command, payload
+    `);
+    if (!r.rows.length) return res.json({ command: null });
+    const row = r.rows[0];
+    broadcast({ type: 'agent-queue', action: 'started', id: row.id, command: row.command });
+    res.json({ id: row.id, command: row.command, payload: row.payload || {} });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/agent/queue/:id/done', async (req, res) => {
+  try {
+    const { ok, result } = req.body || {};
+    const status = ok ? 'done' : 'failed';
+    await pool.query(
+      `UPDATE agent_queue
+         SET status = $1, result = $2, finished_at = NOW()
+       WHERE id = $3`,
+      [status, String(result || '').slice(0, 500), req.params.id]
+    );
+    broadcast({ type: 'agent-queue', action: 'finished', id: req.params.id, status, result });
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.get('/api/agent/queue/recent', async (req, res) => {
+  try {
+    const r = await pool.query(`
+      SELECT id, command, payload, status, result, created_at, started_at, finished_at
+        FROM agent_queue
+       ORDER BY created_at DESC
+       LIMIT 30
+    `);
+    res.json(r.rows);
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 // Cooldown tracking

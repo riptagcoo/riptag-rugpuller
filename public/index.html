@@ -1141,9 +1141,37 @@ async function checkOneStatus(accountId, username, btn){
   if(btn){btn.textContent='🔍';btn.disabled=false;}
 }
 
+// ─── DASHBOARD → AGENT COMMAND QUEUE ──────────────────────────
+// queueAgentCommand pushes a one-off command for DAEMON.bat to pick up.
+// If the daemon isn't running, the command sits pending until it is.
+async function queueAgentCommand(command, payload){
+  let daemonAlive=false;
+  try{
+    const s=await fetch('/api/daemon/status').then(r=>r.json()).catch(()=>({}));
+    daemonAlive=!!s.alive;
+  }catch{}
+  if(!daemonAlive){
+    if(!confirm('⚠ DAEMON.bat is not running.\n\nThe command will be queued, but it won\'t actually run until you start DAEMON.bat on your computer.\n\nQueue it anyway?'))return null;
+  }
+  try{
+    const r=await fetch('/api/agent/queue',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({command,payload:payload||{}})
+    });
+    if(!r.ok)throw new Error(r.status);
+    const data=await r.json();
+    glog('▶ Queued '+command+' (daemon will pick it up '+(daemonAlive?'now':'when started')+')','ok');
+    return data;
+  }catch(e){
+    glog('✗ Could not queue command: '+e.message,'err');
+    alert('Queue failed: '+e.message);
+    return null;
+  }
+}
+
 async function checkAllStatuses(){
-  glog('Run node agent.js → option 3 to check all statuses','hi');
-  alert('To check account statuses:\n\n1. Open Command Prompt\n2. Run: node agent.js\n3. Select option 3 (Check account statuses)\n\nThe agent will open each profile in a real browser and accurately detect live vs banned.');
+  await queueAgentCommand('check-statuses',{});
 }
 
 // ─── Active Accounts action buttons ──────────────────────────
@@ -2496,11 +2524,20 @@ async function confirmMultiDeploy(){
   if(!set)return;
   const checked=[...document.querySelectorAll('#multi-deploy-accounts input:checked')].map(i=>i.value);
   if(!checked.length){alert('Select at least one account.');return;}
-  await fetch('/api/sets/'+currentSetId+'/deploy-to',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({accountIds:checked})});
   closeModal('multi-deploy-modal');
-  await loadSets();
-  glog('Saved '+checked.length+' deploy account(s). Run node agent.js to deploy.','ok');
-  alert('Accounts saved!\n\nOpen Command Prompt and run:\n\nnode agent.js\n\nThen select this set to deploy.');
+  // Queue one deploy command per selected account. The agent's
+  // deployOneSet picks the account off set.accountId, so we update the
+  // set first per target. Sequential = no overlapping browsers.
+  for(const accountId of checked){
+    await fetch('/api/sets/'+currentSetId,{
+      method:'PUT',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({accountId})
+    }).catch(()=>{});
+    await queueAgentCommand('deploy',{setId:currentSetId,accountId});
+  }
+  await loadSets();renderCurrentSet();
+  glog('Queued '+checked.length+' deploy(s). Make sure DAEMON.bat is running.','ok');
 }
 
 async function openNewSetModal(){
