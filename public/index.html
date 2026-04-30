@@ -2095,9 +2095,11 @@ function renderCurrentSet(){
 
 function renderListingsTable(set){
   const el=document.getElementById('listings-table-wrap');
-  const listings=set.listings||[];
+  if(!el){console.warn('[renderListingsTable] no #listings-table-wrap element');return;}
+  const listings=Array.isArray(set&&set.listings)?set.listings:[];
+  console.log('[renderListingsTable] set:',set&&set.id,'listings:',listings.length);
   const countEl=document.getElementById('listing-count');
-  if(countEl)countEl.textContent=listings.length+' listings ('+listings.filter(l=>l.posted).length+' posted)';
+  if(countEl)countEl.textContent=listings.length+' listings ('+listings.filter(l=>l&&l.posted).length+' posted)';
   if(!listings.length){
     el.innerHTML='<div class="empty"><div class="empty-ico">◈</div><div class="empty-title">No listings yet</div>Click Build Listings to start.</div>';
     return;
@@ -2339,7 +2341,7 @@ async function resetSet(setId){
   const set=sets.find(s=>s.id===setId);
   if(!set){alert('Set not found');return;}
   const posted=(set.listings||[]).filter(l=>l.posted).length;
-  if(!confirm(`Reset "${set.name}"?\n\nThis marks all ${set.listings?.length||0} listings unposted (${posted} currently posted) so you can redeploy them. Likes/views on the live Depop posts are NOT affected — this just clears the dashboard's "posted" flag.`))return;
+  if(!confirm(`Reset "${set.name}"?\n\nThis marks all ${set.listings?.length||0} listings unposted (${posted} currently posted) so you can redeploy them to a new account. After confirming, you'll pick a new description for the next deploy.`))return;
   // Mark every listing unposted, drop the depopUrl so the next deploy
   // creates fresh ones.
   const listings=set.listings||[];
@@ -2350,7 +2352,6 @@ async function resetSet(setId){
       body:JSON.stringify({posted:false,postedAt:null,depopUrl:null})
     }).catch(()=>{});
   }
-  // Clear the deployedAt flag on the set itself
   await fetch('/api/sets/'+setId,{
     method:'PUT',
     headers:{'Content-Type':'application/json'},
@@ -2358,11 +2359,10 @@ async function resetSet(setId){
   }).catch(()=>{});
   await loadSets();renderCurrentSet();
 
-  // After reset, offer to set a new description that'll apply to every
-  // listing on the upcoming deploy.
-  if(confirm('Reset done. Set a new description for the next deploy now?')){
-    openMassEditDescriptionModal(setId);
-  }
+  // Reset = new account incoming. Always open the description picker so
+  // they can't forget to update it. They can hit Cancel if they really
+  // want to keep the old description.
+  openMassEditDescriptionModal(setId);
 }
 
 // Opens the mass-edit modal pre-populated. Lets the user pick a saved

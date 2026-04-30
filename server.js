@@ -250,8 +250,11 @@ app.get('/api/drive/folders', async (req, res) => {
 
 // ─── SETS ─────────────────────────────────────────────────────
 app.get('/api/sets', async (req, res) => {
-  const r = await pool.query('SELECT data FROM sets ORDER BY created_at DESC');
-  res.json(r.rows.map(row => row.data));
+  // Skip system rows (id starts with __) — those are config blobs, not user sets.
+  const r = await pool.query(
+    "SELECT data FROM sets WHERE id NOT LIKE '\\_\\_%' ESCAPE '\\' ORDER BY created_at DESC"
+  );
+  res.json(r.rows.map(row => row.data).filter(d => d && typeof d === 'object'));
 });
 
 app.get('/api/sets/:id', async (req, res) => {
@@ -312,25 +315,24 @@ app.post('/api/sets/cleanup', async (req, res) => {
     const r = await pool.query(
       "DELETE FROM sets WHERE id IS NULL OR id='' OR id='undefined' OR id='null' OR data IS NULL RETURNING id"
     );
-    // Conservative pass — only delete rows that are clearly junk:
-    //   · data is not an object
-    //   · data has no name AND no listings (truly empty placeholder)
-    // PRESERVE any set that has listings, even if its data.id has drifted
-    // from the row.id. Listings are user work; we never silently nuke it.
-    const all = await pool.query('SELECT id, data FROM sets');
+    // System rows (id starts with __) are config blobs — Google tokens,
+    // replier prompts, replier speed, etc. They have no `name` and no
+    // `listings`, so without this guard the cleanup nukes them every page
+    // load and Drive disconnects. NEVER touch them here.
+    const all = await pool.query("SELECT id, data FROM sets WHERE id NOT LIKE '\\_\\_%' ESCAPE '\\'");
     let mismatches = 0;
     for (const row of all.rows) {
       const d = row.data;
       const isObject = d && typeof d === 'object';
       const hasListings = isObject && Array.isArray(d.listings) && d.listings.length > 0;
       const hasName = isObject && d.name && String(d.name).trim();
-      // Self-heal: if id drifted but the set has content, write the row id back into data
+      // Self-heal: if the data has listings but id drifted, write row.id back
       if (isObject && hasListings && d.id !== row.id) {
         d.id = row.id;
         await pool.query('UPDATE sets SET data=$1 WHERE id=$2', [JSON.stringify(d), row.id]);
         continue;
       }
-      // Only nuke truly empty / corrupt rows
+      // Only delete truly empty / corrupt non-system rows
       if (!isObject || (!hasName && !hasListings)) {
         await pool.query('DELETE FROM sets WHERE id=$1', [row.id]);
         mismatches++;
