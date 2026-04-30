@@ -2096,23 +2096,66 @@ function renderCurrentSet(){
 function renderListingsTable(set){
   const el=document.getElementById('listings-table-wrap');
   const listings=set.listings||[];
-  document.getElementById('listing-count').textContent=listings.length+' listings ('+listings.filter(l=>l.posted).length+' posted)';
-  if(!listings.length){el.innerHTML='<div class="empty"><div class="empty-icon">📋</div>No listings yet.</div>';return;}
-  const groups={};
-  listings.forEach(l=>{if(!groups[l.groupId])groups[l.groupId]=[];groups[l.groupId].push(l);});
-  let rows='';
-  Object.values(groups).forEach((group,gi)=>{
-    rows+=`<tr style="background:rgba(255,255,255,0.01);"><td colspan="6" style="padding:6px 12px;font-size:11px;color:var(--faint);font-family:var(--mono);">GROUP ${gi+1}</td></tr>`;
-    group.forEach(l=>{rows+=`<tr onclick="openListingModal('${l.id}')">
-      <td><div class="thumb">${l.photos?.[0]?.driveId?'<img src="/api/drive/file/'+l.photos[0].driveId+'" alt="" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement(\'span\'),{textContent:\'👕\'}))"/>':(l.photos?.[0]?.thumb?'<img src="'+l.photos[0].thumb+'" alt="" loading="lazy"/>':'👕')}</div></td>
-      <td><span style="font-family:var(--mono);font-size:12px;background:var(--s3);padding:2px 8px;border-radius:4px;">${l.size}</span></td>
-      <td style="font-family:var(--mono);">$${l.customPrice||l.price}</td>
-      <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:12px;">${(l.customDescription||l.description||'').substring(0,50)}…</td>
-      <td><span class="badge2 ${l.posted?'badge-done':'badge-pend'}">${l.posted?'✓ posted':'pending'}</span></td>
-      <td><button class="btn sm" onclick="event.stopPropagation();openListingModal('${l.id}')">Edit</button></td>
-    </tr>`;});
+  const countEl=document.getElementById('listing-count');
+  if(countEl)countEl.textContent=listings.length+' listings ('+listings.filter(l=>l.posted).length+' posted)';
+  if(!listings.length){
+    el.innerHTML='<div class="empty"><div class="empty-ico">◈</div><div class="empty-title">No listings yet</div>Click Build Listings to start.</div>';
+    return;
+  }
+  // Group by groupId, ordered by groupIndex so Group 1 always renders first
+  const map=new Map();
+  for(const l of listings){
+    const key=l.groupId||'__solo__';
+    if(!map.has(key))map.set(key,{index:typeof l.groupIndex==='number'?l.groupIndex:9999,items:[]});
+    map.get(key).items.push(l);
+  }
+  const groups=[...map.values()].sort((a,b)=>a.index-b.index);
+
+  // Helper: a single photo thumb (small)
+  const thumb=(p)=>{
+    if(p&&p.driveId)return '<div class="thumb" style="width:34px;height:34px;"><img src="/api/drive/file/'+p.driveId+'" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement(\'span\'),{textContent:\'👕\'}))"/></div>';
+    if(p&&p.thumb)return '<div class="thumb" style="width:34px;height:34px;"><img src="'+p.thumb+'" loading="lazy"/></div>';
+    return '<div class="thumb" style="width:34px;height:34px;">👕</div>';
+  };
+
+  let html='';
+  groups.forEach((g,gi)=>{
+    const posted=g.items.filter(l=>l.posted).length;
+    html+='<div style="margin-bottom:14px;border:1px solid var(--glass-border);border-radius:10px;overflow:hidden;">'
+      +'<div style="display:flex;align-items:center;gap:10px;padding:9px 14px;background:rgba(255,255,255,0.025);font-size:11px;font-family:var(--mono);text-transform:uppercase;letter-spacing:0.05em;border-bottom:1px solid var(--glass-border);">'
+        +'<span style="color:var(--green);font-weight:700;">Group '+(gi+1)+'</span>'
+        +'<span style="color:var(--ink-4);">·</span>'
+        +'<span style="color:var(--ink-3);">'+g.items.length+' listing'+(g.items.length===1?'':'s')+'</span>'
+        +'<span style="color:var(--ink-4);">·</span>'
+        +'<span style="color:var(--ink-3);">'+posted+'/'+g.items.length+' posted</span>'
+      +'</div>';
+
+    g.items.forEach((l,idx)=>{
+      const photos=(l.photos||[]).slice(0,4);
+      const strip=photos.length?photos.map(thumb).join(''):thumb(null);
+      const descRaw=(l.customDescription||l.description||'');
+      const desc=String(descRaw).replace(/</g,'&lt;').slice(0,90);
+      const more=descRaw.length>90?'…':'';
+      const isLast=idx===g.items.length-1;
+      html+='<div onclick="openListingModal(\''+l.id+'\')" '
+        +'style="display:flex;align-items:center;gap:12px;padding:10px 14px;cursor:pointer;'
+        +(isLast?'':'border-bottom:1px solid rgba(255,255,255,0.04);')
+        +'transition:background 0.12s;" '
+        +'onmouseover="this.style.background=\'rgba(255,255,255,0.02)\'" '
+        +'onmouseout="this.style.background=\'transparent\'">'
+        +'<div style="display:flex;gap:3px;flex-shrink:0;">'+strip+'</div>'
+        +'<span style="font-family:var(--mono);font-size:11px;background:rgba(255,255,255,0.06);padding:2px 8px;border-radius:4px;flex-shrink:0;min-width:32px;text-align:center;">'+l.size+'</span>'
+        +'<span style="font-family:var(--mono);font-size:13px;flex-shrink:0;min-width:48px;">$'+(l.customPrice||l.price)+'</span>'
+        +'<span style="flex:1;color:var(--ink-3);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+desc+more+'</span>'
+        +'<span class="badge2 '+(l.posted?'badge-done':'badge-pend')+'" style="flex-shrink:0;">'+(l.posted?'✓ posted':'pending')+'</span>'
+        +'<button class="btn sm" onclick="event.stopPropagation();openListingModal(\''+l.id+'\')" style="flex-shrink:0;">Edit</button>'
+      +'</div>';
+    });
+
+    html+='</div>';
   });
-  el.innerHTML=`<table><thead><tr><th>Photo</th><th>Size</th><th>Price</th><th>Description</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+
+  el.innerHTML=html;
 }
 
 // ─── BASIC UI HELPERS ─────────────────────────────────────────
