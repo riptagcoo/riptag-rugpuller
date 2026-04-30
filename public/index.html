@@ -2116,8 +2116,11 @@ function renderListingsTable(set){
 }
 
 // ─── BASIC UI HELPERS ─────────────────────────────────────────
-// closeModal / glog were referenced everywhere but never defined, which
-// is why every modal's Cancel button silently did nothing.
+// closeModal / glog / pruneGhostSets / connectDrive / deleteSet were
+// referenced everywhere but never defined. pruneGhostSets in particular
+// was called inside loadSets, which broke init() — that's why sets
+// stopped appearing and Drive couldn't connect (Promise.all rejected,
+// so renderOverview / connectSSE / etc. never ran).
 function closeModal(id){
   const el=document.getElementById(id);
   if(el)el.classList.add('hidden');
@@ -2130,6 +2133,20 @@ function glog(msg,level){
   line.textContent=msg;
   box.appendChild(line);
   box.scrollTop=box.scrollHeight;
+}
+// Server already runs /api/sets/cleanup at init; nothing to do client-side.
+function pruneGhostSets(){ /* no-op */ }
+function connectDrive(){ window.location.href='/auth/google'; }
+async function deleteSet(setId){
+  const set=sets.find(s=>s.id===setId);
+  if(!set){alert('Set not found');return;}
+  if(!confirm(`Delete "${set.name}"?\n\nThis removes the set from the dashboard. Live Depop listings are NOT affected.`))return;
+  try{
+    const r=await fetch('/api/sets/'+setId,{method:'DELETE'});
+    if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.error||r.status);}
+    if(currentSetId===setId){currentSetId=null;showPage('overview');}
+    await loadSets();renderOverview();
+  }catch(e){alert('Delete failed: '+e.message);}
 }
 
 // ─── LISTING EDIT / RESET / MASS EDIT ─────────────────────────
