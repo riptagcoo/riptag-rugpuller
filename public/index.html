@@ -2113,9 +2113,16 @@ function renderListingsTable(set){
   }
   const groups=[...map.values()].sort((a,b)=>a.index-b.index);
 
-  // Helper: a single photo thumb (small)
+  // Helper: a single photo thumb (small).
+  // /api/thumb/{driveId} serves from the Postgres thumb_cache — once
+  // populated (build-listings warms it automatically), images persist
+  // even if Drive disconnects. Falls back to Google's signed thumbnail
+  // URL (p.thumb) only if the proxy errors.
   const thumb=(p)=>{
-    if(p&&p.driveId)return '<div class="thumb" style="width:34px;height:34px;"><img src="/api/drive/file/'+p.driveId+'" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement(\'span\'),{textContent:\'👕\'}))"/></div>';
+    if(p&&p.driveId){
+      const fb=p.thumb?(' onerror="this.onerror=null;this.src=\''+p.thumb.replace(/'/g,'%27')+'\'"'):'';
+      return '<div class="thumb" style="width:34px;height:34px;"><img src="/api/thumb/'+p.driveId+'" loading="lazy"'+fb+'/></div>';
+    }
     if(p&&p.thumb)return '<div class="thumb" style="width:34px;height:34px;"><img src="'+p.thumb+'" loading="lazy"/></div>';
     return '<div class="thumb" style="width:34px;height:34px;">👕</div>';
   };

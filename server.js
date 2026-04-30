@@ -44,6 +44,12 @@ async function initDB() {
       created_at TIMESTAMPTZ DEFAULT NOW(),
       updated_at TIMESTAMPTZ DEFAULT NOW()
     );
+    CREATE TABLE IF NOT EXISTS thumb_cache (
+      drive_id TEXT PRIMARY KEY,
+      content_type TEXT,
+      data BYTEA NOT NULL,
+      cached_at TIMESTAMPTZ DEFAULT NOW()
+    );
   `);
   console.log('✅ Database ready');
 }
@@ -164,6 +170,82 @@ app.get('/api/drive/check-tokens', async (req, res) => {
           sessionTokens ? 'RECONNECT Drive — your current tokens are in the browser session only, not in the DB. Click Connect Drive again to persist them.' :
           'Drive not connected at all — click Connect Drive in the dashboard.'
   });
+});
+
+// Cached thumbnail endpoint — dashboard uses this for listing previews.
+// Reads from thumb_cache (a Postgres BYTEA column) so once an image is
+// cached, it survives Drive disconnects and Railway restarts. On a cache
+// miss, falls back to fetching the small thumbnailLink from Drive (using
+// the persisted DB tokens, not the session) and writes it to the cache
+// before serving.
+async function fetchAndCacheThumb(driveId, tokens) {
+  if (!tokens) return null;
+  const drive = google.drive({ version: 'v3', auth: getOAuth2Client(tokens) });
+  let meta;
+  try {
+    meta = await drive.files.get({ fileId: driveId, fields: 'mimeType, thumbnailLink' });
+  } catch { return null; }
+  let buf = null;
+  let ct = 'image/jpeg';
+  // Prefer the small thumbnailLink (no auth needed, ~20KB) over fetching
+  // the full file media — that keeps DB rows small.
+  if (meta.data.thumbnailLink) {
+    try {
+      const tr = await fetch(meta.data.thumbnailLink);
+      if (tr.ok) {
+        buf = Buffer.from(await tr.arrayBuffer());
+        ct = tr.headers.get('content-type') || 'image/jpeg';
+      }
+    } catch {}
+  }
+  if (!buf) {
+    // Fallback to media stream (full-res, but at least we get something)
+    try {
+      const dr = await drive.files.get(
+        { fileId: driveId, alt: 'media' },
+        { responseType: 'arraybuffer' }
+      );
+      buf = Buffer.from(dr.data);
+      ct = meta.data.mimeType || 'image/jpeg';
+    } catch { return null; }
+  }
+  try {
+    await pool.query(
+      `INSERT INTO thumb_cache (drive_id, content_type, data)
+         VALUES ($1, $2, $3)
+       ON CONFLICT (drive_id) DO UPDATE
+         SET data = EXCLUDED.data, content_type = EXCLUDED.content_type, cached_at = NOW()`,
+      [driveId, ct, buf]
+    );
+  } catch (e) { console.error('thumb cache write failed:', e.message); }
+  return { contentType: ct, data: buf };
+}
+
+app.get('/api/thumb/:id', async (req, res) => {
+  try {
+    const cached = await pool.query(
+      'SELECT content_type, data FROM thumb_cache WHERE drive_id=$1',
+      [req.params.id]
+    );
+    if (cached.rows.length) {
+      res.setHeader('Content-Type', cached.rows[0].content_type || 'image/jpeg');
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      return res.end(cached.rows[0].data);
+    }
+    const tokens = await getGoogleTokens(req);
+    const fetched = await fetchAndCacheThumb(req.params.id, tokens);
+    if (!fetched) {
+      // Last resort — let the browser try Google's signed thumbnailLink
+      // (caller would have to pass ?fallback=...). Otherwise 404.
+      return res.status(404).json({ error: 'Not cached and Drive not available' });
+    }
+    res.setHeader('Content-Type', fetched.contentType);
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    return res.end(fetched.data);
+  } catch (err) {
+    console.error('GET /api/thumb failed:', err.message);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Proxy a full-resolution Drive file download. agent.js uses this so listings
@@ -473,6 +555,28 @@ app.post('/api/sets/:id/build-listings', async (req, res) => {
 
     set.listings = listings;
     await pool.query('UPDATE sets SET data=$1 WHERE id=$2', [JSON.stringify(set), set.id]);
+
+    // Warm the thumbnail cache in the background so the dashboard previews
+    // keep working even if Drive disconnects later. Fires off, doesn't block
+    // the response.
+    (async () => {
+      const seen = new Set();
+      for (const p of allPhotos) {
+        if (!p || !p.id || seen.has(p.id)) continue;
+        seen.add(p.id);
+      }
+      const ids = [...seen];
+      const tokens = await getGoogleTokens(req);
+      if (!tokens) return;
+      // Process in batches of 6 so we don't hammer Drive
+      for (let i = 0; i < ids.length; i += 6) {
+        const batch = ids.slice(i, i + 6);
+        await Promise.all(batch.map(id =>
+          fetchAndCacheThumb(id, tokens).catch(() => null)
+        ));
+      }
+      console.log(`✅ thumb cache warmed for ${ids.length} photo(s) in set ${set.id}`);
+    })().catch(err => console.error('thumb cache warm failed:', err.message));
     res.json({ 
       ok: true, 
       count: listings.length, 
