@@ -4,6 +4,18 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Riptag — Set Manager</title>
+
+<!-- ── PWA install support ───────────────────────────────────── -->
+<link rel="manifest" href="/manifest.webmanifest"/>
+<meta name="theme-color" content="#00e5a0"/>
+<link rel="icon" type="image/svg+xml" href="/icons/icon.svg"/>
+<link rel="apple-touch-icon" href="/icons/icon.svg"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="Riptag"/>
+<meta name="application-name" content="Riptag"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
 <style>
 :root {
@@ -424,9 +436,29 @@ select.input { cursor: pointer; }
 /* ── TABLE ── */
 table { width: 100%; border-collapse: collapse; }
 th { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--glass-border); font-family: var(--mono); }
-td { padding: 10px 12px; font-size: 13px; border-bottom: 1px solid rgba(255,255,255,0.03); vertical-align: middle; transition: background var(--transition); }
+td { padding: 8px 12px; font-size: 13px; border-bottom: 1px solid rgba(255,255,255,0.03); vertical-align: middle; transition: background var(--transition); }
 tr:last-child td { border-bottom: none; }
-tr:hover td { background: rgba(255,255,255,0.015); }
+tr:hover td { background: rgba(255,255,255,0.015); cursor: pointer; }
+
+/* ── LISTING THUMB ── */
+/* Listings table photos load straight from the Drive proxy at full
+   resolution. Without these constraints they render at their natural
+   size (often 2000+px) which blew up the row height. Hard-cap to a
+   compact square preview. */
+.thumb {
+  width: 44px; height: 44px;
+  border-radius: 6px;
+  background: var(--s3, rgba(255,255,255,0.04));
+  overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+.thumb img {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  display: block;
+}
 
 /* ── TOGGLE ── */
 .toggle { width: 38px; height: 21px; background: rgba(255,255,255,0.08); border-radius: 11px; cursor: pointer; position: relative; border: 1px solid var(--glass-border); transition: all 0.25s; }
@@ -1659,7 +1691,22 @@ async function runAITest(){
     if(!r.ok){out.style.color='var(--red,#ff6b6b)';out.textContent=d.error||'Request failed';}
     else{
       out.style.color='var(--ink)';out.textContent=d.reply;
-      if(d.usage){meta.style.display='block';meta.textContent='model: '+(d.model||'?')+' · in: '+(d.usage.input_tokens||0)+' tok · out: '+(d.usage.output_tokens||0)+' tok';}
+      // Build diagnostic: which prompt actually got used?
+      const bits=[];
+      if(d.model) bits.push('model: '+d.model);
+      if(d.prompt){
+        const warn=d.prompt.source==='inline-fallback';
+        bits.push('prompt: '+(warn?'⚠ ':'')+d.prompt.source+' ('+d.prompt.length+' chars)');
+      }
+      if(d.usage) bits.push('in: '+(d.usage.input_tokens||0)+' · out: '+(d.usage.output_tokens||0)+' tok');
+      meta.style.display='block';
+      meta.innerHTML=bits.join(' · ');
+      if(d.prompt&&d.prompt.preview){
+        meta.innerHTML+='<br/><span style="opacity:0.8;">using prompt: "'+d.prompt.preview.replace(/</g,'&lt;')+'"</span>';
+      }
+      if(d.prompt&&d.prompt.source==='inline-fallback'){
+        meta.innerHTML+='<br/><span style="color:var(--red,#ff6b6b);">⚠ Your saved prompt is EMPTY or MISSING. Click "✏ Edit AI Prompts" and save a real prompt.</span>';
+      }
     }
   }catch(e){out.style.color='var(--red,#ff6b6b)';out.textContent=e.message;}
   btn.disabled=false;btn.textContent='Generate reply';
@@ -2068,6 +2115,166 @@ function renderListingsTable(set){
   el.innerHTML=`<table><thead><tr><th>Photo</th><th>Size</th><th>Price</th><th>Description</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
+// ─── BASIC UI HELPERS ─────────────────────────────────────────
+// closeModal / glog were referenced everywhere but never defined, which
+// is why every modal's Cancel button silently did nothing.
+function closeModal(id){
+  const el=document.getElementById(id);
+  if(el)el.classList.add('hidden');
+}
+function glog(msg,level){
+  const box=document.getElementById('set-log')||document.getElementById('global-log');
+  if(!box){console.log('[glog]',msg);return;}
+  const line=document.createElement('div');
+  line.className='log-line '+(level||'');
+  line.textContent=msg;
+  box.appendChild(line);
+  box.scrollTop=box.scrollHeight;
+}
+
+// ─── LISTING EDIT / RESET / MASS EDIT ─────────────────────────
+// These four were referenced from onclick handlers but never defined,
+// which is why the Edit modal silently did nothing. They're real now.
+
+function openListingModal(listingId){
+  const set=sets.find(s=>s.id===currentSetId);
+  if(!set)return;
+  const listing=(set.listings||[]).find(l=>l.id===listingId);
+  if(!listing){alert('Listing not found');return;}
+  document.getElementById('lm-id').value=listing.id;
+  document.getElementById('lm-price').value=listing.customPrice||'';
+  document.getElementById('lm-desc').value=listing.customDescription||listing.description||'';
+  document.getElementById('listing-modal').classList.remove('hidden');
+}
+
+async function saveListing(){
+  const id=document.getElementById('lm-id').value;
+  if(!id)return;
+  const priceRaw=document.getElementById('lm-price').value.trim();
+  const descRaw=document.getElementById('lm-desc').value;
+  const body={
+    customDescription:descRaw,
+    customPrice:priceRaw===''?null:Number(priceRaw)
+  };
+  try{
+    const r=await fetch('/api/sets/'+currentSetId+'/listings/'+id,{
+      method:'PUT',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(body)
+    });
+    if(!r.ok){const err=await r.json().catch(()=>({}));throw new Error(err.error||r.status);}
+    closeModal('listing-modal');
+    await loadSets();renderCurrentSet();
+    glog?.('Listing updated','ok');
+  }catch(e){alert('Save failed: '+e.message);}
+}
+
+async function resetSet(setId){
+  const set=sets.find(s=>s.id===setId);
+  if(!set){alert('Set not found');return;}
+  const posted=(set.listings||[]).filter(l=>l.posted).length;
+  if(!confirm(`Reset "${set.name}"?\n\nThis marks all ${set.listings?.length||0} listings unposted (${posted} currently posted) so you can redeploy them. Likes/views on the live Depop posts are NOT affected — this just clears the dashboard's "posted" flag.`))return;
+  // Mark every listing unposted, drop the depopUrl so the next deploy
+  // creates fresh ones.
+  const listings=set.listings||[];
+  for(const l of listings){
+    await fetch('/api/sets/'+setId+'/listings/'+l.id,{
+      method:'PUT',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({posted:false,postedAt:null,depopUrl:null})
+    }).catch(()=>{});
+  }
+  // Clear the deployedAt flag on the set itself
+  await fetch('/api/sets/'+setId,{
+    method:'PUT',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({status:'pending',deployedAt:null})
+  }).catch(()=>{});
+  await loadSets();renderCurrentSet();
+
+  // After reset, offer to set a new description that'll apply to every
+  // listing on the upcoming deploy.
+  if(confirm('Reset done. Set a new description for the next deploy now?')){
+    openMassEditDescriptionModal(setId);
+  }
+}
+
+// Opens the mass-edit modal pre-populated. Lets the user pick a saved
+// template OR type a fresh description, then writes it to every listing's
+// customDescription so the next deploy uses it.
+function openMassEditDescriptionModal(setId){
+  const set=sets.find(s=>s.id===setId);
+  if(!set)return;
+  document.getElementById('me-account-id').value=set.accountId||'';
+  document.getElementById('me-set-id').value=setId;
+  document.getElementById('me-account-label').innerHTML=
+    'Set: <strong>'+set.name+'</strong> · '+(set.listings?.length||0)+' listings';
+  // Pre-fill with the set's existing description if any
+  document.getElementById('me-description').value=set.evergreenDescription||set.description||'';
+  // Inject a template picker if templates exist
+  injectTemplatePickerIntoMassEdit();
+  document.getElementById('mass-edit-modal').classList.remove('hidden');
+}
+
+async function injectTemplatePickerIntoMassEdit(){
+  let picker=document.getElementById('me-template-picker-wrap');
+  if(!picker){
+    const desc=document.getElementById('me-description');
+    picker=document.createElement('div');
+    picker.id='me-template-picker-wrap';
+    picker.style.cssText='margin-bottom:10px;';
+    picker.innerHTML='<label style="display:block;font-size:12px;color:var(--ink-3);margin-bottom:6px;">Or pick a saved template</label><select class="input" id="me-template-picker"><option value="">— choose template —</option></select>';
+    desc.parentNode.insertBefore(picker,desc.parentNode.firstChild);
+    document.getElementById('me-template-picker').addEventListener('change',function(){
+      const t=descriptionTemplates.find(x=>x.id===this.value);
+      if(t)document.getElementById('me-description').value=t.body;
+    });
+  }
+  try{
+    if(!descriptionTemplates.length){
+      const r=await fetch('/api/description-templates');
+      descriptionTemplates=await r.json();
+    }
+  }catch{}
+  const sel=document.getElementById('me-template-picker');
+  sel.innerHTML='<option value="">— choose template —</option>'+
+    descriptionTemplates.map(t=>'<option value="'+t.id+'">'+t.name+'</option>').join('');
+}
+
+async function confirmMassEdit(){
+  const setId=document.getElementById('me-set-id').value||currentSetId;
+  const set=sets.find(s=>s.id===setId);
+  if(!set){alert('Set not found');return;}
+  const description=document.getElementById('me-description').value;
+  if(!description.trim()){alert('Description is empty');return;}
+
+  // Apply to every listing's customDescription so the next deploy uses
+  // it. We also save it on the set as evergreenDescription so the agent's
+  // mass-edit on Depop has it as a fallback.
+  const listings=set.listings||[];
+  let okCount=0;
+  for(const l of listings){
+    try{
+      await fetch('/api/sets/'+setId+'/listings/'+l.id,{
+        method:'PUT',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({customDescription:description})
+      });
+      okCount++;
+    }catch{}
+  }
+  await fetch('/api/sets/'+setId,{
+    method:'PUT',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({evergreenDescription:description})
+  }).catch(()=>{});
+
+  closeModal('mass-edit-modal');
+  await loadSets();renderCurrentSet();
+  glog?.('Updated description on '+okCount+'/'+listings.length+' listings','ok');
+  alert('Description applied to '+okCount+' listing(s).\n\nWhen you redeploy this set, the new description will be used.');
+}
+
 async function buildListings(){
   const set=sets.find(s=>s.id===currentSetId);
   if(!set?.driveFolder){alert('Set a Drive folder first.');return;}
@@ -2167,104 +2374,42 @@ function populateAccountDropdown(){const sel=document.getElementById('fm-account
 async function saveSet(){
   const sizes=[...document.querySelectorAll('#fm-sizes .chip.on')].map(c=>c.dataset.size);
   const days=[...document.querySelectorAll('.day-chip.on')].map(c=>c.dataset.day);
-  const body={name:document.getElementById('fm-name').value.trim()||'Unnamed Set',category:document.getElementById('fm-category').value,price:document.getElementById('fm-price').value||'20',groupSize:parseInt(document.getElementById('fm-groupsize').value),description:document.getElementById('fm-desc').value,sizes,driveFolder:document.getElementById('fm-folder-id').value||null,driveFolderName:document.getElementById('fm-folder-name').value||null,accountId:document.getElementById('fm-account').value||null,schedule:{enabled:schedEnabled,days,time:document.getElementById('fm-time').value}};
-  if(editingSetId)await fetch('/api/sets/'+editingSetId,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const body={
+    name: document.getElementById('fm-name').value.trim()||'Unnamed Set',
+    category: document.getElementById('fm-category').value,
+    price: document.getElementById('fm-price').value||'20',
+    groupSize: parseInt(document.getElementById('fm-groupsize').value),
+    description: document.getElementById('fm-desc').value,
+    sizes,
+    driveFolder: document.getElementById('fm-folder-id').value||null,
+    driveFolderName: document.getElementById('fm-folder-name').value||null,
+    accountId: document.getElementById('fm-account').value||null,
+    schedule: { enabled: schedEnabled, days, time: document.getElementById('fm-time').value }
+  };
+  if(editingSetId) await fetch('/api/sets/'+editingSetId,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   else await fetch('/api/sets',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  closeModal('set-modal');await loadSets();renderOverview();if(editingSetId)renderCurrentSet();
+  closeModal('set-modal');
+  await loadSets();
+  renderOverview();
+  if(editingSetId) renderCurrentSet();
 }
 
-async function deleteSet(id){
-  if(!id || id==='undefined' || id==='null'){
-    // Ghost row with bad id — silently run server cleanup + refresh
-    try{ await fetch('/api/sets/cleanup',{method:'POST'}); }catch{}
-    await loadSets(); renderOverview(); renderSidebarSets();
-    glog('Cleaned up invalid set','ok');
-    return;
-  }
-  if(!confirm('Delete this set? This cannot be undone.'))return;
-  try{
-    const r=await fetch('/api/sets/'+id,{method:'DELETE'});
-    // 200 = deleted, 404 = already gone — both are fine from the UI's perspective
-    if(!r.ok && r.status!==404){
-      const d=await r.json().catch(()=>({}));
-      alert('Delete failed: '+(d.error||('HTTP '+r.status)));
-      return;
-    }
-    await loadSets();
-    renderOverview();
-    renderSidebarSets();
-    if(currentSetId===id) showPage('overview');
-    glog('Set deleted','ok');
-  }catch(e){ alert('Delete failed: '+e.message); }
-}
-
-// Kill any local sets without a real id/name so they don't render as ghosts
-function pruneGhostSets(){
-  if(!Array.isArray(sets)) return;
-  sets=sets.filter(s=>s && s.id && s.id!=='undefined' && s.id!=='null' && s.name);
-}
-
-async function resetSet(id){
-  if(!confirm('Reset this set? All listings will be marked as unposted so you can deploy it again (e.g. to a new account). Your listings, descriptions, and prices are kept — only posted-status is cleared.'))return;
-  try{
-    const r=await fetch('/api/sets/'+id+'/reset',{method:'POST'});
-    const d=await r.json().catch(()=>({}));
-    if(!r.ok){ alert('Reset failed: '+(d.error||('HTTP '+r.status))); return; }
-    await loadSets();
-    if(currentSetId===id) renderCurrentSet();
-    renderOverview();
-    glog('Set reset — '+(d.listings||0)+' listings back to pending','ok');
-  }catch(e){ alert('Reset failed: '+e.message); }
-}
-async function deleteAccount(id){if(!confirm('Remove this account?'))return;await fetch('/api/accounts/'+id,{method:'DELETE'});await loadAccounts();}
-function openProxyModal(accountId,currentProxy){document.getElementById('pm-account-id').value=accountId;document.getElementById('pm-proxy').value=currentProxy||'';document.getElementById('proxy-modal').classList.remove('hidden');}
-async function saveProxy(){const id=document.getElementById('pm-account-id').value;const proxy=document.getElementById('pm-proxy').value.trim();await fetch('/api/accounts/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({proxy})});closeModal('proxy-modal');await loadAccounts();}
-
-async function openFolderPicker(){const r=await fetch('/api/drive/folders');if(r.status===401){alert('Connect Google Drive first.');return;}const d=await r.json();folders=d.folders||[];renderFolderList(folders);selectedFolder=null;document.getElementById('folder-search').value='';document.getElementById('folder-modal').classList.remove('hidden');}
-function renderFolderList(list){
-  const el=document.getElementById('folder-list-items');
-  if(!list.length){el.innerHTML='<div style="padding:14px;color:var(--muted);font-size:13px;">No folders found.</div>';return;}
-  el.innerHTML=list.map(f=>{
-    const sel=selectedFolder&&selectedFolder.id===f.id;
-    const div=document.createElement('div');
-    div.className='folder-item'+(sel?' selected':'');
-    div.textContent='📁 '+f.name;
-    div.onclick=()=>selectFolder(f.id,f.name);
-    return div.outerHTML;
-  }).join('');
-  // Re-attach click handlers
-  document.querySelectorAll('.folder-item').forEach((el,idx)=>{
-    el.onclick=()=>selectFolder(list[idx].id,list[idx].name);
-  });
-}
-function filterFolders(){const q=document.getElementById('folder-search').value.toLowerCase();renderFolderList(folders.filter(f=>f.name.toLowerCase().includes(q)));}
-function selectFolder(id,name){selectedFolder={id,name};document.querySelectorAll('.folder-item').forEach(el=>el.classList.toggle('selected',el.textContent.trim().slice(2)===name));}
-function confirmFolder(){if(!selectedFolder){alert('Select a folder first.');return;}document.getElementById('fm-folder-id').value=selectedFolder.id;document.getElementById('fm-folder-name').value=selectedFolder.name;document.getElementById('fm-folder-status').textContent='📁 '+selectedFolder.name;closeModal('folder-modal');}
-
-function openListingModal(listingId){const set=sets.find(s=>s.id===currentSetId);const listing=set?.listings?.find(l=>l.id===listingId);if(!listing)return;document.getElementById('lm-id').value=listingId;document.getElementById('lm-price').value=listing.customPrice||'';document.getElementById('lm-desc').value=listing.customDescription||'';document.getElementById('listing-modal').classList.remove('hidden');}
-async function saveListing(){const id=document.getElementById('lm-id').value;const price=document.getElementById('lm-price').value.trim();const desc=document.getElementById('lm-desc').value.trim();await fetch('/api/sets/'+currentSetId+'/listings/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({customPrice:price||null,customDescription:desc||null})});closeModal('listing-modal');await loadSets();renderCurrentSet();}
-
-function getAccountName(id){const a=accounts.find(x=>x.id===id);return a?'@'+a.username:'—';}
-function closeModal(id){document.getElementById(id).classList.add('hidden');}
-function connectDrive(){window.location.href='/auth/google';}
-
-function glog(msg,type=''){
-  if(!msg)return;
-  ['global-log','set-log'].forEach(boxId=>{
-    const box=document.getElementById(boxId);if(!box)return;
-    const el=document.createElement('div');el.className='log-line '+type;
-    el.textContent='['+new Date().toLocaleTimeString()+'] '+msg;
-    box.appendChild(el);box.scrollTop=box.scrollHeight;
-  });
-}
-
+// Wire up form chips + modal-overlay click-to-close on first paint
 document.addEventListener('DOMContentLoaded',()=>{
   document.querySelectorAll('#fm-sizes .chip').forEach(c=>c.addEventListener('click',()=>c.classList.toggle('on')));
   document.querySelectorAll('.day-chip').forEach(c=>c.addEventListener('click',()=>c.classList.toggle('on')));
   document.querySelectorAll('.modal-overlay').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)o.classList.add('hidden');}));
 });
 
+// Boot the dashboard
 init();
+
+// ── PWA: register the service worker so the browser treats this as installable
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(err => console.log('SW register failed:', err));
+  });
+}
 
 </script>
 </body>
