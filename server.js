@@ -312,12 +312,26 @@ app.post('/api/sets/cleanup', async (req, res) => {
     const r = await pool.query(
       "DELETE FROM sets WHERE id IS NULL OR id='' OR id='undefined' OR id='null' OR data IS NULL RETURNING id"
     );
-    // Also kill rows where the JSON data is malformed or missing an id field
+    // Conservative pass — only delete rows that are clearly junk:
+    //   · data is not an object
+    //   · data has no name AND no listings (truly empty placeholder)
+    // PRESERVE any set that has listings, even if its data.id has drifted
+    // from the row.id. Listings are user work; we never silently nuke it.
     const all = await pool.query('SELECT id, data FROM sets');
     let mismatches = 0;
     for (const row of all.rows) {
       const d = row.data;
-      if (!d || typeof d !== 'object' || !d.name || !d.id || d.id !== row.id) {
+      const isObject = d && typeof d === 'object';
+      const hasListings = isObject && Array.isArray(d.listings) && d.listings.length > 0;
+      const hasName = isObject && d.name && String(d.name).trim();
+      // Self-heal: if id drifted but the set has content, write the row id back into data
+      if (isObject && hasListings && d.id !== row.id) {
+        d.id = row.id;
+        await pool.query('UPDATE sets SET data=$1 WHERE id=$2', [JSON.stringify(d), row.id]);
+        continue;
+      }
+      // Only nuke truly empty / corrupt rows
+      if (!isObject || (!hasName && !hasListings)) {
         await pool.query('DELETE FROM sets WHERE id=$1', [row.id]);
         mismatches++;
       }
