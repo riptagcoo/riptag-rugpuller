@@ -2137,6 +2137,7 @@ function glog(msg,level){
 // Server already runs /api/sets/cleanup at init; nothing to do client-side.
 function pruneGhostSets(){ /* no-op */ }
 function connectDrive(){ window.location.href='/auth/google'; }
+
 async function deleteSet(setId){
   const set=sets.find(s=>s.id===setId);
   if(!set){alert('Set not found');return;}
@@ -2147,6 +2148,111 @@ async function deleteSet(setId){
     if(currentSetId===setId){currentSetId=null;showPage('overview');}
     await loadSets();renderOverview();
   }catch(e){alert('Delete failed: '+e.message);}
+}
+
+// ─── DRIVE FOLDER PICKER ──────────────────────────────────────
+let _driveFolderCache=[];
+async function openFolderPicker(){
+  const list=document.getElementById('folder-list-items');
+  list.innerHTML='<div style="padding:12px;color:var(--ink-3);font-size:12px;">Loading folders…</div>';
+  document.getElementById('folder-search').value='';
+  document.getElementById('folder-modal').classList.remove('hidden');
+  try{
+    const r=await fetch('/api/drive/folders');
+    if(r.status===401){
+      list.innerHTML='<div style="padding:12px;color:var(--ink-3);font-size:12px;">Drive not connected. Click "Connect Drive" first.</div>';
+      return;
+    }
+    const d=await r.json();
+    _driveFolderCache=d.folders||[];
+    renderFolderList(_driveFolderCache);
+  }catch(e){
+    list.innerHTML='<div style="padding:12px;color:var(--red);font-size:12px;">Error: '+e.message+'</div>';
+  }
+}
+function renderFolderList(folders){
+  const list=document.getElementById('folder-list-items');
+  if(!folders.length){list.innerHTML='<div style="padding:12px;color:var(--ink-3);font-size:12px;">No folders found.</div>';return;}
+  list.innerHTML=folders.map(f=>{
+    const safeName=String(f.name||'').replace(/'/g,'&#39;').replace(/</g,'&lt;');
+    return '<div class="folder-item" data-id="'+f.id+'" data-name="'+safeName+'" onclick="selectFolderItem(this)" style="padding:8px 12px;cursor:pointer;border-radius:6px;font-size:13px;">📁 '+safeName+'</div>';
+  }).join('');
+}
+function selectFolderItem(el){
+  document.querySelectorAll('.folder-item').forEach(x=>x.style.background='');
+  el.style.background='rgba(0,229,160,0.15)';
+  el.dataset.selected='1';
+  document.querySelectorAll('.folder-item').forEach(x=>{ if(x!==el)x.dataset.selected=''; });
+}
+function filterFolders(){
+  const q=document.getElementById('folder-search').value.toLowerCase().trim();
+  if(!q){renderFolderList(_driveFolderCache);return;}
+  renderFolderList(_driveFolderCache.filter(f=>(f.name||'').toLowerCase().includes(q)));
+}
+function confirmFolder(){
+  const sel=document.querySelector('.folder-item[data-selected="1"]');
+  if(!sel){alert('Pick a folder first.');return;}
+  document.getElementById('fm-folder-id').value=sel.dataset.id;
+  document.getElementById('fm-folder-name').value=sel.dataset.name;
+  document.getElementById('fm-folder-status').textContent='✓ '+sel.dataset.name;
+  closeModal('folder-modal');
+}
+
+// ─── ACCOUNT ACTIONS ──────────────────────────────────────────
+async function deleteAccount(id){
+  const a=accounts.find(x=>x.id===id);
+  if(!a){alert('Account not found');return;}
+  if(!confirm('Remove @'+a.username+' from the dashboard?\n\nCookies are deleted. The actual Depop account is NOT affected.'))return;
+  try{
+    const r=await fetch('/api/accounts/'+id,{method:'DELETE'});
+    if(!r.ok)throw new Error(r.status);
+    await loadAccounts();
+  }catch(e){alert('Delete failed: '+e.message);}
+}
+
+function openProxyModal(accountId,currentProxy){
+  document.getElementById('pm-account-id').value=accountId;
+  document.getElementById('pm-proxy').value=currentProxy||'';
+  document.getElementById('proxy-modal').classList.remove('hidden');
+}
+async function saveProxy(){
+  const id=document.getElementById('pm-account-id').value;
+  const proxy=document.getElementById('pm-proxy').value.trim();
+  try{
+    const r=await fetch('/api/accounts/'+id,{
+      method:'PUT',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({proxy:proxy||null})
+    });
+    if(!r.ok)throw new Error(r.status);
+    closeModal('proxy-modal');
+    await loadAccounts();
+  }catch(e){alert('Save failed: '+e.message);}
+}
+
+// ─── DESCRIPTION SCHEDULE (launch / evergreen) ────────────────
+async function saveDescSchedule(){
+  const setId=document.getElementById('ds-set-id').value;
+  const launchDescription=document.getElementById('ds-launch').value;
+  const evergreenDescription=document.getElementById('ds-evergreen').value;
+  try{
+    const r=await fetch('/api/sets/'+setId+'/descriptions',{
+      method:'PUT',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({launchDescription,evergreenDescription})
+    });
+    if(!r.ok){
+      // Fallback to the generic set-update endpoint
+      await fetch('/api/sets/'+setId,{
+        method:'PUT',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({launchDescription,evergreenDescription})
+      });
+    }
+    closeModal('desc-sched-modal');
+    await loadSets();
+    if(currentSetId===setId)renderCurrentSet();
+  }catch(e){alert('Save failed: '+e.message);}
 }
 
 // ─── LISTING EDIT / RESET / MASS EDIT ─────────────────────────
