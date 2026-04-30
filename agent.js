@@ -279,22 +279,47 @@ async function postListing(page, listing, localPhotos) {
   } catch (e) { console.log('  → Package error:', e.message); }
 
   // ── SUBMIT ──
+  // Depop's create form has the Post/List button at the very bottom of a
+  // tall form. Without explicitly scrolling, the button matches the
+  // selector but isn't in the viewport, so Playwright's visibility check
+  // hangs for 30s. Scroll first, then pick the LAST matching button (the
+  // real submit, not some inline form button), and use a JS click as a
+  // fallback for elements with overlay handlers that intercept pointers.
   await page.waitForTimeout(800);
-  for (const sel of ['button[type="submit"]', 'button:has-text("Post")', 'button:has-text("List")', 'button:has-text("Publish")', 'button:has-text("Next")']) {
-    const btn = await page.$(sel);
-    if (btn) {
-      await btn.click();
-      await page.waitForTimeout(5000);
-      const newUrl = page.url();
-      console.log('  → Submitted, URL:', newUrl);
-      // Check for success - "Nice! It's listed" page or moved away from create
-      const successEl = await page.$('text=Nice');
-      const listedEl = await page.$('text=listed');
-      if (successEl || listedEl || !newUrl.includes('create')) {
-        return true;
-      }
-      return false;
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  await page.waitForTimeout(500);
+
+  const submitClicked = await page.evaluate(() => {
+    const labels = ['post listing', 'list it', 'list item', 'publish', 'post', 'list', 'next'];
+    const candidates = [...document.querySelectorAll('button, [role="button"]')];
+    // Filter to visible, enabled buttons whose text matches a submit label
+    const matches = candidates.filter(el => {
+      if (el.disabled) return false;
+      const r = el.getBoundingClientRect();
+      if (r.width === 0 || r.height === 0) return false;
+      const t = (el.innerText || el.textContent || '').trim().toLowerCase();
+      return labels.some(l => t === l || t.startsWith(l));
+    });
+    // Prefer the bottom-most one (real submit) over any inline buttons
+    matches.sort((a, b) => b.getBoundingClientRect().top - a.getBoundingClientRect().top);
+    const target = matches[0] || document.querySelector('button[type="submit"]:not(:disabled)');
+    if (!target) return null;
+    target.scrollIntoView({ block: 'center' });
+    target.click();
+    return (target.innerText || target.textContent || 'submit').trim();
+  });
+
+  if (submitClicked) {
+    console.log('  → clicked submit: "' + submitClicked + '"');
+    await page.waitForTimeout(5000);
+    const newUrl = page.url();
+    console.log('  → Submitted, URL:', newUrl);
+    const successEl = await page.$('text=Nice');
+    const listedEl = await page.$('text=listed');
+    if (successEl || listedEl || !newUrl.includes('create')) {
+      return true;
     }
+    return false;
   }
 
   console.log('  → No submit button found');
@@ -1732,14 +1757,19 @@ async function main() {
     return;
   }
 
+  // Filter out junk rows (sets with no name — usually leftovers from a
+  // half-created set). They show up as "1. undefined — 0 pending" otherwise.
+  const validSets = sets.filter(s => s && s.name && String(s.name).trim());
+  if (!validSets.length) { console.log('No valid sets found.'); return; }
+
   console.log('\nAvailable sets:');
-  sets.forEach((s, i) => {
+  validSets.forEach((s, i) => {
     const pending = (s.listings || []).filter(l => !l.posted).length;
     console.log(`  ${i + 1}. ${s.name} — ${pending} pending`);
   });
 
   const choice = await ask('\nEnter set number: ');
-  const set = sets[parseInt(choice) - 1];
+  const set = validSets[parseInt(choice) - 1];
   if (!set) { console.log('Invalid.'); return; }
 
   const accounts = await apiGet('/api/accounts');
