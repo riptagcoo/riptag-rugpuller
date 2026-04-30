@@ -368,7 +368,28 @@ app.post('/api/sets', async (req, res) => {
 app.put('/api/sets/:id', async (req, res) => {
   const r = await pool.query('SELECT data FROM sets WHERE id=$1', [req.params.id]);
   if (!r.rows.length) return res.status(404).json({ error: 'Not found' });
-  const updated = { ...r.rows[0].data, ...req.body, id: req.params.id };
+  const prev = r.rows[0].data || {};
+  const updated = { ...prev, ...req.body, id: req.params.id };
+
+  // Propagate set-level field changes down to existing listings so the
+  // dashboard "Edit Set" actually affects the per-listing copies. Each
+  // listing snapshots `description`/`price` at build time; without this
+  // they'd stay frozen on the old values. Only updates fields the caller
+  // explicitly sent (req.body), and only writes the inherited defaults —
+  // never overrides listing-level customDescription/customPrice.
+  if (Array.isArray(updated.listings) && updated.listings.length) {
+    const propagate = {};
+    if (Object.prototype.hasOwnProperty.call(req.body, 'description') && req.body.description !== prev.description) {
+      propagate.description = req.body.description;
+    }
+    if (Object.prototype.hasOwnProperty.call(req.body, 'price') && String(req.body.price) !== String(prev.price)) {
+      propagate.price = req.body.price;
+    }
+    if (Object.keys(propagate).length) {
+      updated.listings = updated.listings.map(l => ({ ...l, ...propagate }));
+    }
+  }
+
   await pool.query('UPDATE sets SET data=$1 WHERE id=$2', [JSON.stringify(updated), req.params.id]);
   res.json(updated);
 });
