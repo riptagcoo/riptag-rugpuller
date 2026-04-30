@@ -141,27 +141,40 @@ async function getListingLocalPhotos(listing, tmpDir, cache) {
   return out;
 }
 
-// Click a combobox input and select option by index (1-based)
+// Click a combobox input and select option by index (1-based).
+// Uses a JS click on the option (instead of Playwright's elementHandle.click)
+// because Depop's dropdown options sit below the viewport on a tall form —
+// the auto-visibility wait was timing out at 30s even though the option
+// existed. scrollIntoView + .click() inside page.evaluate skips that wait.
 async function selectComboOption(page, inputId, optionIndex) {
   const input = await page.$(`#${inputId}`);
   if (!input) { console.log(`  → Input #${inputId} not found`); return false; }
-  
+
+  // Make sure the input itself is visible before opening it
+  await input.scrollIntoViewIfNeeded().catch(() => {});
   await input.click();
   await page.waitForTimeout(600);
-  
-  // Wait for menu to open
+
   const menuId = inputId.replace('-input', '-menu');
   await page.waitForSelector(`#${menuId}`, { timeout: 3000 }).catch(() => {});
-  
-  // Get all options in the menu
-  const options = await page.$$(`#${menuId} [role="option"]`);
-  console.log(`  → Found ${options.length} options in #${menuId}`);
-  
-  if (options[optionIndex - 1]) {
-    await options[optionIndex - 1].click();
+
+  const result = await page.evaluate(({ menuId, idx }) => {
+    const menu = document.getElementById(menuId);
+    if (!menu) return { ok: false, count: 0, reason: 'no menu' };
+    const options = menu.querySelectorAll('[role="option"]');
+    if (!options.length) return { ok: false, count: 0, reason: 'no options' };
+    if (!options[idx]) return { ok: false, count: options.length, reason: 'idx out of range' };
+    options[idx].scrollIntoView({ block: 'center' });
+    options[idx].click();
+    return { ok: true, count: options.length, picked: (options[idx].innerText || '').trim().slice(0, 40) };
+  }, { menuId, idx: optionIndex - 1 });
+
+  console.log(`  → Found ${result.count} options in #${menuId}` + (result.picked ? ` · picked "${result.picked}"` : ''));
+  if (result.ok) {
     await page.waitForTimeout(400);
     return true;
   }
+  console.log(`  → option click failed: ${result.reason}`);
   return false;
 }
 
@@ -211,12 +224,22 @@ async function postListing(page, listing, localPhotos) {
   try {
     const brandInput = await page.$('#brand-input');
     if (brandInput) {
+      await brandInput.scrollIntoViewIfNeeded().catch(() => {});
       await brandInput.click({ clickCount: 3 });
       await brandInput.type('otherr', { delay: 80 });
       await page.waitForTimeout(800);
-      const menuOpts = await page.$$('#brand-menu [role="option"]');
-      console.log(`  → Brand: ${menuOpts.length} options found`);
-      if (menuOpts[0]) { await menuOpts[0].click(); await page.waitForTimeout(400); console.log('  → Brand: 1st option selected'); }
+      // JS click for the same visibility-timeout reason selectComboOption uses
+      const r = await page.evaluate(() => {
+        const menu = document.getElementById('brand-menu');
+        if (!menu) return { ok: false, count: 0 };
+        const opts = menu.querySelectorAll('[role="option"]');
+        if (!opts[0]) return { ok: false, count: opts.length };
+        opts[0].scrollIntoView({ block: 'center' });
+        opts[0].click();
+        return { ok: true, count: opts.length };
+      });
+      console.log(`  → Brand: ${r.count} options found` + (r.ok ? ' · 1st selected' : ''));
+      await page.waitForTimeout(400);
     }
   } catch (e) { console.log('  → Brand error:', e.message); }
 
