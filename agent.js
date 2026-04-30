@@ -207,6 +207,7 @@ async function postListing(page, listing, localPhotos) {
   try {
     const textarea = await page.$('textarea');
     if (textarea) {
+      await textarea.scrollIntoViewIfNeeded().catch(() => {});
       await textarea.click({ clickCount: 3 });
       await textarea.fill(listing.customDescription || listing.description || '');
       await page.waitForTimeout(400);
@@ -258,21 +259,24 @@ async function postListing(page, listing, localPhotos) {
   } catch (e) { console.log('  → Size error:', e.message); }
 
   // ── QUANTITY: 100 ──
+  // scrollIntoViewIfNeeded before each click — without it, inputs that
+  // sit below the fold time out at the visibility check, the field never
+  // gets filled, and Depop's submit silently fails validation.
   try {
-    // Quantity input is next to size - find by looking for number input near size
     const qtyInput = await page.$('input[name*="uantity"], input[id*="uantity"], input[placeholder*="Qty"]');
     if (qtyInput) {
+      await qtyInput.scrollIntoViewIfNeeded().catch(() => {});
       await qtyInput.click({ clickCount: 3 });
       await qtyInput.fill('100');
       await page.waitForTimeout(300);
       console.log('  → Quantity: 100');
     } else {
-      // Find all number inputs and pick one that's not price
       const allInputs = await page.$$('input[type="number"], input[inputmode="decimal"], input[inputmode="numeric"]');
       for (const inp of allInputs) {
         const id = await inp.getAttribute('id') || '';
         const name = await inp.getAttribute('name') || '';
         if (!id.includes('rice') && !name.includes('rice')) {
+          await inp.scrollIntoViewIfNeeded().catch(() => {});
           await inp.click({ clickCount: 3 });
           await inp.fill('100');
           await page.waitForTimeout(300);
@@ -288,6 +292,7 @@ async function postListing(page, listing, localPhotos) {
     const price = String(listing.customPrice || listing.price || '20');
     const priceInput = await page.$('input[name*="rice"], input[id*="rice"], input[placeholder*="rice"]');
     if (priceInput) {
+      await priceInput.scrollIntoViewIfNeeded().catch(() => {});
       await priceInput.click({ clickCount: 3 });
       await priceInput.fill(price);
       await page.waitForTimeout(300);
@@ -341,6 +346,32 @@ async function postListing(page, listing, localPhotos) {
     const listedEl = await page.$('text=listed');
     if (successEl || listedEl || !newUrl.includes('create')) {
       return true;
+    }
+    // Stayed on the create page → form validation failed. Pull any visible
+    // error messages off the page so we know which field Depop rejected.
+    const errors = await page.evaluate(() => {
+      const out = [];
+      const sels = [
+        '[role="alert"]',
+        '[class*="error"]:not(input):not(button)',
+        '[class*="errorMessage"]',
+        '[class*="fieldError"]',
+        '[id$="-error"]',
+        '[aria-invalid="true"]'
+      ];
+      for (const s of sels) {
+        for (const el of document.querySelectorAll(s)) {
+          const t = (el.innerText || el.textContent || '').trim();
+          if (t && t.length < 200 && !out.includes(t)) out.push(t);
+        }
+      }
+      return out;
+    }).catch(() => []);
+    if (errors.length) {
+      console.log('  → ⚠ form errors:');
+      for (const e of errors.slice(0, 8)) console.log('     · ' + e);
+    } else {
+      console.log('  → ⚠ no visible error message — submit was rejected silently. Check the browser.');
     }
     return false;
   }
