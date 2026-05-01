@@ -1407,6 +1407,125 @@ async function runQuickRefresh() {
   }
 }
 
+// ─── DEPLOY A CHUD ────────────────────────────────────────────
+// Same as the normal deploy, but each listing gets ONLY its first photo
+// (the cover). Use when Depop's multi-photo upload is fighting you —
+// uploading a single image is way more reliable, you just lose the 4-up
+// gallery. Posts every pending listing in the chosen set.
+async function runDeployChud() {
+  const sets = await apiGet('/api/sets');
+  const validSets = sets.filter(s => s && s.name && String(s.name).trim());
+  if (!validSets.length) { console.log('No valid sets found.'); return; }
+
+  console.log('\n══════════════════════════════════════════');
+  console.log(' DEPLOY A CHUD — single photo per listing');
+  console.log('══════════════════════════════════════════');
+  console.log(' Posts every pending listing with only the FIRST (cover)');
+  console.log(' photo. Description, price, size, etc. all still get filled.');
+  console.log('══════════════════════════════════════════\n');
+
+  console.log('Available sets:');
+  validSets.forEach((s, i) => {
+    const pending = (s.listings || []).filter(l => !l.posted).length;
+    console.log(`  ${i + 1}. ${s.name} — ${pending} pending`);
+  });
+
+  const choice = await ask('\nEnter set number: ');
+  const set = validSets[parseInt(choice) - 1];
+  if (!set) { console.log('Invalid.'); return; }
+
+  const accounts = await apiGet('/api/accounts');
+  const account = accounts.find(a => a.id === set.accountId);
+  if (!account) { console.log('No account assigned.'); return; }
+
+  const pending = (set.listings || []).filter(l => !l.posted);
+  if (!pending.length) { console.log('No pending listings.'); return; }
+
+  console.log(`\n→ "${set.name}" → @${account.username} — ${pending.length} listings (1 photo each)\n`);
+  await ask('Press ENTER to start (DO NOT touch the browser)...');
+
+  const browser = await chromium.launch({ headless: false, slowMo: 50 });
+  const context = await browser.newContext();
+  if (account.cookies?.length) {
+    const clean = account.cookies.map(c => ({
+      name: c.name, value: c.value, domain: c.domain,
+      path: c.path || '/', secure: c.secure || false, httpOnly: c.httpOnly || false,
+      sameSite: ['Strict','Lax','None'].includes(c.sameSite) ? c.sameSite : 'Lax'
+    }));
+    await context.addCookies(clean);
+  }
+
+  const page = await context.newPage();
+  const tmpDir = `./tmp/${set.id}-chud`;
+  fs.ensureDirSync(tmpDir);
+
+  await page.goto('https://www.depop.com/', { waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(2000);
+
+  const photoCache = {};
+  let successCount = 0;
+
+  // Slice each listing down to just the cover photo before we hand it to
+  // postListing. Doesn't mutate the DB version — only this in-memory copy.
+  const sliceCover = (l) => ({ ...l, photos: (l.photos || []).slice(0, 1) });
+
+  // Test first listing
+  console.log('Testing with 1 listing first...\n');
+  const testListing = sliceCover(pending[0]);
+  console.log('Downloading 1 cover photo at full resolution...');
+  const testLocalPhotos = await getListingLocalPhotos(testListing, tmpDir, photoCache);
+  for (const lp of testLocalPhotos) {
+    try { console.log(`  · ${path.basename(lp)} — ${Math.round(fs.statSync(lp).size / 1024)} KB`); } catch {}
+  }
+
+  try {
+    const success = await postListing(page, testListing, testLocalPhotos);
+    if (success) {
+      successCount++;
+      console.log('\n  ✓ TEST PASSED');
+      const depopUrl = page.url();
+      const looksLikeProduct = /depop\.com\/[^/]+\/[^/?#]+/.test(depopUrl);
+      await apiPut(`/api/sets/${set.id}/listings/${testListing.id}`, {
+        posted: true, postedAt: new Date().toISOString(),
+        depopUrl: looksLikeProduct ? depopUrl : null
+      });
+    } else {
+      console.log('\n  ✗ TEST FAILED — check browser window');
+    }
+  } catch (err) { console.log('\n  ✗ Error:', err.message); }
+
+  if (successCount > 0 && pending.length > 1) {
+    const doAll = await ask(`\nDeploy remaining ${pending.length - 1} listings (1 photo each)? (y/n): `);
+    if (doAll.toLowerCase() === 'y') {
+      for (let i = 1; i < pending.length; i++) {
+        const listing = sliceCover(pending[i]);
+        process.stdout.write(`[${i+1}/${pending.length}] ${listing.size} G${(listing.groupIndex||0)+1}... `);
+        const localPhotos = await getListingLocalPhotos(listing, tmpDir, photoCache);
+        try {
+          const success = await postListing(page, listing, localPhotos);
+          if (success) {
+            successCount++;
+            const depopUrl = page.url();
+            const looksLikeProduct = /depop\.com\/[^/]+\/[^/?#]+/.test(depopUrl);
+            await apiPut(`/api/sets/${set.id}/listings/${listing.id}`, {
+              posted: true, postedAt: new Date().toISOString(),
+              depopUrl: looksLikeProduct ? depopUrl : null
+            });
+            process.stdout.write('✓\n');
+          } else { process.stdout.write('✗\n'); }
+        } catch (err) { process.stdout.write(`✗ ${err.message}\n`); }
+        await page.waitForTimeout(2000 + Math.random() * 3000);
+      }
+    }
+  } else if (successCount === 0) {
+    await ask('\nPress ENTER to close browser...');
+  }
+
+  await browser.close();
+  await fs.remove(tmpDir);
+  console.log(`\n✅ Chud deploy done — ${successCount}/${pending.length} posted (1 photo each)\n`);
+}
+
 // ─── PHOTO RESOLUTION TEST ────────────────────────────────────
 // Downloads one photo via the new full-res endpoint and reports the
 // file size. If you see something tiny (< 30 KB) the blur fix isn't
@@ -1925,7 +2044,8 @@ async function main() {
   console.log('  6. Refresh photos on a deployed set (match by size)');
   console.log('  7. TEST: download one photo at full res (verify blur fix)');
   console.log('  8. Quick Refresh: replace blurry photos on EVERY listing in shop (random)');
-  const action = await ask('\nEnter choice (1-8): ');
+  console.log('  9. Deploy a Chud (1 photo per listing — fallback when multi-photo fails)');
+  const action = await ask('\nEnter choice (1-9): ');
 
   if (action === '2') {
     await runMassEdit();
@@ -1954,6 +2074,10 @@ async function main() {
   }
   if (action === '8') {
     await runQuickRefresh();
+    return;
+  }
+  if (action === '9') {
+    await runDeployChud();
     return;
   }
 
