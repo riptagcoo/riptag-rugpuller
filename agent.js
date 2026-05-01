@@ -191,15 +191,67 @@ async function postListing(page, listing, localPhotos) {
   }
 
   // ── PHOTOS ──
+  // Belt + suspenders. Some forms use a real <input type="file">, others
+  // (like the edit page) use drag-and-drop only. We do BOTH so it works
+  // regardless of which form Depop shows.
   try {
-    const photoInput = await page.$('input[type="file"]');
-    if (photoInput && localPhotos.length > 0) {
-      const existing = localPhotos.filter(p => fs.existsSync(p));
-      if (existing.length) {
-        await photoInput.setInputFiles(existing);
-        await page.waitForTimeout(3500);
-        console.log(`  → ${existing.length} photos uploaded`);
+    const existing = localPhotos.filter(p => fs.existsSync(p));
+    if (existing.length) {
+      // Strategy 1 — every visible file input on the page
+      const inputs = await page.$$('input[type="file"]');
+      console.log(`  → ${inputs.length} file input(s) on page`);
+      for (const inp of inputs) {
+        try { await inp.setInputFiles(existing); } catch {}
       }
+
+      // Strategy 2 — drag-drop with real File objects onto any plausible
+      // dropzone target. Same File/DataTransfer trick refreshOneListing uses.
+      const mimeFor = (p) => {
+        const ext = (p.split('.').pop() || '').toLowerCase();
+        return ({
+          jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png',
+          heic: 'image/heic', heif: 'image/heif', webp: 'image/webp', gif: 'image/gif'
+        })[ext] || 'application/octet-stream';
+      };
+      const filesData = existing.map(p => ({
+        name: path.basename(p),
+        mimeType: mimeFor(p),
+        data: fs.readFileSync(p).toString('base64')
+      }));
+      const droppedOnto = await page.evaluate((filesData) => {
+        const files = filesData.map(f => {
+          const bin = atob(f.data);
+          const bytes = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+          return new File([bytes], f.name, { type: f.mimeType });
+        });
+        const dt = new DataTransfer();
+        files.forEach(f => dt.items.add(f));
+        // Plausible drop targets on the create form
+        const sels = [
+          '[class*="dropzone"]',
+          '[class*="photoUpload"]', '[class*="photo-upload"]',
+          '[class*="dndContainer"]', '[class*="upload"]',
+          '[data-testid*="photo"]', '[data-testid*="upload"]',
+          'label[for*="photo"]', 'label[for*="upload"]'
+        ];
+        const targets = [...new Set(sels.flatMap(s => [...document.querySelectorAll(s)]))];
+        let count = 0;
+        for (const target of targets) {
+          try {
+            ['dragenter', 'dragover', 'drop'].forEach(type => {
+              const evt = new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: dt });
+              target.dispatchEvent(evt);
+            });
+            count++;
+          } catch {}
+        }
+        return count;
+      }, filesData).catch(() => 0);
+      console.log(`  → drag-drop fired on ${droppedOnto} target(s)`);
+
+      await page.waitForTimeout(3500);
+      console.log(`  → ${existing.length} photos sent`);
     }
   } catch (e) { console.log('  → Photo error:', e.message); }
 
