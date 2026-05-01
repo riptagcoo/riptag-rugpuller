@@ -191,35 +191,14 @@ async function postListing(page, listing, localPhotos) {
   }
 
   // ── PHOTOS ──
-  // Don't just blanket-wait 3.5s — wait until photo tiles actually render
-  // (Depop processes thumbs server-side). If we submit before they appear,
-  // Depop rejects the post for "no photos" even though the input fired.
   try {
     const photoInput = await page.$('input[type="file"]');
     if (photoInput && localPhotos.length > 0) {
       const existing = localPhotos.filter(p => fs.existsSync(p));
       if (existing.length) {
         await photoInput.setInputFiles(existing);
-        // Wait up to 25s for the dropzone tiles to populate — that's the
-        // Depop-side render that proves the upload actually completed.
-        const expected = existing.length;
-        const deadline = Date.now() + 25000;
-        let tileCount = 0;
-        while (Date.now() < deadline) {
-          tileCount = await page.evaluate(() =>
-            document.querySelectorAll('[class*="dndContainer"], [class*="photoTile"], [class*="imageTile"]').length
-          ).catch(() => 0);
-          if (tileCount >= expected) break;
-          await page.waitForTimeout(800);
-        }
-        console.log(`  → ${expected} photo(s) sent · ${tileCount} tile(s) rendered`);
-        if (tileCount < 1) {
-          console.log('  → ⚠ no tiles rendered after 25s — retrying upload once');
-          try {
-            await photoInput.setInputFiles(existing);
-          } catch {}
-          await page.waitForTimeout(8000);
-        }
+        await page.waitForTimeout(3500);
+        console.log(`  → ${existing.length} photos uploaded`);
       }
     }
   } catch (e) { console.log('  → Photo error:', e.message); }
@@ -328,33 +307,9 @@ async function postListing(page, listing, localPhotos) {
   } catch (e) { console.log('  → Package error:', e.message); }
 
   // ── SUBMIT ──
-  // One more sanity check: don't click Post if no photo tile has rendered
-  // yet. We've seen Depop reject the form silently when the upload was
-  // still in flight. Wait up to 10s extra for the first tile.
-  {
-    const photoOk = await (async () => {
-      const deadline = Date.now() + 10000;
-      while (Date.now() < deadline) {
-        const n = await page.evaluate(() =>
-          document.querySelectorAll('[class*="dndContainer"], [class*="photoTile"], [class*="imageTile"]').length
-        ).catch(() => 0);
-        if (n >= 1) return n;
-        await page.waitForTimeout(800);
-      }
-      return 0;
-    })();
-    if (!photoOk) {
-      console.log('  → ⚠ submit aborted — still no photo tiles after extra 10s wait');
-      try {
-        const shotPath = `./tmp/no-photos-${Date.now()}.png`;
-        fs.ensureDirSync('./tmp');
-        await page.screenshot({ path: shotPath, fullPage: true });
-        console.log(`  → screenshot saved: ${shotPath}`);
-      } catch {}
-      return false;
-    }
-    console.log(`  → photos confirmed (${photoOk} tile(s)), proceeding to submit`);
-  }
+  // Simple 5s wait before posting so photos have time to finish uploading.
+  console.log('  → waiting 5s for photos to finish uploading…');
+  await page.waitForTimeout(5000);
 
   // Depop's create form has the Post/List button at the very bottom of a
   // tall form. Without explicitly scrolling, the button matches the
