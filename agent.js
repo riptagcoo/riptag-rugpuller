@@ -186,7 +186,7 @@ async function postListing(page, listing, localPhotos) {
     await page.waitForTimeout(2500);
     console.log('  → Clicked List another item');
   } else {
-    await page.goto('https://www.depop.com/products/create/first/', { waitUntil: 'networkidle', timeout: 30000 });
+    await page.goto('https://www.depop.com/products/create/first/', { waitUntil: 'domcontentloaded', timeout: 30000 });
     await page.waitForTimeout(2500);
   }
 
@@ -1493,12 +1493,12 @@ async function runScrapeOrders() {
   try {
     // Navigate to sold items first to establish session
     console.log('Establishing session...');
-    await page.goto('https://www.depop.com/sellinghub/sold-items/', { waitUntil: 'networkidle', timeout: 30000 });
+    await page.goto('https://www.depop.com/sellinghub/sold-items/', { waitUntil: 'domcontentloaded', timeout: 30000 });
     await page.waitForTimeout(2000);
 
     // Scrape UI directly using confirmed selectors
     console.log('Loading sold items page...');
-    await page.goto('https://www.depop.com/sellinghub/sold-items/', { waitUntil: 'networkidle', timeout: 30000 });
+    await page.goto('https://www.depop.com/sellinghub/sold-items/', { waitUntil: 'domcontentloaded', timeout: 30000 });
     await page.waitForTimeout(2000);
 
     // Scroll to load all orders via infinite scroll
@@ -1538,7 +1538,7 @@ async function runScrapeOrders() {
       const order = orderLinks[i];
       process.stdout.write(`[${i+1}/${orderLinks.length}] Order ${order.orderId}... `);
       try {
-        await page.goto(`https://www.depop.com/sellinghub/sold-items/${order.orderId}/`, { waitUntil: 'networkidle', timeout: 20000 });
+        await page.goto(`https://www.depop.com/sellinghub/sold-items/${order.orderId}/`, { waitUntil: 'domcontentloaded', timeout: 20000 });
         await page.waitForTimeout(1200);
 
         const detail = await page.evaluate(() => {
@@ -1998,7 +1998,7 @@ async function main() {
   const tmpDir = `./tmp/${set.id}`;
   fs.ensureDirSync(tmpDir);
 
-  await page.goto('https://www.depop.com/', { waitUntil: 'networkidle' });
+  await page.goto('https://www.depop.com/', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(2000);
 
   // Cache keyed by driveId (one entry per unique photo file). Each listing
@@ -2138,7 +2138,7 @@ if (process.argv.includes('--daemon')) {
         await context.addCookies(clean);
       }
       const page = await context.newPage();
-      await page.goto('https://www.depop.com/', { waitUntil: 'networkidle' });
+      await page.goto('https://www.depop.com/', { waitUntil: 'domcontentloaded' });
 
       const fs = require('fs-extra');
       const tmpDir = `./tmp/${set.id}`;
@@ -2218,7 +2218,7 @@ if (process.argv.includes('--daemon')) {
         }
 
         const page = await context.newPage();
-        await page.goto('https://www.depop.com/', { waitUntil: 'networkidle' });
+        await page.goto('https://www.depop.com/', { waitUntil: 'domcontentloaded' });
 
         const fs = require('fs-extra');
         const path = require('path');
