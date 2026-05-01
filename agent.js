@@ -1100,6 +1100,90 @@ function jitter(min, max) { return min + Math.floor(Math.random() * (max - min))
 // shot and don't care that the "size M" listing might end up with
 // any of the photos from the set. Preserves likes/views/saves
 // because we edit existing listings — we don't re-list.
+// Non-interactive Quick Refresh — same flow as runQuickRefresh, no
+// confirmations. Takes a photo-pool set + a target account. Used by the
+// dashboard command queue.
+async function quickRefreshSet(photoSet, account) {
+  if (!account || !account.cookies?.length) {
+    return { ok: false, message: 'Account missing or no cookies' };
+  }
+  const allPhotos = [];
+  const seen = new Set();
+  for (const l of (photoSet.listings || [])) {
+    for (const p of (l.photos || [])) {
+      if (p && p.driveId && !seen.has(p.driveId)) {
+        seen.add(p.driveId);
+        allPhotos.push(p);
+      }
+    }
+  }
+  if (!allPhotos.length) return { ok: false, message: 'Set has no photos' };
+
+  const tmpDir = path.join(__dirname, 'tmp', 'quickrefresh', photoSet.id);
+  fs.ensureDirSync(tmpDir);
+  fs.emptyDirSync(tmpDir);
+  const photoCache = {};
+
+  const browser = await chromium.launch({ headless: false, slowMo: 50 });
+  const context = await browser.newContext();
+  const clean = account.cookies.map(c => ({
+    name: c.name, value: c.value, domain: c.domain,
+    path: c.path || '/', secure: c.secure || false, httpOnly: c.httpOnly || false,
+    sameSite: ['Strict','Lax','None'].includes(c.sameSite) ? c.sameSite : 'Lax'
+  }));
+  await context.addCookies(clean);
+  const page = await context.newPage();
+
+  try {
+    const hubUrl = 'https://www.depop.com/sellinghub/selling/active/';
+    const resp = await page.goto(hubUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForTimeout(3500);
+    if ((resp ? resp.status() : 0) === 404) {
+      return { ok: false, message: 'Selling Hub 404 — cookies likely expired' };
+    }
+    let prev = 0, same = 0;
+    for (let i = 0; i < 60 && same < 3; i++) {
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+      await page.waitForTimeout(1200);
+      const c = await page.$$eval('a[href*="/products/edit/"]', as => as.length).catch(() => 0);
+      if (c === prev) same++; else { same = 0; prev = c; }
+    }
+    const editUrls = await page.$$eval('a[href*="/products/edit/"]', as => {
+      const hrefs = as.map(a => a.getAttribute('href') || a.href || '').filter(Boolean);
+      const cleaned = hrefs.map(h => {
+        const abs = h.startsWith('http') ? h : 'https://www.depop.com' + h;
+        try { const u = new URL(abs); return u.origin + u.pathname.replace(/\/$/, '') + '/'; }
+        catch { return abs; }
+      });
+      return [...new Set(cleaned)];
+    }).catch(() => []);
+    if (!editUrls.length) return { ok: false, message: 'No edit URLs on Selling Hub' };
+
+    const makeRandomListing = (url) => {
+      const shuffled = [...allPhotos].sort(() => Math.random() - 0.5);
+      return { id: 'quick-' + Math.random().toString(36).slice(2, 8), size: '?', depopUrl: url, photos: shuffled.slice(0, 4) };
+    };
+
+    let ok = 0;
+    for (let i = 0; i < editUrls.length; i++) {
+      const url = editUrls[i];
+      const listing = makeRandomListing(url);
+      try {
+        const local = await getListingLocalPhotos(listing, tmpDir, photoCache);
+        await refreshOneListing(page, listing, local);
+        ok++;
+      } catch (e) {
+        console.log(`  ✗ ${url.split('/').slice(-2).join('/')}: ${e.message.slice(0, 60)}`);
+      }
+      await page.waitForTimeout(jitter(1500, 3500));
+    }
+    return { ok: true, message: `Refreshed ${ok}/${editUrls.length} listings on @${account.username}` };
+  } finally {
+    await browser.close().catch(() => {});
+    await fs.remove(tmpDir).catch(() => {});
+  }
+}
+
 async function runQuickRefresh() {
   const sets = await apiGet('/api/sets');
   if (!sets.length) { console.log('No sets.'); return; }
@@ -2232,10 +2316,16 @@ if (process.argv.includes('--daemon')) {
           else { await massEditDescriptions(set, desc); ok = true; result = 'Mass edit complete'; }
         }
       } else if (command === 'quick-refresh') {
-        // Existing runQuickRefresh is interactive (asks for set/account).
-        // For the queued version we'd need a non-interactive variant —
-        // for now we just log and skip.
-        result = 'quick-refresh from queue not yet supported — run it from the menu';
+        const sets = await apiGet('/api/sets');
+        const accounts = await apiGet('/api/accounts');
+        const photoSet = sets.find(s => s.id === payload.photoSetId || s.id === payload.setId);
+        const account = accounts.find(a => a.id === payload.accountId);
+        if (!photoSet) { result = 'Photo-pool set not found'; }
+        else if (!account) { result = 'Account not found'; }
+        else {
+          const r = await quickRefreshSet(photoSet, account);
+          ok = r.ok; result = r.message;
+        }
       } else {
         result = 'Unknown command: ' + command;
       }

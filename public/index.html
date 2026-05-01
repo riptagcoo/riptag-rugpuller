@@ -760,6 +760,8 @@ tr:hover td { background: rgba(255,255,255,0.015); cursor: pointer; }
       <button class="btn ghost sm" onclick="openEditSetModal()">✏ Edit</button>
       <button class="btn ghost sm" onclick="buildListings()">⚙ Build Listings</button>
       <button class="btn ghost sm" onclick="resetSet(currentSetId)" title="Mark all listings unposted so you can redeploy to another account">♻ Reset</button>
+      <button class="btn ghost sm" onclick="openQuickRefreshModal(currentSetId)" title="Replace blurry photos on every active listing with random ones from this set's pool">🔁 Quick Refresh</button>
+      <button class="btn ghost sm" onclick="openMassEditLiveModal(currentSetId)" title="Update the description on every live listing on Depop">✎ Mass Edit Live</button>
       <button class="btn ghost sm danger" onclick="deleteSet(currentSetId)">🗑 Delete</button>
       <button class="btn primary" onclick="deploySet()">▶ Deploy</button>
     </div>
@@ -1172,6 +1174,115 @@ async function queueAgentCommand(command, payload){
 
 async function checkAllStatuses(){
   await queueAgentCommand('check-statuses',{});
+}
+
+// Quick Refresh: replace blurry photos on every active listing on a chosen
+// account, using random full-res photos from a chosen "photo pool" set.
+function openQuickRefreshModal(photoSetId){
+  const set=sets.find(s=>s.id===photoSetId);
+  if(!set){alert('Set not found');return;}
+  const photoCount=(set.listings||[]).reduce((a,l)=>a+(l.photos?.length||0),0);
+  if(!photoCount){alert('Build listings first — this set has no photos.');return;}
+
+  const live=accounts.filter(a=>Array.isArray(a.cookies)&&a.cookies.length);
+  if(!live.length){alert('No accounts with fresh cookies. Connect via the Chrome extension.');return;}
+
+  // Default to the set's assigned account if it has cookies, else the first
+  const defaultId=set.accountId&&live.find(a=>a.id===set.accountId)?set.accountId:live[0].id;
+  const accountList=live.map(a=>'<option value="'+a.id+'"'+(a.id===defaultId?' selected':'')+'>@'+a.username+(a.status==='banned'?' (banned)':'')+'</option>').join('');
+
+  const html=`<div class="modal-overlay" id="qr-modal">
+    <div class="modal">
+      <div class="modal-title">Quick Refresh photos</div>
+      <p style="font-size:13px;color:var(--ink-3);line-height:1.6;margin-bottom:14px;">
+        Replaces every photo on every <strong>active</strong> listing on the chosen shop with 4 random full-res photos pulled from <strong>${set.name}</strong>'s pool (${photoCount} photos).<br>
+        Description, price, size are NOT touched. Likes/views/saves stay because we're editing, not re-listing.
+      </p>
+      <div class="field"><label>Target shop</label>
+        <select class="input" id="qr-account">${accountList}</select>
+      </div>
+      <div class="modal-actions">
+        <button class="btn ghost" onclick="document.getElementById('qr-modal').remove()">Cancel</button>
+        <button class="btn primary" onclick="confirmQuickRefresh('${photoSetId}')">▶ Queue Quick Refresh</button>
+      </div>
+    </div>
+  </div>`;
+  const wrap=document.createElement('div');wrap.innerHTML=html;
+  document.body.appendChild(wrap.firstElementChild);
+}
+async function confirmQuickRefresh(photoSetId){
+  const accountId=document.getElementById('qr-account').value;
+  if(!accountId){alert('Pick an account');return;}
+  document.getElementById('qr-modal').remove();
+  await queueAgentCommand('quick-refresh',{photoSetId,accountId});
+}
+
+// Mass Edit Live: update description on every live listing for a chosen
+// account. Reuses the description templates dropdown.
+function openMassEditLiveModal(setId){
+  const set=sets.find(s=>s.id===setId);
+  if(!set){alert('Set not found');return;}
+  const live=accounts.filter(a=>Array.isArray(a.cookies)&&a.cookies.length);
+  if(!live.length){alert('No accounts with fresh cookies.');return;}
+
+  const defaultId=set.accountId&&live.find(a=>a.id===set.accountId)?set.accountId:live[0].id;
+  const accountList=live.map(a=>'<option value="'+a.id+'"'+(a.id===defaultId?' selected':'')+'>@'+a.username+(a.status==='banned'?' (banned)':'')+'</option>').join('');
+
+  const html=`<div class="modal-overlay" id="mel-modal">
+    <div class="modal">
+      <div class="modal-title">Mass Edit Live Descriptions</div>
+      <p style="font-size:13px;color:var(--ink-3);line-height:1.6;margin-bottom:14px;">
+        Walks every active listing on the chosen shop and replaces the description with the text below. Photos and price are not touched.
+      </p>
+      <div class="field"><label>Target shop</label>
+        <select class="input" id="mel-account">${accountList}</select>
+      </div>
+      <div class="field"><label>Use a saved template (optional)</label>
+        <select class="input" id="mel-template"><option value="">— pick template —</option>${
+          (descriptionTemplates||[]).map(t=>'<option value="'+t.id+'">'+(t.name||'').replace(/</g,'&lt;')+'</option>').join('')
+        }</select>
+      </div>
+      <div class="field"><label>Description</label>
+        <textarea class="input" id="mel-description" rows="6" placeholder="Type or pick a template above…">${(set.evergreenDescription||set.description||'').replace(/</g,'&lt;')}</textarea>
+      </div>
+      <div class="modal-actions">
+        <button class="btn ghost" onclick="document.getElementById('mel-modal').remove()">Cancel</button>
+        <button class="btn primary" onclick="confirmMassEditLive('${setId}')">▶ Queue Mass Edit</button>
+      </div>
+    </div>
+  </div>`;
+  const wrap=document.createElement('div');wrap.innerHTML=html;
+  document.body.appendChild(wrap.firstElementChild);
+
+  // Live wire the template dropdown
+  document.getElementById('mel-template').addEventListener('change',function(){
+    const t=(descriptionTemplates||[]).find(x=>x.id===this.value);
+    if(t)document.getElementById('mel-description').value=t.body;
+  });
+  // Refresh templates list in the background
+  fetch('/api/description-templates').then(r=>r.json()).then(arr=>{
+    if(!Array.isArray(arr))return;
+    descriptionTemplates=arr;
+    const sel=document.getElementById('mel-template');
+    if(!sel)return;
+    sel.innerHTML='<option value="">— pick template —</option>'+
+      arr.map(t=>'<option value="'+t.id+'">'+(t.name||'').replace(/</g,'&lt;')+'</option>').join('');
+  }).catch(()=>{});
+}
+async function confirmMassEditLive(setId){
+  const accountId=document.getElementById('mel-account').value;
+  const description=document.getElementById('mel-description').value;
+  if(!accountId){alert('Pick an account');return;}
+  if(!description.trim()){alert('Description is empty');return;}
+  document.getElementById('mel-modal').remove();
+  // The agent's massEditDescriptions reads set.accountId — push an
+  // accountId override too so the daemon targets the right shop.
+  await fetch('/api/sets/'+setId,{
+    method:'PUT',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({accountId})
+  }).catch(()=>{});
+  await queueAgentCommand('mass-edit',{setId,accountId,description});
 }
 
 // ─── Active Accounts action buttons ──────────────────────────
