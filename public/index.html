@@ -332,6 +332,7 @@ select.input option:checked, #sold-account-select option:checked {
 .cat-tab.active { background: rgba(255,255,255,0.07); color: var(--ink); }
 .cat-tab.active.rugpull { background: var(--green-dim); color: var(--green); }
 .cat-tab.active.riptag { background: var(--violet-dim); color: var(--violet); }
+.view-tab.active { background: var(--green-dim) !important; color: var(--green) !important; }
 
 /* ── SET CARDS ── */
 .set-card {
@@ -776,9 +777,15 @@ tr:hover td { background: rgba(255,255,255,0.015); cursor: pointer; }
       </div>
     </div>
     <div class="card">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;gap:12px;flex-wrap:wrap;">
         <div class="card-title" style="margin:0;">Listings</div>
-        <span id="listing-count" style="font-size:11px;color:var(--ink-3);font-family:var(--mono);"></span>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span id="listing-count" style="font-size:11px;color:var(--ink-3);font-family:var(--mono);"></span>
+          <div style="display:inline-flex;background:var(--glass);border:1px solid var(--glass-border);border-radius:8px;overflow:hidden;">
+            <button class="view-tab active" id="view-tab-preview" onclick="setListingsView('preview')" style="background:transparent;border:0;color:var(--ink-3);font-size:11px;font-family:var(--mono);padding:6px 12px;cursor:pointer;text-transform:uppercase;letter-spacing:0.05em;">Preview</button>
+            <button class="view-tab" id="view-tab-detail" onclick="setListingsView('detail')" style="background:transparent;border:0;color:var(--ink-3);font-size:11px;font-family:var(--mono);padding:6px 12px;cursor:pointer;text-transform:uppercase;letter-spacing:0.05em;">All listings</button>
+          </div>
+        </div>
       </div>
       <div id="listings-table-wrap" style="max-height:600px;overflow-y:auto;border-radius:8px;"><div class="empty"><div class="empty-ico">◈</div><div class="empty-title">No listings yet</div>Click Build Listings to start.</div></div>
     </div>
@@ -2165,7 +2172,7 @@ function renderAccounts(){
         <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${dotColor};box-shadow:${dotGlow};flex-shrink:0;margin-right:2px;" title="${statusLabel}"></span>
         <div class="acct-avatar">${(a.username||'??').substring(0,2).toUpperCase()}</div>
         <div style="flex:1;min-width:0;">
-          <div style="font-weight:600;font-size:13px;">@${a.username||'(no username)'} <span class="badge badge-${cat}" style="margin-left:6px;">${cat==='riptag'?'riptag.co':'rugpull'}</span></div>
+          <div style="font-weight:600;font-size:13px;">@${a.username||'(no username)'}</div>
           <div style="font-size:11px;color:var(--muted);font-family:var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
             <span style="color:${dotColor};">● ${statusLabel}</span>
             · connected ${new Date(a.connectedAt).toLocaleDateString()}
@@ -2173,9 +2180,9 @@ function renderAccounts(){
             ${a.proxy?' · 🔒 Proxy':''}
           </div>
         </div>
-        <select onchange="setAccountCategory('${a.id}', this.value)" title="Replier prompt for this account" style="font-size:12px;height:30px;padding:0 8px;border-radius:8px;background:var(--glass);border:1px solid var(--glass-border);color:var(--ink);">
-          <option value="rugpull"${cat==='rugpull'?' selected':''}>🎯 Rugpull prompt</option>
-          <option value="riptag"${cat==='riptag'?' selected':''}>🌐 Riptag.co prompt</option>
+        <select class="input" onchange="setAccountCategory('${a.id}', this.value)" title="Replier prompt for this account" style="height:30px;font-size:12px;padding:0 28px 0 10px;width:auto;min-width:130px;">
+          <option value="rugpull"${cat==='rugpull'?' selected':''}>🎯 Rugpull</option>
+          <option value="riptag"${cat==='riptag'?' selected':''}>🌐 Riptag.co</option>
         </select>
         <button class="btn sm" onclick="openProxyModal('${a.id}','${a.proxy||''}')">🔒 ${a.proxy?'Edit':'Add'} Proxy</button>
         <button class="btn sm" style="color:var(--red);" onclick="deleteAccount('${a.id}')">Remove</button>
@@ -2255,13 +2262,32 @@ function renderCurrentSet(){
   renderListingsTable(set);
 }
 
+// Default to the lightweight preview — full table is opt-in.
+let listingsView=(typeof localStorage!=='undefined'&&localStorage.getItem('riptag_listings_view'))||'preview';
+
+function setListingsView(v){
+  listingsView=(v==='detail')?'detail':'preview';
+  try{localStorage.setItem('riptag_listings_view',listingsView);}catch{}
+  const pBtn=document.getElementById('view-tab-preview');
+  const dBtn=document.getElementById('view-tab-detail');
+  if(pBtn)pBtn.classList.toggle('active',listingsView==='preview');
+  if(dBtn)dBtn.classList.toggle('active',listingsView==='detail');
+  const set=sets.find(s=>s.id===currentSetId);
+  if(set)renderListingsTable(set);
+}
+
 function renderListingsTable(set){
   const el=document.getElementById('listings-table-wrap');
   if(!el){console.warn('[renderListingsTable] no #listings-table-wrap element');return;}
   const listings=Array.isArray(set&&set.listings)?set.listings:[];
-  console.log('[renderListingsTable] set:',set&&set.id,'listings:',listings.length);
+  console.log('[renderListingsTable] set:',set&&set.id,'listings:',listings.length,'view:',listingsView);
   const countEl=document.getElementById('listing-count');
   if(countEl)countEl.textContent=listings.length+' listings ('+listings.filter(l=>l&&l.posted).length+' posted)';
+  // Sync the view tabs in case this is the first render after a page switch
+  const pBtn=document.getElementById('view-tab-preview');
+  const dBtn=document.getElementById('view-tab-detail');
+  if(pBtn)pBtn.classList.toggle('active',listingsView==='preview');
+  if(dBtn)dBtn.classList.toggle('active',listingsView==='detail');
   if(!listings.length){
     el.innerHTML='<div class="empty"><div class="empty-ico">◈</div><div class="empty-title">No listings yet</div>Click Build Listings to start.</div>';
     return;
@@ -2275,56 +2301,90 @@ function renderListingsTable(set){
   }
   const groups=[...map.values()].sort((a,b)=>a.index-b.index);
 
-  // Helper: a single photo thumb (small).
+  // Helper: a single photo thumb at a given size.
   // /api/thumb/{driveId} serves from the Postgres thumb_cache — once
   // populated (build-listings warms it automatically), images persist
   // even if Drive disconnects. Falls back to Google's signed thumbnail
   // URL (p.thumb) only if the proxy errors.
-  const thumb=(p)=>{
+  const thumb=(p,size)=>{
+    const px=size||34;
+    const style='width:'+px+'px;height:'+px+'px;';
     if(p&&p.driveId){
       const fb=p.thumb?(' onerror="this.onerror=null;this.src=\''+p.thumb.replace(/'/g,'%27')+'\'"'):'';
-      return '<div class="thumb" style="width:34px;height:34px;"><img src="/api/thumb/'+p.driveId+'" loading="lazy"'+fb+'/></div>';
+      return '<div class="thumb" style="'+style+'"><img src="/api/thumb/'+p.driveId+'" loading="lazy"'+fb+'/></div>';
     }
-    if(p&&p.thumb)return '<div class="thumb" style="width:34px;height:34px;"><img src="'+p.thumb+'" loading="lazy"/></div>';
-    return '<div class="thumb" style="width:34px;height:34px;">👕</div>';
+    if(p&&p.thumb)return '<div class="thumb" style="'+style+'"><img src="'+p.thumb+'" loading="lazy"/></div>';
+    return '<div class="thumb" style="'+style+'">👕</div>';
   };
 
   let html='';
-  groups.forEach((g,gi)=>{
-    const posted=g.items.filter(l=>l.posted).length;
-    html+='<div style="margin-bottom:14px;border:1px solid var(--glass-border);border-radius:10px;overflow:hidden;">'
-      +'<div style="display:flex;align-items:center;gap:10px;padding:9px 14px;background:rgba(255,255,255,0.025);font-size:11px;font-family:var(--mono);text-transform:uppercase;letter-spacing:0.05em;border-bottom:1px solid var(--glass-border);">'
-        +'<span style="color:var(--green);font-weight:700;">Group '+(gi+1)+'</span>'
-        +'<span style="color:var(--ink-4);">·</span>'
-        +'<span style="color:var(--ink-3);">'+g.items.length+' listing'+(g.items.length===1?'':'s')+'</span>'
-        +'<span style="color:var(--ink-4);">·</span>'
-        +'<span style="color:var(--ink-3);">'+posted+'/'+g.items.length+' posted</span>'
-      +'</div>';
 
-    g.items.forEach((l,idx)=>{
-      const photos=(l.photos||[]).slice(0,4);
-      const strip=photos.length?photos.map(thumb).join(''):thumb(null);
-      const descRaw=(l.customDescription||l.description||'');
-      const desc=String(descRaw).replace(/</g,'&lt;').slice(0,90);
-      const more=descRaw.length>90?'…':'';
-      const isLast=idx===g.items.length-1;
-      html+='<div onclick="openListingModal(\''+l.id+'\')" '
-        +'style="display:flex;align-items:center;gap:12px;padding:10px 14px;cursor:pointer;'
-        +(isLast?'':'border-bottom:1px solid rgba(255,255,255,0.04);')
-        +'transition:background 0.12s;" '
-        +'onmouseover="this.style.background=\'rgba(255,255,255,0.02)\'" '
-        +'onmouseout="this.style.background=\'transparent\'">'
-        +'<div style="display:flex;gap:3px;flex-shrink:0;">'+strip+'</div>'
-        +'<span style="font-family:var(--mono);font-size:11px;background:rgba(255,255,255,0.06);padding:2px 8px;border-radius:4px;flex-shrink:0;min-width:32px;text-align:center;">'+l.size+'</span>'
-        +'<span style="font-family:var(--mono);font-size:13px;flex-shrink:0;min-width:48px;">$'+(l.customPrice||l.price)+'</span>'
-        +'<span style="flex:1;color:var(--ink-3);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+desc+more+'</span>'
-        +'<span class="badge2 '+(l.posted?'badge-done':'badge-pend')+'" style="flex-shrink:0;">'+(l.posted?'✓ posted':'pending')+'</span>'
-        +'<button class="btn sm" onclick="event.stopPropagation();openListingModal(\''+l.id+'\')" style="flex-shrink:0;">Edit</button>'
+  if(listingsView==='preview'){
+    // Lightweight: one card per group, ONLY the first photo of the first
+    // listing (i.e. the "1.1", "2.1", "3.1" image), description, sizes summary.
+    // Deploy logic untouched — this only changes how the panel renders.
+    groups.forEach((g,gi)=>{
+      const first=g.items[0]||{};
+      const firstPhoto=(first.photos&&first.photos[0])||null;
+      const sizes=[...new Set(g.items.map(x=>x.size).filter(Boolean))].join(' · ');
+      const posted=g.items.filter(l=>l.posted).length;
+      const descRaw=(first.customDescription||first.description||'');
+      const desc=String(descRaw).replace(/</g,'&lt;');
+      const price=first.customPrice||first.price||'';
+      html+='<div onclick="openListingModal(\''+first.id+'\')" '
+        +'style="display:flex;gap:14px;padding:14px;margin-bottom:10px;border:1px solid var(--glass-border);border-radius:10px;cursor:pointer;transition:border-color 0.15s,background 0.15s;" '
+        +'onmouseover="this.style.borderColor=\'rgba(0,229,160,0.25)\';this.style.background=\'rgba(255,255,255,0.02)\'" '
+        +'onmouseout="this.style.borderColor=\'var(--glass-border)\';this.style.background=\'transparent\'">'
+        +thumb(firstPhoto,90)
+        +'<div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:6px;">'
+          +'<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">'
+            +'<span style="font-size:11px;font-family:var(--mono);text-transform:uppercase;letter-spacing:0.05em;color:var(--green);font-weight:700;">Group '+(gi+1)+'</span>'
+            +(price?'<span style="font-family:var(--mono);font-size:12px;color:var(--ink);">$'+price+'</span>':'')
+            +(sizes?'<span style="font-family:var(--mono);font-size:11px;color:var(--ink-3);">'+sizes+'</span>':'')
+            +'<span class="badge2 '+(posted===g.items.length&&g.items.length>0?'badge-done':'badge-pend')+'" style="margin-left:auto;">'+posted+'/'+g.items.length+' posted</span>'
+          +'</div>'
+          +'<div style="font-size:12px;color:var(--ink-3);line-height:1.5;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;">'+(desc||'<span style="color:var(--ink-4);font-style:italic;">No description</span>')+'</div>'
+        +'</div>'
       +'</div>';
     });
+  } else {
+    // Detailed: every listing as its own row (original behavior).
+    groups.forEach((g,gi)=>{
+      const posted=g.items.filter(l=>l.posted).length;
+      html+='<div style="margin-bottom:14px;border:1px solid var(--glass-border);border-radius:10px;overflow:hidden;">'
+        +'<div style="display:flex;align-items:center;gap:10px;padding:9px 14px;background:rgba(255,255,255,0.025);font-size:11px;font-family:var(--mono);text-transform:uppercase;letter-spacing:0.05em;border-bottom:1px solid var(--glass-border);">'
+          +'<span style="color:var(--green);font-weight:700;">Group '+(gi+1)+'</span>'
+          +'<span style="color:var(--ink-4);">·</span>'
+          +'<span style="color:var(--ink-3);">'+g.items.length+' listing'+(g.items.length===1?'':'s')+'</span>'
+          +'<span style="color:var(--ink-4);">·</span>'
+          +'<span style="color:var(--ink-3);">'+posted+'/'+g.items.length+' posted</span>'
+        +'</div>';
 
-    html+='</div>';
-  });
+      g.items.forEach((l,idx)=>{
+        const photos=(l.photos||[]).slice(0,4);
+        const strip=photos.length?photos.map(p=>thumb(p,34)).join(''):thumb(null,34);
+        const descRaw=(l.customDescription||l.description||'');
+        const desc=String(descRaw).replace(/</g,'&lt;').slice(0,90);
+        const more=descRaw.length>90?'…':'';
+        const isLast=idx===g.items.length-1;
+        html+='<div onclick="openListingModal(\''+l.id+'\')" '
+          +'style="display:flex;align-items:center;gap:12px;padding:10px 14px;cursor:pointer;'
+          +(isLast?'':'border-bottom:1px solid rgba(255,255,255,0.04);')
+          +'transition:background 0.12s;" '
+          +'onmouseover="this.style.background=\'rgba(255,255,255,0.02)\'" '
+          +'onmouseout="this.style.background=\'transparent\'">'
+          +'<div style="display:flex;gap:3px;flex-shrink:0;">'+strip+'</div>'
+          +'<span style="font-family:var(--mono);font-size:11px;background:rgba(255,255,255,0.06);padding:2px 8px;border-radius:4px;flex-shrink:0;min-width:32px;text-align:center;">'+l.size+'</span>'
+          +'<span style="font-family:var(--mono);font-size:13px;flex-shrink:0;min-width:48px;">$'+(l.customPrice||l.price)+'</span>'
+          +'<span style="flex:1;color:var(--ink-3);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+desc+more+'</span>'
+          +'<span class="badge2 '+(l.posted?'badge-done':'badge-pend')+'" style="flex-shrink:0;">'+(l.posted?'✓ posted':'pending')+'</span>'
+          +'<button class="btn sm" onclick="event.stopPropagation();openListingModal(\''+l.id+'\')" style="flex-shrink:0;">Edit</button>'
+        +'</div>';
+      });
+
+      html+='</div>';
+    });
+  }
 
   el.innerHTML=html;
 }
