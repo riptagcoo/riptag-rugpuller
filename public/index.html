@@ -781,6 +781,7 @@ tr:hover td { background: rgba(255,255,255,0.015); cursor: pointer; }
         <div class="card-title" style="margin:0;">Listings</div>
         <div style="display:flex;align-items:center;gap:10px;">
           <span id="listing-count" style="font-size:11px;color:var(--ink-3);font-family:var(--mono);"></span>
+          <button class="btn ghost sm" id="warm-thumbs-btn" onclick="warmSetThumbs()" title="Re-fetch preview images from Drive (does not affect deploy)">🔄 Refresh previews</button>
           <div style="display:inline-flex;background:var(--glass);border:1px solid var(--glass-border);border-radius:8px;overflow:hidden;">
             <button class="view-tab active" id="view-tab-preview" onclick="setListingsView('preview')" style="background:transparent;border:0;color:var(--ink-3);font-size:11px;font-family:var(--mono);padding:6px 12px;cursor:pointer;text-transform:uppercase;letter-spacing:0.05em;">Preview</button>
             <button class="view-tab" id="view-tab-detail" onclick="setListingsView('detail')" style="background:transparent;border:0;color:var(--ink-3);font-size:11px;font-family:var(--mono);padding:6px 12px;cursor:pointer;text-transform:uppercase;letter-spacing:0.05em;">All listings</button>
@@ -2308,12 +2309,17 @@ function renderListingsTable(set){
   // URL (p.thumb) only if the proxy errors.
   const thumb=(p,size)=>{
     const px=size||34;
-    const style='width:'+px+'px;height:'+px+'px;';
+    const style='width:'+px+'px;height:'+px+'px;font-size:'+Math.round(px*0.45)+'px;';
+    // Final-fallback handler: if /api/thumb AND p.thumb both fail, swap the
+    // <img> for a 👕 placeholder so we never render the browser's broken-image icon.
+    const finalFb=' onerror="this.onerror=null;this.outerHTML=\'\\u{1F455}\'"';
     if(p&&p.driveId){
-      const fb=p.thumb?(' onerror="this.onerror=null;this.src=\''+p.thumb.replace(/'/g,'%27')+'\'"'):'';
-      return '<div class="thumb" style="'+style+'"><img src="/api/thumb/'+p.driveId+'" loading="lazy"'+fb+'/></div>';
+      const driveFb=p.thumb
+        ? ' onerror="this.onerror=null;this.src=\''+p.thumb.replace(/'/g,'%27')+'\';this.setAttribute(\'data-fallback\',\'1\');this.onerror=function(){this.onerror=null;this.outerHTML=\'\\u{1F455}\';};"'
+        : finalFb;
+      return '<div class="thumb" style="'+style+'"><img src="/api/thumb/'+p.driveId+'" loading="lazy"'+driveFb+'/></div>';
     }
-    if(p&&p.thumb)return '<div class="thumb" style="'+style+'"><img src="'+p.thumb+'" loading="lazy"/></div>';
+    if(p&&p.thumb)return '<div class="thumb" style="'+style+'"><img src="'+p.thumb+'" loading="lazy"'+finalFb+'/></div>';
     return '<div class="thumb" style="'+style+'">👕</div>';
   };
 
@@ -2688,6 +2694,34 @@ async function buildListings(){
   if(d.error){glog('Error: '+d.error,'err');return;}
   glog('Built '+d.count+' listings from '+d.groups+' groups ('+d.mode+')','ok');
   await loadSets();renderCurrentSet();
+}
+
+async function warmSetThumbs(){
+  if(!currentSetId) return;
+  const btn=document.getElementById('warm-thumbs-btn');
+  const original=btn?btn.textContent:'';
+  if(btn){btn.disabled=true;btn.textContent='Refreshing…';}
+  glog('Re-fetching previews from Drive…','hi');
+  try{
+    const r=await fetch('/api/sets/'+currentSetId+'/warm-thumbs',{method:'POST'});
+    const d=await r.json();
+    if(d.error){
+      glog('Error: '+d.error,'err');
+      if(/not connected|reconnect|tokens/i.test(d.error)) alert(d.error+'\n\nTip: click Connect Drive in the sidebar, approve, then click Refresh previews again.');
+    } else {
+      glog('Warmed '+d.warmed+'/'+d.total+' thumbnails'+(d.failed?' ('+d.failed+' failed)':''),'ok');
+      // Bust browser image cache for /api/thumb URLs
+      document.querySelectorAll('#listings-table-wrap img').forEach(img=>{
+        const src=img.getAttribute('src')||'';
+        if(src.startsWith('/api/thumb/')){
+          img.src=src.split('?')[0]+'?t='+Date.now();
+        }
+      });
+      const set=sets.find(s=>s.id===currentSetId);
+      if(set) renderListingsTable(set);
+    }
+  } catch(e){ glog('Warm failed: '+e.message,'err'); }
+  if(btn){btn.disabled=false;btn.textContent=original;}
 }
 
 async function deploySet(){

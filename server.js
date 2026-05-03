@@ -621,6 +621,36 @@ app.post('/api/sets/:id/build-listings', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// Re-warm the thumbnail cache for an existing set without rebuilding listings.
+// Useful when previews were broken because Drive tokens rotated mid-build, or
+// the cache was wiped. Pulls every unique driveId from set.listings.photos and
+// re-fetches it. Doesn't touch listings, photos, or any deploy state.
+app.post('/api/sets/:id/warm-thumbs', async (req, res) => {
+  try {
+    const r = await pool.query('SELECT data FROM sets WHERE id=$1', [req.params.id]);
+    if (!r.rows.length) return res.status(404).json({ error: 'Set not found' });
+    const set = r.rows[0].data;
+    const ids = new Set();
+    for (const l of (set.listings || [])) {
+      for (const p of (l.photos || [])) if (p && p.driveId) ids.add(p.driveId);
+    }
+    if (!ids.size) return res.json({ ok: true, warmed: 0, note: 'no driveIds on listings — run Build Listings first' });
+    const tokens = await getGoogleTokens(req);
+    if (!tokens) return res.status(401).json({ error: 'Drive not connected — click Connect Drive then try again' });
+    const idArr = [...ids];
+    let warmed = 0, failed = 0;
+    for (let i = 0; i < idArr.length; i += 6) {
+      const batch = idArr.slice(i, i + 6);
+      const results = await Promise.all(batch.map(id =>
+        fetchAndCacheThumb(id, tokens).then(r => r ? 'ok' : 'fail').catch(() => 'fail')
+      ));
+      warmed += results.filter(x => x === 'ok').length;
+      failed += results.filter(x => x === 'fail').length;
+    }
+    res.json({ ok: true, warmed, failed, total: idArr.length });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 app.put('/api/sets/:setId/listings/:listingId', async (req, res) => {
   try {
     const r = await pool.query('SELECT data FROM sets WHERE id=$1', [req.params.setId]);
