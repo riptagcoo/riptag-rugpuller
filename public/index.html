@@ -860,7 +860,10 @@ tr:hover td { background: rgba(255,255,255,0.015); cursor: pointer; }
       <div class="field"><label>Amount Sold (# of orders)</label><input class="input" id="tm-soldcount" type="number" placeholder="0"/></div>
       <div class="field"><label>Authenticator ID / 2FA Backup Code</label><input class="input" id="tm-authid" placeholder="2FA backup code"/></div>
     </div>
-    <div class="field"><label>Date Banned (leave blank if still active)</label><input class="input" id="tm-banned" type="date"/></div>
+    <div class="grid-2">
+      <div class="field"><label>Date Banned (leave blank if still active)</label><input class="input" id="tm-banned" type="date"/></div>
+      <div class="field"><label>Replier Prompt</label><select class="input" id="tm-category"><option value="rugpull">🎯 Rugpull</option><option value="riptag">🌐 Riptag.co</option></select></div>
+    </div>
     <div class="field"><label>Notes</label><textarea class="input" id="tm-notes" rows="3" placeholder="Any notes..."></textarea></div>
     <div class="modal-actions">
       <button class="btn ghost" onclick="closeModal('tracker-modal')">Cancel</button>
@@ -1469,6 +1472,7 @@ function openTrackerModal(id){
   document.getElementById('tm-earnings').value = t?.earnings||'';
   document.getElementById('tm-soldcount').value = (t?.soldCount ?? '') === 0 ? '0' : (t?.soldCount || '');
   document.getElementById('tm-banned').value = t?.bannedAt?t.bannedAt.split('T')[0]:'';
+  document.getElementById('tm-category').value = (t?.category==='riptag')?'riptag':'rugpull';
   document.getElementById('tm-notes').value = t?.notes||'';
   document.getElementById('tracker-modal').classList.remove('hidden');
 }
@@ -1483,6 +1487,7 @@ async function saveTracker(){
     earnings: document.getElementById('tm-earnings').value||'0',
     soldCount: (function(){ const v=document.getElementById('tm-soldcount').value; return v===''?undefined:parseInt(v,10)||0; })(),
     bannedAt: document.getElementById('tm-banned').value||null,
+    category: document.getElementById('tm-category').value||'rugpull',
     notes: document.getElementById('tm-notes').value.trim()
   };
   if(id) await fetch('/api/tracker/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
@@ -1706,6 +1711,15 @@ async function toggleReplierAccount(accountId, enabled){
   glog((enabled?'Auto-reply ON':'Auto-reply PAUSED')+' for account','ok');
 }
 
+async function setAccountCategory(accountId, category){
+  if(category!=='rugpull'&&category!=='riptag') return;
+  await fetch('/api/accounts/'+accountId,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({category})});
+  await loadAccounts();
+  if(currentPage==='replier') loadReplierPage();
+  const acct=accounts.find(a=>a.id===accountId);
+  glog('@'+(acct?.username||accountId)+' → '+(category==='riptag'?'riptag.co prompt':'rugpull prompt'),'ok');
+}
+
 async function loadReplierInbox(accountId){
   const account=accounts.find(a=>a.id===accountId);
   const header=document.getElementById('replier-inbox-header');
@@ -1716,8 +1730,12 @@ async function loadReplierInbox(accountId){
     <div style="font-size:14px;font-weight:700;">@${account.username}</div>
     <div style="font-size:11px;color:var(--ink-3);font-family:var(--mono);margin-top:2px;">${account.replierSettings?.enabled!==false?'● auto-reply active':'○ paused'}</div>
   </div>
-  <div style="display:flex;gap:6px;">
-    <span style="font-size:11px;color:var(--ink-3);font-family:var(--mono);">type: ${account.category||'rugpull'}</span>
+  <div style="display:flex;gap:8px;align-items:center;">
+    <span style="font-size:11px;color:var(--ink-3);font-family:var(--mono);">prompt:</span>
+    <select onchange="setAccountCategory('${account.id}', this.value)" style="font-size:11px;height:26px;padding:2px 8px;border-radius:6px;background:var(--glass);border:1px solid var(--glass-border);color:var(--ink);font-family:var(--mono);">
+      <option value="rugpull"${(account.category||'rugpull')==='rugpull'?' selected':''}>🎯 rugpull</option>
+      <option value="riptag"${account.category==='riptag'?' selected':''}>🌐 riptag.co</option>
+    </select>
   </div>`;
 
   try{
@@ -2140,13 +2158,14 @@ function renderAccounts(){
     const dotColor=banned?'#ff5c5c':(hasCookies?'var(--green)':'var(--ink-3)');
     const dotGlow=banned?'0 0 6px rgba(255,92,92,0.6)':(hasCookies?'0 0 6px var(--green-glow,rgba(0,229,160,0.55))':'none');
     const statusLabel=banned?'Banned':(hasCookies?'Cookies fresh':'No cookies');
+    const cat=a.category==='riptag'?'riptag':'rugpull';
     return `
     <div class="acct-card">
       <div class="acct-header">
         <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${dotColor};box-shadow:${dotGlow};flex-shrink:0;margin-right:2px;" title="${statusLabel}"></span>
         <div class="acct-avatar">${(a.username||'??').substring(0,2).toUpperCase()}</div>
         <div style="flex:1;min-width:0;">
-          <div style="font-weight:600;font-size:13px;">@${a.username||'(no username)'}</div>
+          <div style="font-weight:600;font-size:13px;">@${a.username||'(no username)'} <span class="badge badge-${cat}" style="margin-left:6px;">${cat==='riptag'?'riptag.co':'rugpull'}</span></div>
           <div style="font-size:11px;color:var(--muted);font-family:var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
             <span style="color:${dotColor};">● ${statusLabel}</span>
             · connected ${new Date(a.connectedAt).toLocaleDateString()}
@@ -2154,6 +2173,10 @@ function renderAccounts(){
             ${a.proxy?' · 🔒 Proxy':''}
           </div>
         </div>
+        <select onchange="setAccountCategory('${a.id}', this.value)" title="Replier prompt for this account" style="font-size:12px;height:30px;padding:0 8px;border-radius:8px;background:var(--glass);border:1px solid var(--glass-border);color:var(--ink);">
+          <option value="rugpull"${cat==='rugpull'?' selected':''}>🎯 Rugpull prompt</option>
+          <option value="riptag"${cat==='riptag'?' selected':''}>🌐 Riptag.co prompt</option>
+        </select>
         <button class="btn sm" onclick="openProxyModal('${a.id}','${a.proxy||''}')">🔒 ${a.proxy?'Edit':'Add'} Proxy</button>
         <button class="btn sm" style="color:var(--red);" onclick="deleteAccount('${a.id}')">Remove</button>
       </div>
