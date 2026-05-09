@@ -2256,11 +2256,35 @@ function renderCurrentSet(){
     <div style="display:flex;justify-content:space-between;"><span style="color:var(--muted);">Price</span><span>$${set.price}</span></div>
     <div style="display:flex;justify-content:space-between;"><span style="color:var(--muted);">Sizes</span><span>${(set.sizes||[]).join(', ')}</span></div>
     <div style="display:flex;justify-content:space-between;"><span style="color:var(--muted);">Drive folder</span><span>${set.driveFolderName||'—'}</span></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;"><span style="color:var(--muted);">Drive status</span><span id="drive-status-pill" style="font-size:11px;font-family:var(--mono);color:var(--ink-3);">checking…</span></div>
     <div style="display:flex;justify-content:space-between;"><span style="color:var(--muted);">Account</span><span>${getAccountName(set.accountId)}</span></div>
     <div style="display:flex;justify-content:space-between;"><span style="color:var(--muted);">Schedule</span><span>${set.schedule?.enabled?'📅 '+set.schedule.days.join(', ')+' @ '+set.schedule.time:'Off'}</span></div>
     <div style="display:flex;justify-content:space-between;"><span style="color:var(--muted);">Status</span><span class="badge badge-${set.status}">${set.status}</span></div>
   </div>`;
   renderListingsTable(set);
+  refreshDriveStatusPill();
+}
+
+async function refreshDriveStatusPill(){
+  const pill=document.getElementById('drive-status-pill');
+  if(!pill) return;
+  try{
+    const r=await fetch('/api/drive/check-tokens');
+    const d=await r.json();
+    if(d.ok){
+      pill.style.color='var(--green)';
+      pill.textContent='● connected'+(d.user?.emailAddress?' · '+d.user.emailAddress:'');
+      pill.title=d.hint||'';
+    } else {
+      pill.style.color='#ff5c5c';
+      pill.textContent='● not connected';
+      pill.title=d.hint||d.error||'Drive not connected';
+      pill.style.cursor='help';
+    }
+  } catch(e){
+    pill.style.color='var(--ink-3)';
+    pill.textContent='unknown';
+  }
 }
 
 // Default to the lightweight preview — full table is opt-in.
@@ -2707,9 +2731,17 @@ async function warmSetThumbs(){
     const d=await r.json();
     if(d.error){
       glog('Error: '+d.error,'err');
-      if(/not connected|reconnect|tokens/i.test(d.error)) alert(d.error+'\n\nTip: click Connect Drive in the sidebar, approve, then click Refresh previews again.');
+      if(d.needsReconnect||/not connected|reconnect|invalid_grant|unauthorized|401/i.test(d.error)){
+        if(confirm(d.error+'\n\nReconnect Drive now?')) window.location.href='/auth/google';
+      }
     } else {
-      glog('Warmed '+d.warmed+'/'+d.total+' thumbnails'+(d.failed?' ('+d.failed+' failed)':''),'ok');
+      const tail=d.failed?' ('+d.failed+' failed)':'';
+      glog('Warmed '+d.warmed+'/'+d.total+' thumbnails'+tail,d.failed?'hi':'ok');
+      if(d.failed&&Array.isArray(d.sampleErrors)&&d.sampleErrors.length){
+        for(const s of d.sampleErrors){
+          glog('  · '+s.id.slice(0,12)+'…: '+(s.reason||'unknown'),'err');
+        }
+      }
       // Bust browser image cache for /api/thumb URLs
       document.querySelectorAll('#listings-table-wrap img').forEach(img=>{
         const src=img.getAttribute('src')||'';
@@ -2719,6 +2751,7 @@ async function warmSetThumbs(){
       });
       const set=sets.find(s=>s.id===currentSetId);
       if(set) renderListingsTable(set);
+      refreshDriveStatusPill();
     }
   } catch(e){ glog('Warm failed: '+e.message,'err'); }
   if(btn){btn.disabled=false;btn.textContent=original;}

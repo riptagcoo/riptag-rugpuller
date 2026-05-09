@@ -129,9 +129,36 @@ app.get('/api/stream', (req, res) => {
 });
 
 // ─── GOOGLE AUTH ──────────────────────────────────────────────
+// When the OAuth client auto-refreshes an expired access_token, it emits a
+// `tokens` event with the new credentials. We listen and persist them back
+// to the DB so the *next* request doesn't have to refresh from scratch and
+// (more importantly) so the new access_token doesn't get lost.
+async function persistRefreshedTokens(refreshed, oldTokens) {
+  if (!refreshed) return;
+  const merged = { ...(oldTokens || {}), ...refreshed };
+  // Always keep the refresh_token if Google didn't re-issue one (it usually doesn't)
+  if (!merged.refresh_token && oldTokens && oldTokens.refresh_token) {
+    merged.refresh_token = oldTokens.refresh_token;
+  }
+  try {
+    const exists = await pool.query("SELECT id FROM sets WHERE id='__google_tokens__'");
+    if (exists.rows.length) {
+      await pool.query("UPDATE sets SET data=$1 WHERE id='__google_tokens__'", [JSON.stringify(merged)]);
+    } else {
+      await pool.query("INSERT INTO sets (id, data) VALUES ('__google_tokens__', $1)", [JSON.stringify(merged)]);
+    }
+    console.log('[google] refreshed tokens persisted');
+  } catch (e) { console.error('[google] failed to persist refreshed tokens:', e.message); }
+}
+
 function getOAuth2Client(tokens) {
   const client = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI);
-  if (tokens) client.setCredentials(tokens);
+  if (tokens) {
+    client.setCredentials(tokens);
+    client.on('tokens', (refreshed) => {
+      persistRefreshedTokens(refreshed, tokens).catch(() => {});
+    });
+  }
   return client;
 }
 
@@ -164,22 +191,50 @@ async function getGoogleTokens(req) {
   return null;
 }
 
-// Quick diagnostic — lets you tell from the dashboard whether the
-// persisted Drive tokens are available for agent.js use.
+// Diagnostic — actually probes Drive with the persisted tokens so the user
+// knows whether the connection works end-to-end (not just whether SOMETHING
+// is stored). Returns a human-readable hint for whatever's broken.
 app.get('/api/drive/check-tokens', async (req, res) => {
   const sessionTokens = !!(req.session && req.session.googleTokens);
-  let dbTokens = false;
+  let dbTokens = null;
   try {
-    const r = await pool.query("SELECT id FROM sets WHERE id='__google_tokens__'");
-    dbTokens = r.rows.length > 0;
+    const r = await pool.query("SELECT data FROM sets WHERE id='__google_tokens__'");
+    if (r.rows.length) dbTokens = r.rows[0].data;
   } catch {}
+
+  const tokens = (req.session && req.session.googleTokens) || dbTokens;
+  if (!tokens) {
+    return res.json({
+      ok: false, sessionTokens, dbTokens: !!dbTokens,
+      hint: 'Drive not connected — click Connect Drive in the dashboard.'
+    });
+  }
+
+  const hasRefresh = !!tokens.refresh_token;
+  let driveOk = false, errorMsg = null, userInfo = null;
+  try {
+    const drive = google.drive({ version: 'v3', auth: getOAuth2Client(tokens) });
+    const about = await drive.about.get({ fields: 'user(emailAddress, displayName)' });
+    userInfo = about.data && about.data.user;
+    driveOk = true;
+  } catch (e) {
+    errorMsg = (e && e.message) || String(e);
+  }
+
+  let hint;
+  if (driveOk) hint = 'Drive connected as ' + (userInfo?.emailAddress || 'unknown') + ' — previews should work.';
+  else if (!hasRefresh) hint = 'Drive tokens have NO refresh_token — disconnect and reconnect Drive (use Connect Drive in the sidebar). The first connect must approve the consent screen.';
+  else hint = 'Drive call failed: ' + (errorMsg || 'unknown') + '. Reconnect Drive.';
+
   res.json({
+    ok: driveOk,
     sessionTokens,
-    dbTokens,
-    readyForAgent: dbTokens,
-    hint: dbTokens ? 'agent.js can download full-res photos' :
-          sessionTokens ? 'RECONNECT Drive — your current tokens are in the browser session only, not in the DB. Click Connect Drive again to persist them.' :
-          'Drive not connected at all — click Connect Drive in the dashboard.'
+    dbTokens: !!dbTokens,
+    hasRefresh,
+    user: userInfo,
+    error: errorMsg,
+    readyForAgent: driveOk,
+    hint
   });
 });
 
@@ -190,16 +245,18 @@ app.get('/api/drive/check-tokens', async (req, res) => {
 // the persisted DB tokens, not the session) and writes it to the cache
 // before serving.
 async function fetchAndCacheThumb(driveId, tokens) {
-  if (!tokens) return null;
+  if (!tokens) throw new Error('no tokens');
   const drive = google.drive({ version: 'v3', auth: getOAuth2Client(tokens) });
   let meta;
   try {
     meta = await drive.files.get({ fileId: driveId, fields: 'mimeType, thumbnailLink' });
-  } catch { return null; }
+  } catch (e) {
+    throw new Error('drive.files.get failed: ' + (e?.message || String(e)));
+  }
   let buf = null;
   let ct = 'image/jpeg';
-  // Prefer the small thumbnailLink (no auth needed, ~20KB) over fetching
-  // the full file media — that keeps DB rows small.
+  // Prefer the small thumbnailLink (~20KB). Drive's thumbnailLink is signed
+  // but expires fast, so we still hit it through plain fetch (no auth header).
   if (meta.data.thumbnailLink) {
     try {
       const tr = await fetch(meta.data.thumbnailLink);
@@ -218,7 +275,9 @@ async function fetchAndCacheThumb(driveId, tokens) {
       );
       buf = Buffer.from(dr.data);
       ct = meta.data.mimeType || 'image/jpeg';
-    } catch { return null; }
+    } catch (e) {
+      throw new Error('media fetch failed: ' + (e?.message || String(e)));
+    }
   }
   try {
     await pool.query(
@@ -244,7 +303,9 @@ app.get('/api/thumb/:id', async (req, res) => {
       return res.end(cached.rows[0].data);
     }
     const tokens = await getGoogleTokens(req);
-    const fetched = await fetchAndCacheThumb(req.params.id, tokens);
+    let fetched = null;
+    try { fetched = await fetchAndCacheThumb(req.params.id, tokens); }
+    catch (e) { /* swallow per-request — endpoint only reports HTTP status */ }
     if (!fetched) {
       // Last resort — let the browser try Google's signed thumbnailLink
       // (caller would have to pass ?fallback=...). Otherwise 404.
@@ -637,17 +698,36 @@ app.post('/api/sets/:id/warm-thumbs', async (req, res) => {
     if (!ids.size) return res.json({ ok: true, warmed: 0, note: 'no driveIds on listings — run Build Listings first' });
     const tokens = await getGoogleTokens(req);
     if (!tokens) return res.status(401).json({ error: 'Drive not connected — click Connect Drive then try again' });
+
+    // Pre-flight: probe Drive once before hammering 100s of file fetches.
+    // If this fails we give a clear, single error rather than 100 silent fails.
+    try {
+      const drive = google.drive({ version: 'v3', auth: getOAuth2Client(tokens) });
+      await drive.about.get({ fields: 'user(emailAddress)' });
+    } catch (probe) {
+      const msg = (probe && probe.message) || String(probe);
+      return res.status(401).json({
+        error: 'Drive auth failed: ' + msg + '. Disconnect and reconnect Drive (sidebar → Connect Drive).',
+        needsReconnect: true
+      });
+    }
+
     const idArr = [...ids];
     let warmed = 0, failed = 0;
+    const sampleErrors = [];
     for (let i = 0; i < idArr.length; i += 6) {
       const batch = idArr.slice(i, i + 6);
       const results = await Promise.all(batch.map(id =>
-        fetchAndCacheThumb(id, tokens).then(r => r ? 'ok' : 'fail').catch(() => 'fail')
+        fetchAndCacheThumb(id, tokens)
+          .then(r => r ? { status: 'ok' } : { status: 'fail', id, reason: 'returned null' })
+          .catch(e => ({ status: 'fail', id, reason: e?.message || String(e) }))
       ));
-      warmed += results.filter(x => x === 'ok').length;
-      failed += results.filter(x => x === 'fail').length;
+      for (const r of results) {
+        if (r.status === 'ok') warmed++;
+        else { failed++; if (sampleErrors.length < 3) sampleErrors.push(r); }
+      }
     }
-    res.json({ ok: true, warmed, failed, total: idArr.length });
+    res.json({ ok: true, warmed, failed, total: idArr.length, sampleErrors });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
