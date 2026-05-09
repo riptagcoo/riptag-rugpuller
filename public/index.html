@@ -730,22 +730,14 @@ tr:hover td { background: rgba(255,255,255,0.015); cursor: pointer; }
   <div class="topbar">
     <div class="topbar-left">
       <div class="page-title">Descriptions</div>
-      <div class="page-sub">Templates for mass-edit · Agent picks from here</div>
+      <div class="page-sub">Per-set templates · 🎯 Rugpull / 🌐 Riptag.co · INITIAL & FINAL stages</div>
     </div>
   </div>
   <div class="page-content">
-    <div class="card">
-      <div class="card-title" id="desc-form-title">New template</div>
-      <input class="input" id="desc-name" placeholder="Template name (e.g. Evergreen / Launch / Sale)" style="margin-bottom:10px;" />
-      <textarea class="input" id="desc-body" placeholder="Paste the full description here. Exactly what you want on every listing." style="min-height:140px;width:100%;font-family:inherit;line-height:1.5;"></textarea>
-      <div style="display:flex;gap:8px;margin-top:10px;">
-        <button class="btn primary" id="desc-save-btn" onclick="saveDescriptionTemplate()">Save template</button>
-        <button class="btn ghost" id="desc-cancel-btn" onclick="cancelDescriptionEdit()" style="display:none;">Cancel edit</button>
-      </div>
-    </div>
-    <div class="card" style="margin-top:16px;">
-      <div class="card-title">Saved templates</div>
-      <div id="descriptions-list"><div class="empty" style="padding:20px;">Loading…</div></div>
+    <div id="descriptions-list"><div class="empty" style="padding:20px;">Loading…</div></div>
+    <div class="card" style="margin-top:16px;display:none;" id="legacy-templates-card">
+      <div class="card-title">Legacy templates (no set assigned)</div>
+      <div id="legacy-templates-list"></div>
     </div>
   </div>
 </div>
@@ -1195,12 +1187,12 @@ function openQuickRefreshModal(photoSetId){
   const photoCount=(set.listings||[]).reduce((a,l)=>a+(l.photos?.length||0),0);
   if(!photoCount){alert('Build listings first — this set has no photos.');return;}
 
-  const live=accounts.filter(a=>Array.isArray(a.cookies)&&a.cookies.length);
-  if(!live.length){alert('No accounts with fresh cookies. Connect via the Chrome extension.');return;}
+  const live=accounts.filter(a=>Array.isArray(a.cookies)&&a.cookies.length&&!isAccountBanned(a));
+  if(!live.length){alert('No active accounts with fresh cookies. Connect via the Chrome extension.');return;}
 
   // Default to the set's assigned account if it has cookies, else the first
   const defaultId=set.accountId&&live.find(a=>a.id===set.accountId)?set.accountId:live[0].id;
-  const accountList=live.map(a=>'<option value="'+a.id+'"'+(a.id===defaultId?' selected':'')+'>@'+a.username+(a.status==='banned'?' (banned)':'')+'</option>').join('');
+  const accountList=live.map(a=>'<option value="'+a.id+'"'+(a.id===defaultId?' selected':'')+'>@'+a.username+'</option>').join('');
 
   const html=`<div class="modal-overlay" id="qr-modal">
     <div class="modal">
@@ -1233,11 +1225,11 @@ async function confirmQuickRefresh(photoSetId){
 function openMassEditLiveModal(setId){
   const set=sets.find(s=>s.id===setId);
   if(!set){alert('Set not found');return;}
-  const live=accounts.filter(a=>Array.isArray(a.cookies)&&a.cookies.length);
-  if(!live.length){alert('No accounts with fresh cookies.');return;}
+  const live=accounts.filter(a=>Array.isArray(a.cookies)&&a.cookies.length&&!isAccountBanned(a));
+  if(!live.length){alert('No active accounts with fresh cookies.');return;}
 
   const defaultId=set.accountId&&live.find(a=>a.id===set.accountId)?set.accountId:live[0].id;
-  const accountList=live.map(a=>'<option value="'+a.id+'"'+(a.id===defaultId?' selected':'')+'>@'+a.username+(a.status==='banned'?' (banned)':'')+'</option>').join('');
+  const accountList=live.map(a=>'<option value="'+a.id+'"'+(a.id===defaultId?' selected':'')+'>@'+a.username+'</option>').join('');
 
   const html=`<div class="modal-overlay" id="mel-modal">
     <div class="modal">
@@ -1390,19 +1382,27 @@ async function renderTracker(){
 
     el.innerHTML = trackerData.map(t => {
       const isExpanded = expandedTrackers.has(t.id);
+      const isRiptag = t.category === 'riptag';
       const banDate = t.bannedAt ? new Date(t.bannedAt) : null;
-      const payoutDate = banDate ? new Date(banDate.getTime() + 30*24*60*60*1000) : null;
+      // Riptag.co accounts auto-pay (sales go to the website), so no 30-day
+      // hold and no "pending payout" — just show paid/green.
+      const payoutDate = (!isRiptag && banDate) ? new Date(banDate.getTime() + 30*24*60*60*1000) : null;
       const payoutDue = payoutDate ? payoutDate <= new Date() : false;
       const daysUntilPayout = payoutDate ? Math.max(0, Math.ceil((payoutDate - new Date()) / (1000*60*60*24))) : null;
-      const statusBadge = t.bannedAt 
+      const statusBadge = t.bannedAt
         ? '<span class="badge status-banned">✕ Banned</span>'
         : '<span class="badge status-live">● Active</span>';
-
-      const payoutBadge = payoutDate 
-        ? payoutDue 
-          ? '<span class="badge" style="background:rgba(0,229,160,0.15);color:var(--green);border:1px solid rgba(0,229,160,0.3);">💰 Payout Due</span>'
-          : `<span class="badge" style="background:var(--amber-dim);color:var(--amber);border:1px solid rgba(251,191,36,0.2);">Payout in ${daysUntilPayout}d</span>`
+      const categoryBadge = t.category
+        ? '<span class="badge badge-'+t.category+'">'+(t.category==='riptag'?'🌐 riptag.co':'🎯 rugpull')+'</span>'
         : '';
+
+      const payoutBadge = isRiptag
+        ? '<span class="badge" style="background:rgba(0,229,160,0.15);color:var(--green);border:1px solid rgba(0,229,160,0.3);">✓ Auto-paid</span>'
+        : (payoutDate
+            ? payoutDue
+              ? '<span class="badge" style="background:rgba(0,229,160,0.15);color:var(--green);border:1px solid rgba(0,229,160,0.3);">💰 Payout Due</span>'
+              : `<span class="badge" style="background:var(--amber-dim);color:var(--amber);border:1px solid rgba(251,191,36,0.2);">Payout in ${daysUntilPayout}d</span>`
+            : '');
 
       const expandedHTML = isExpanded ? `
         <div style="padding:0 22px 20px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;border-top:1px solid var(--glass-border);padding-top:16px;margin-top:0;">
@@ -1424,7 +1424,7 @@ async function renderTracker(){
           </div>
           <div>
             <div style="font-size:10px;color:var(--ink-3);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:6px;">Payout Expected</div>
-            <div style="font-size:13px;color:${payoutDue?'var(--green)':'var(--amber)'};">${payoutDate?payoutDate.toLocaleDateString():'—'}</div>
+            <div style="font-size:13px;color:${isRiptag?'var(--green)':(payoutDue?'var(--green)':'var(--amber)')};">${isRiptag?'✓ Auto-paid (riptag.co)':(payoutDate?payoutDate.toLocaleDateString():'—')}</div>
           </div>
           <div>
             <div style="font-size:10px;color:var(--ink-3);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:6px;">Estimated Earnings</div>
@@ -1438,15 +1438,16 @@ async function renderTracker(){
   <div style="display:flex;align-items:center;gap:16px;padding:18px 22px;cursor:pointer;" onclick="toggleTracker('${t.id}')">
     <div style="width:42px;height:42px;border-radius:11px;background:linear-gradient(135deg,rgba(0,229,160,0.1),rgba(167,139,250,0.08));border:1px solid var(--glass-border);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:var(--ink-2);flex-shrink:0;">${t.username?t.username.substring(0,2).toUpperCase():'??'}</div>
     <div style="flex:1;min-width:0;">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap;">
         <span style="font-size:15px;font-weight:700;letter-spacing:-0.02em;">@${t.username||'unknown'}</span>
         ${statusBadge}
+        ${categoryBadge}
         ${payoutBadge}
       </div>
       <div style="display:flex;gap:24px;">
         <div><div style="font-size:10px;color:var(--ink-3);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:2px;">Earned</div><div style="font-size:13px;font-weight:700;color:var(--green);">$${parseFloat(t.earnings||0).toFixed(0)}</div></div>
         <div><div style="font-size:10px;color:var(--ink-3);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:2px;">Banned</div><div style="font-size:13px;">${banDate?banDate.toLocaleDateString():'—'}</div></div>
-        <div><div style="font-size:10px;color:var(--ink-3);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:2px;">Payout</div><div style="font-size:13px;color:${payoutDate?(payoutDue?'var(--green)':'var(--amber)'):'var(--ink-3)'};">${payoutDate?payoutDate.toLocaleDateString():'—'}</div></div>
+        <div><div style="font-size:10px;color:var(--ink-3);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:2px;">Payout</div><div style="font-size:13px;color:${isRiptag?'var(--green)':(payoutDate?(payoutDue?'var(--green)':'var(--amber)'):'var(--ink-3)')};">${isRiptag?'auto-paid':(payoutDate?payoutDate.toLocaleDateString():'—')}</div></div>
       </div>
     </div>
     <div style="display:flex;gap:6px;flex-shrink:0;" onclick="event.stopPropagation();">
@@ -2011,9 +2012,22 @@ function showPage(page,setId){
   document.querySelectorAll('.sb-set-item').forEach(el=>el.classList.toggle('active',el.dataset.id===setId));
 }
 
-// ─── DESCRIPTION TEMPLATES ────────────────────────────────────
+// ─── DESCRIPTION TEMPLATES (per-set matrix) ──────────────────
+// Each set gets 4 template slots: { rugpull × initial, rugpull × final,
+// riptag × initial, riptag × final }. Stored server-side keyed by
+// (set_id, category, stage). The descriptions page renders one accordion
+// card per set; expanding it shows the 4 textareas. Saving any slot calls
+// the upsert endpoint. Empty body deletes the slot.
 let descriptionTemplates = [];
-let editingDescriptionId = null;
+let expandedDescSets = new Set();
+let descActiveCatBySet = {}; // setId -> 'rugpull' | 'riptag'
+const DESC_STAGES = ['initial','final'];
+
+function descKey(setId, category, stage){ return setId+'__'+category+'__'+stage; }
+
+function findDescTemplate(setId, category, stage){
+  return (descriptionTemplates||[]).find(t => t.setId===setId && t.category===category && t.stage===stage);
+}
 
 async function loadDescriptions(){
   const listEl = document.getElementById('descriptions-list');
@@ -2023,75 +2037,142 @@ async function loadDescriptions(){
   }catch(e){
     descriptionTemplates = [];
   }
-  if(!descriptionTemplates.length){
-    listEl.innerHTML = '<div class="empty" style="padding:20px;">No templates yet. Create your first one above.</div>';
+  // Make sure we have the latest sets
+  if(!sets || !sets.length){ try{ await loadSets(); }catch{} }
+  renderDescriptionsList();
+}
+
+function renderDescriptionsList(){
+  const listEl = document.getElementById('descriptions-list');
+  if(!listEl) return;
+  if(!sets || !sets.length){
+    listEl.innerHTML = '<div class="empty" style="padding:20px;"><div class="empty-ico">📦</div>No sets yet — create a set first and templates will appear here automatically.</div>';
     return;
   }
-  listEl.innerHTML = descriptionTemplates.map(t => {
-    const safeName = (t.name||'').replace(/</g,'&lt;');
-    const preview = (t.body||'').replace(/</g,'&lt;').slice(0,240);
-    const overflow = (t.body||'').length > 240 ? '…' : '';
-    return `
-      <div class="card" style="margin-top:10px;padding:14px;">
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
-          <div style="font-weight:600;flex:1;">${safeName}</div>
-          <button class="btn ghost sm" onclick="editDescriptionTemplate('${t.id}')">Edit</button>
-          <button class="btn sm danger" onclick="deleteDescriptionTemplate('${t.id}')">🗑</button>
-        </div>
-        <div style="font-size:12px;color:var(--ink-3);line-height:1.6;white-space:pre-wrap;">${preview}${overflow}</div>
-      </div>`;
-  }).join('');
+  // Sort sets newest-first
+  const sortedSets = [...sets].sort((a,b)=>{
+    const da=new Date(b.createdAt||0)-new Date(a.createdAt||0);
+    return isNaN(da)?0:da;
+  });
+  listEl.innerHTML = sortedSets.map(s => renderDescSetCard(s)).join('');
+
+  // Legacy templates (no setId)
+  const legacy = (descriptionTemplates||[]).filter(t => !t.setId);
+  const legacyCard = document.getElementById('legacy-templates-card');
+  const legacyList = document.getElementById('legacy-templates-list');
+  if(legacy.length && legacyCard && legacyList){
+    legacyCard.style.display='';
+    legacyList.innerHTML = legacy.map(t => {
+      const preview = (t.body||'').replace(/</g,'&lt;').slice(0,240);
+      const overflow = (t.body||'').length > 240 ? '…' : '';
+      return '<div class="card" style="margin-top:10px;padding:14px;">'
+        +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">'
+          +'<div style="font-weight:600;flex:1;">'+(t.name||'').replace(/</g,'&lt;')+'</div>'
+          +'<button class="btn sm danger" onclick="deleteDescriptionTemplate(\''+t.id+'\')">🗑</button>'
+        +'</div>'
+        +'<div style="font-size:12px;color:var(--ink-3);line-height:1.6;white-space:pre-wrap;">'+preview+overflow+'</div>'
+      +'</div>';
+    }).join('');
+  } else if(legacyCard){
+    legacyCard.style.display='none';
+  }
 }
 
-async function saveDescriptionTemplate(){
-  const name = document.getElementById('desc-name').value.trim();
-  const body = document.getElementById('desc-body').value;
-  if(!name){ alert('Give the template a name.'); return; }
-  if(!body.trim()){ alert('Description body is empty.'); return; }
+function renderDescSetCard(s){
+  const isOpen = expandedDescSets.has(s.id);
+  const cat = descActiveCatBySet[s.id] || s.category || 'rugpull';
+  const slotCount = (descriptionTemplates||[]).filter(t => t.setId===s.id && (t.body||'').trim()).length;
+  const countLabel = slotCount+'/4 slots filled';
+
+  let body = '';
+  if(isOpen){
+    body =
+      '<div style="padding:0 18px 18px;">'
+      +'<div style="display:inline-flex;background:var(--glass);border:1px solid var(--glass-border);border-radius:8px;overflow:hidden;margin-bottom:14px;">'
+        +'<button onclick="setDescCategory(\''+s.id+'\',\'rugpull\')" class="view-tab '+(cat==='rugpull'?'active':'')+'" style="background:transparent;border:0;color:var(--ink-3);font-size:11px;font-family:var(--mono);padding:7px 14px;cursor:pointer;text-transform:uppercase;letter-spacing:0.05em;">🎯 Rugpull</button>'
+        +'<button onclick="setDescCategory(\''+s.id+'\',\'riptag\')" class="view-tab '+(cat==='riptag'?'active':'')+'" style="background:transparent;border:0;color:var(--ink-3);font-size:11px;font-family:var(--mono);padding:7px 14px;cursor:pointer;text-transform:uppercase;letter-spacing:0.05em;">🌐 Riptag.co</button>'
+      +'</div>'
+      +DESC_STAGES.map(stage=>renderDescSlot(s.id, cat, stage)).join('')
+      +'</div>';
+  }
+  return '<div class="card" style="margin-bottom:12px;padding:0;overflow:hidden;">'
+    +'<div onclick="toggleDescSet(\''+s.id+'\')" style="display:flex;align-items:center;gap:14px;padding:14px 18px;cursor:pointer;border-bottom:'+(isOpen?'1px solid var(--glass-border)':'none')+';">'
+      +'<span style="font-size:18px;">'+(s.category==='riptag'?'🌐':'🎯')+'</span>'
+      +'<div style="flex:1;min-width:0;">'
+        +'<div style="font-weight:600;font-size:14px;">'+(s.name||'(unnamed)').replace(/</g,'&lt;')+'</div>'
+        +'<div style="font-size:11px;color:var(--ink-3);font-family:var(--mono);">'+countLabel+'</div>'
+      +'</div>'
+      +'<span style="color:var(--ink-3);font-size:13px;">'+(isOpen?'▾':'▸')+'</span>'
+    +'</div>'
+    +body
+    +'</div>';
+}
+
+function renderDescSlot(setId, category, stage){
+  const t = findDescTemplate(setId, category, stage) || {};
+  const body = (t.body||'').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+  const filled = (t.body||'').trim().length>0;
+  const stageLabel = stage==='initial'?'INITIAL':'FINAL';
+  const stageHint = stage==='initial'?'First description used at deploy time' : 'Replacement description used after the bundle has been live';
+  const dirtyId = 'desc-slot-'+descKey(setId,category,stage);
+  return '<div style="margin-bottom:12px;border:1px solid var(--glass-border);border-radius:10px;padding:12px 14px;">'
+    +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">'
+      +'<span style="font-size:11px;font-family:var(--mono);text-transform:uppercase;letter-spacing:0.07em;color:'+(filled?'var(--green)':'var(--ink-3)')+';font-weight:700;">'+stageLabel+'</span>'
+      +'<span style="font-size:11px;color:var(--ink-4);">'+stageHint+'</span>'
+      +'<div style="margin-left:auto;display:flex;gap:6px;">'
+        +(filled?'<button class="btn sm danger" onclick="clearDescSlot(\''+setId+'\',\''+category+'\',\''+stage+'\')">Clear</button>':'')
+        +'<button class="btn sm primary" onclick="saveDescSlot(\''+setId+'\',\''+category+'\',\''+stage+'\')">Save</button>'
+      +'</div>'
+    +'</div>'
+    +'<textarea class="input" id="'+dirtyId+'" rows="6" style="min-height:120px;width:100%;font-family:inherit;line-height:1.5;" placeholder="Paste the '+stageLabel.toLowerCase()+' description for this set on '+(category==='riptag'?'riptag.co':'rugpull')+'…">'+body+'</textarea>'
+  +'</div>';
+}
+
+function toggleDescSet(setId){
+  if(expandedDescSets.has(setId)) expandedDescSets.delete(setId);
+  else expandedDescSets.add(setId);
+  renderDescriptionsList();
+}
+
+function setDescCategory(setId, category){
+  descActiveCatBySet[setId] = category;
+  renderDescriptionsList();
+}
+
+async function saveDescSlot(setId, category, stage){
+  const id = 'desc-slot-'+descKey(setId,category,stage);
+  const ta = document.getElementById(id);
+  if(!ta) return;
+  const body = ta.value;
   try{
-    if(editingDescriptionId){
-      await fetch('/api/description-templates/' + encodeURIComponent(editingDescriptionId), {
-        method:'PUT',
-        headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ name, body })
-      });
-    } else {
-      await fetch('/api/description-templates', {
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ name, body })
-      });
-    }
-    cancelDescriptionEdit();
+    const r = await fetch('/api/description-templates/upsert',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ setId, category, stage, body })
+    });
+    const d = await r.json();
+    if(d.error){ alert('Save failed: '+d.error); return; }
+    glog('Saved '+(category==='riptag'?'riptag.co':'rugpull')+' · '+stage,'ok');
     await loadDescriptions();
-  }catch(e){ alert('Save failed: ' + e.message); }
+  }catch(e){ alert('Save failed: '+e.message); }
 }
 
-function editDescriptionTemplate(id){
-  const t = descriptionTemplates.find(x => x.id === id);
-  if(!t) return;
-  editingDescriptionId = id;
-  document.getElementById('desc-form-title').textContent = 'Edit: ' + t.name;
-  document.getElementById('desc-name').value = t.name || '';
-  document.getElementById('desc-body').value = t.body || '';
-  document.getElementById('desc-save-btn').textContent = 'Update template';
-  document.getElementById('desc-cancel-btn').style.display = '';
-  window.scrollTo({ top:0, behavior:'smooth' });
-}
-
-function cancelDescriptionEdit(){
-  editingDescriptionId = null;
-  document.getElementById('desc-form-title').textContent = 'New template';
-  document.getElementById('desc-name').value = '';
-  document.getElementById('desc-body').value = '';
-  document.getElementById('desc-save-btn').textContent = 'Save template';
-  document.getElementById('desc-cancel-btn').style.display = 'none';
+async function clearDescSlot(setId, category, stage){
+  if(!confirm('Clear this template slot?')) return;
+  try{
+    await fetch('/api/description-templates/upsert',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ setId, category, stage, body: '' })
+    });
+    glog('Cleared '+(category==='riptag'?'riptag.co':'rugpull')+' · '+stage,'ok');
+    await loadDescriptions();
+  }catch(e){ alert('Clear failed: '+e.message); }
 }
 
 async function deleteDescriptionTemplate(id){
   if(!confirm('Delete this template?')) return;
   await fetch('/api/description-templates/' + encodeURIComponent(id), { method:'DELETE' });
-  if(editingDescriptionId === id) cancelDescriptionEdit();
   await loadDescriptions();
 }
 
@@ -2143,6 +2224,7 @@ function renderOverviewSets(){
       +'<span class="badge badge-'+s.category+'">'+catBadge+'</span>'
       +(deployedLabel?'<span class="badge" style="background:rgba(0,229,160,0.10);color:var(--green);border:1px solid rgba(0,229,160,0.22);font-family:var(--mono);" title="Last deployed">📅 '+deployedLabel+'</span>':'<span class="badge" style="background:rgba(255,255,255,0.04);color:var(--ink-3);border:1px solid var(--glass-border);font-family:var(--mono);" title="Never deployed">— never deployed</span>')
       +'<span class="badge badge-'+s.status+'">'+s.status+'</span>'
+      +'<button class="btn sm" onclick="event.stopPropagation();duplicateSet(\''+s.id+'\')" title="Duplicate this set into the other category">⎘ Dup</button>'
       +'<button class="btn sm danger" onclick="event.stopPropagation();deleteSet(\''+s.id+'\')">🗑</button>'
       +'</div></div>';
   }).join('');
@@ -2204,7 +2286,7 @@ function renderSchedule(){
   try{sched=JSON.parse(localStorage.getItem('riptag_schedule')||'{}');}catch{}
 
   const setOptions='<option value="">— No deploy —</option>'+sets.map(s=>'<option value="'+s.id+'">'+s.name+'</option>').join('');
-  const acctOptions='<option value="">— Select account —</option>'+accounts.map(a=>'<option value="'+a.id+'">@'+a.username+'</option>').join('');
+  const acctOptions='<option value="">— Select account —</option>'+deployableAccounts().map(a=>'<option value="'+a.id+'">@'+a.username+'</option>').join('');
 
   el.innerHTML='<div class="card"><div class="card-title">Weekly Deploy Schedule (MST)</div>'
     +days.map(day=>{
@@ -2266,7 +2348,10 @@ function renderCurrentSet(){
     <div style="display:flex;justify-content:space-between;"><span style="color:var(--muted);">Account</span><span>${getAccountName(set.accountId)}</span></div>
     <div style="display:flex;justify-content:space-between;"><span style="color:var(--muted);">Schedule</span><span>${set.schedule?.enabled?'📅 '+set.schedule.days.join(', ')+' @ '+set.schedule.time:'Off'}</span></div>
     <div style="display:flex;justify-content:space-between;"><span style="color:var(--muted);">Status</span><span class="badge badge-${set.status}">${set.status}</span></div>
-    <div style="display:flex;justify-content:space-between;"><span style="color:var(--muted);">Last deployed</span><span style="font-family:var(--mono);font-size:12px;color:${deployedLabel?'var(--green)':'var(--ink-3)'};">${deployedLabel?'📅 '+deployedLabel:'never'}</span></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;"><span style="color:var(--muted);">Last deployed</span>${deployedLabel
+      ? '<span class="badge" style="background:rgba(0,229,160,0.14);color:var(--green);border:1px solid rgba(0,229,160,0.32);font-family:var(--mono);font-weight:600;">📅 '+deployedLabel+'</span>'
+      : '<span class="badge" style="background:rgba(255,255,255,0.04);color:var(--ink-3);border:1px solid var(--glass-border);font-family:var(--mono);">— never</span>'
+    }</div>
   </div>`;
   renderListingsTable(set);
   refreshDriveStatusPill();
@@ -2619,6 +2704,19 @@ function getAccountName(accountId){
   return a?('@'+a.username):'—';
 }
 
+// True if an account is banned. Used to filter out banned accounts from any
+// "pick a target account" dropdown — you can't deploy to a banned shop.
+function isAccountBanned(a){
+  if(!a) return false;
+  return a.status==='banned' || !!a.bannedAt;
+}
+
+// Standard list of accounts that are valid as a deploy/post target.
+// Banned shops are excluded.
+function deployableAccounts(){
+  return (Array.isArray(accounts)?accounts:[]).filter(a=>!isAccountBanned(a));
+}
+
 // Pull a "last deployed" date from a set. Prefers set.deployedAt; if absent
 // (legacy sets that were deployed before the field existed), falls back to
 // any listing.deployedAt or the set's createdAt if every listing is posted.
@@ -2648,6 +2746,23 @@ async function deleteSet(setId){
     if(currentSetId===setId){currentSetId=null;showPage('overview');}
     await loadSets();renderOverview();
   }catch(e){alert('Delete failed: '+e.message);}
+}
+
+async function duplicateSet(setId){
+  const set=sets.find(s=>s.id===setId);
+  if(!set){alert('Set not found');return;}
+  const target=set.category==='riptag'?'rugpull':'riptag';
+  const targetLabel=target==='riptag'?'🌐 riptag.co':'🎯 rugpull';
+  if(!confirm(`Duplicate "${set.name}" into ${targetLabel}?\n\nThe copy keeps the same Drive folder, photos, sizes, and price. You\'ll edit the description and pick a target account on the new set.`)) return;
+  try{
+    const r=await fetch('/api/sets/'+setId+'/duplicate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({targetCategory:target})});
+    const d=await r.json();
+    if(d.error){alert('Duplicate failed: '+d.error);return;}
+    glog('Duplicated → '+d.name,'ok');
+    await loadSets();renderOverview();
+    // Open the new set so the user can edit
+    if(d.id) showPage('set',d.id);
+  }catch(e){alert('Duplicate failed: '+e.message);}
 }
 
 // ─── DRIVE FOLDER PICKER ──────────────────────────────────────
@@ -2952,13 +3067,14 @@ function openMultiDeployModal(){
   if(!set)return;
   const selectedAccounts=set.deployAccounts||[set.accountId].filter(Boolean);
   const el=document.getElementById('multi-deploy-accounts');
-  if(!accounts.length){el.innerHTML='<div style="color:var(--ink-3);font-size:13px;">No accounts connected.</div>';document.getElementById('multi-deploy-modal').classList.remove('hidden');return;}
-  el.innerHTML=accounts.map(a=>`
+  const eligible=deployableAccounts();
+  if(!eligible.length){el.innerHTML='<div style="color:var(--ink-3);font-size:13px;">No active accounts available (banned accounts are hidden).</div>';document.getElementById('multi-deploy-modal').classList.remove('hidden');return;}
+  el.innerHTML=eligible.map(a=>`
     <label style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--glass);border:1px solid var(--glass-border);border-radius:10px;cursor:pointer;">
       <input type="checkbox" value="${a.id}" ${selectedAccounts.includes(a.id)?'checked':''} style="width:16px;height:16px;accent-color:var(--green);cursor:pointer;"/>
       <div>
         <div style="font-weight:600;font-size:13px;">@${a.username}</div>
-        <div style="font-size:11px;color:var(--ink-3);font-family:var(--mono);">${a.status==='banned'?'✕ Banned':a.status==='live'?'● Live':'? Unknown'}</div>
+        <div style="font-size:11px;color:var(--ink-3);font-family:var(--mono);">${a.status==='live'?'● Live':'? Unknown'}</div>
       </div>
     </label>`).join('');
   document.getElementById('multi-deploy-modal').classList.remove('hidden');
@@ -3033,7 +3149,7 @@ async function openEditSetModal(){
 }
 
 function toggleSchedule(){schedEnabled=!schedEnabled;document.getElementById('fm-sched-toggle').classList.toggle('on',schedEnabled);document.getElementById('fm-sched-label').textContent=schedEnabled?'Enabled':'Disabled';document.getElementById('fm-sched-options').classList.toggle('hidden',!schedEnabled);}
-function populateAccountDropdown(){const sel=document.getElementById('fm-account');sel.innerHTML='<option value="">— Select account —</option>'+accounts.map(a=>'<option value="'+a.id+'">@'+a.username+'</option>').join('');}
+function populateAccountDropdown(){const sel=document.getElementById('fm-account');if(!sel)return;sel.innerHTML='<option value="">— Select account —</option>'+deployableAccounts().map(a=>'<option value="'+a.id+'">@'+a.username+'</option>').join('');}
 
 async function saveSet(){
   const sizes=[...document.querySelectorAll('#fm-sizes .chip.on')].map(c=>c.dataset.size);

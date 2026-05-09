@@ -44,6 +44,15 @@ async function initDB() {
       created_at TIMESTAMPTZ DEFAULT NOW(),
       updated_at TIMESTAMPTZ DEFAULT NOW()
     );
+    -- Columns added later — link a template to a specific set / category /
+    -- stage so the dashboard can render a matrix (set × category × stage)
+    -- instead of a flat list. Nullable so legacy templates keep working.
+    ALTER TABLE description_templates ADD COLUMN IF NOT EXISTS set_id TEXT;
+    ALTER TABLE description_templates ADD COLUMN IF NOT EXISTS category TEXT;
+    ALTER TABLE description_templates ADD COLUMN IF NOT EXISTS stage TEXT;
+    CREATE UNIQUE INDEX IF NOT EXISTS desc_tpl_unique_slot
+      ON description_templates(set_id, category, stage)
+      WHERE set_id IS NOT NULL;
     CREATE TABLE IF NOT EXISTS thumb_cache (
       drive_id TEXT PRIMARY KEY,
       content_type TEXT,
@@ -477,6 +486,48 @@ app.put('/api/sets/:id', async (req, res) => {
   res.json(updated);
 });
 
+// Duplicate a set into a different category. Used to mirror a rugpull set
+// into a riptag.co set (or vice versa). Copies name (with category suffix),
+// description, sizes, price, drive folder, listings — but resets posted/
+// deployedAt so the duplicate starts fresh. Optional `targetCategory` in body
+// (defaults to "riptag" if source was rugpull, else "rugpull").
+app.post('/api/sets/:id/duplicate', async (req, res) => {
+  try {
+    const r = await pool.query('SELECT data FROM sets WHERE id=$1', [req.params.id]);
+    if (!r.rows.length) return res.status(404).json({ error: 'Set not found' });
+    const src = r.rows[0].data;
+    const targetCategory = (req.body && req.body.targetCategory)
+      || (src.category === 'riptag' ? 'rugpull' : 'riptag');
+    const newId = uuid();
+    // Re-stamp listing IDs and clear posted/deploy state so the duplicate
+    // starts at zero. Drive photo references are preserved (same Drive folder).
+    const newListings = (src.listings || []).map(l => ({
+      ...l,
+      id: uuid(),
+      groupId: l.groupId, // groupings stay the same
+      posted: false,
+      depopUrl: null,
+      customDescription: null,
+      customPrice: null
+    }));
+    const dupe = {
+      ...src,
+      id: newId,
+      name: src.name + (targetCategory === 'riptag' ? ' (riptag.co)' : ' (rugpull)'),
+      category: targetCategory,
+      accountId: null,                  // user picks the target account
+      deployAccounts: [],
+      listings: newListings,
+      status: 'draft',
+      deployedAt: null,
+      createdAt: new Date().toISOString()
+    };
+    await pool.query('INSERT INTO sets (id, data) VALUES ($1, $2)', [newId, JSON.stringify(dupe)]);
+    broadcast({ type: 'set', action: 'created', id: newId });
+    res.json(dupe);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 app.delete('/api/sets/:id', async (req, res) => {
   try {
     const id = req.params.id;
@@ -877,40 +928,93 @@ app.delete('/api/accounts/:id', async (req, res) => {
 app.get('/api/description-templates', async (req, res) => {
   try {
     const r = await pool.query(
-      'SELECT id, name, body, created_at, updated_at FROM description_templates ORDER BY updated_at DESC'
+      'SELECT id, name, body, set_id, category, stage, created_at, updated_at FROM description_templates ORDER BY updated_at DESC'
     );
-    res.json(r.rows);
+    res.json(r.rows.map(row => ({
+      id: row.id, name: row.name, body: row.body,
+      setId: row.set_id, category: row.category, stage: row.stage,
+      created_at: row.created_at, updated_at: row.updated_at
+    })));
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.post('/api/description-templates', async (req, res) => {
   try {
-    const { name, body } = req.body || {};
+    const { name, body, setId, category, stage } = req.body || {};
     if (!name || !String(name).trim()) return res.status(400).json({ error: 'name required' });
     if (!body || !String(body).trim()) return res.status(400).json({ error: 'body required' });
     const id = uuid();
     await pool.query(
-      'INSERT INTO description_templates (id, name, body) VALUES ($1, $2, $3)',
-      [id, String(name).trim(), String(body)]
+      'INSERT INTO description_templates (id, name, body, set_id, category, stage) VALUES ($1, $2, $3, $4, $5, $6)',
+      [id, String(name).trim(), String(body), setId || null, category || null, stage || null]
     );
-    res.json({ id, name: String(name).trim(), body: String(body) });
+    res.json({ id, name: String(name).trim(), body: String(body), setId: setId || null, category: category || null, stage: stage || null });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.put('/api/description-templates/:id', async (req, res) => {
   try {
-    const { name, body } = req.body || {};
+    const { name, body, setId, category, stage } = req.body || {};
     const r = await pool.query(
       `UPDATE description_templates
-         SET name = COALESCE($1, name),
-             body = COALESCE($2, body),
+         SET name     = COALESCE($1, name),
+             body     = COALESCE($2, body),
+             set_id   = COALESCE($4, set_id),
+             category = COALESCE($5, category),
+             stage    = COALESCE($6, stage),
              updated_at = NOW()
        WHERE id = $3
-       RETURNING id, name, body, updated_at`,
-      [name != null ? String(name).trim() : null, body != null ? String(body) : null, req.params.id]
+       RETURNING id, name, body, set_id, category, stage, updated_at`,
+      [name != null ? String(name).trim() : null,
+       body != null ? String(body) : null,
+       req.params.id,
+       setId != null ? String(setId) : null,
+       category != null ? String(category) : null,
+       stage != null ? String(stage) : null]
     );
     if (!r.rows.length) return res.status(404).json({ error: 'Not found' });
-    res.json(r.rows[0]);
+    const row = r.rows[0];
+    res.json({ id: row.id, name: row.name, body: row.body, setId: row.set_id, category: row.category, stage: row.stage, updated_at: row.updated_at });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Upsert by (setId, category, stage) — used by the new descriptions UI.
+// One row per (set × category × stage) slot. If body is empty, clears the
+// slot by deleting the row.
+app.post('/api/description-templates/upsert', async (req, res) => {
+  try {
+    const { setId, category, stage, body, name } = req.body || {};
+    if (!setId || !category || !stage) return res.status(400).json({ error: 'setId, category, stage required' });
+    const trimmedBody = (body == null) ? '' : String(body);
+    if (!trimmedBody.trim()) {
+      await pool.query(
+        'DELETE FROM description_templates WHERE set_id=$1 AND category=$2 AND stage=$3',
+        [setId, category, stage]
+      );
+      return res.json({ ok: true, cleared: true });
+    }
+    const slotName = name && String(name).trim() ? String(name).trim() : (`${category} · ${stage}`);
+    const existing = await pool.query(
+      'SELECT id FROM description_templates WHERE set_id=$1 AND category=$2 AND stage=$3',
+      [setId, category, stage]
+    );
+    if (existing.rows.length) {
+      const r = await pool.query(
+        `UPDATE description_templates SET name=$1, body=$2, updated_at=NOW()
+           WHERE id=$3
+         RETURNING id, name, body, set_id, category, stage, updated_at`,
+        [slotName, trimmedBody, existing.rows[0].id]
+      );
+      const row = r.rows[0];
+      res.json({ ok: true, template: { id: row.id, name: row.name, body: row.body, setId: row.set_id, category: row.category, stage: row.stage } });
+    } else {
+      const id = uuid();
+      await pool.query(
+        'INSERT INTO description_templates (id, name, body, set_id, category, stage) VALUES ($1, $2, $3, $4, $5, $6)',
+        [id, slotName, trimmedBody, setId, category, stage]
+      );
+      res.json({ ok: true, template: { id, name: slotName, body: trimmedBody, setId, category, stage } });
+    }
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -985,7 +1089,11 @@ app.get('/api/active-this-week', async (req, res) => {
         proxy: account.proxy || null,
         setId: latestSet?.id || null,
         setName: latestSet?.name || 'No set assigned',
-        category: latestSet?.category || null,
+        // Account-level category (what the user picked in the dropdown) takes
+        // precedence — that's the replier-prompt/payout-policy decision and
+        // is the canonical value. Fall back to the latest set's category for
+        // legacy accounts that haven't been categorized yet.
+        category: account.category || latestSet?.category || null,
         deployedAt: deployedAt || null,
         hoursLive,
         soldCount: account.soldCount !== undefined ? account.soldCount : orders.length,
