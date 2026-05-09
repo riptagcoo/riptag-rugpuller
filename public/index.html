@@ -2134,12 +2134,14 @@ function renderOverviewSets(){
   el.innerHTML=filtered.map(s=>{
     const icon=s.category==='riptag'?'🌐':'🎯';
     const catBadge=s.category==='riptag'?'riptag.co':'rugpull';
+    const deployedLabel=formatLastDeployed(s);
     const sub=(s.listings?.length||0)+' listings · '+(s.driveFolderName||'No folder')+' · '+getAccountName(s.accountId);
     return '<div class="set-card" onclick="showPage(\'set\',\''+s.id+'\')">'
       +'<div class="set-card-ico">'+icon+'</div>'
       +'<div class="set-card-info"><div class="set-card-name">'+s.name+'</div><div class="set-card-sub">'+sub+'</div></div>'
       +'<div class="set-card-actions">'
       +'<span class="badge badge-'+s.category+'">'+catBadge+'</span>'
+      +(deployedLabel?'<span class="badge" style="background:rgba(0,229,160,0.10);color:var(--green);border:1px solid rgba(0,229,160,0.22);font-family:var(--mono);" title="Last deployed">📅 '+deployedLabel+'</span>':'<span class="badge" style="background:rgba(255,255,255,0.04);color:var(--ink-3);border:1px solid var(--glass-border);font-family:var(--mono);" title="Never deployed">— never deployed</span>')
       +'<span class="badge badge-'+s.status+'">'+s.status+'</span>'
       +'<button class="btn sm danger" onclick="event.stopPropagation();deleteSet(\''+s.id+'\')">🗑</button>'
       +'</div></div>';
@@ -2250,7 +2252,11 @@ function renderCurrentSet(){
   const set=sets.find(s=>s.id===currentSetId);
   if(!set)return;
   document.getElementById('set-detail-title').textContent=set.name;
-  document.getElementById('set-detail-sub').textContent=(set.category==='riptag'?'riptag.co':'rugpull')+' · '+(set.listings?.length||0)+' listings · '+set.status;
+  const deployedLabel=formatLastDeployed(set);
+  const subParts=[(set.category==='riptag'?'riptag.co':'rugpull'),(set.listings?.length||0)+' listings',set.status];
+  if(deployedLabel) subParts.push('last deployed '+deployedLabel);
+  else subParts.push('never deployed');
+  document.getElementById('set-detail-sub').textContent=subParts.join(' · ');
   document.getElementById('set-info-panel').innerHTML=`<div style="display:flex;flex-direction:column;gap:8px;font-size:13px;">
     <div style="display:flex;justify-content:space-between;"><span style="color:var(--muted);">Category</span><span class="badge badge-${set.category}">${set.category==='riptag'?'riptag.co':'rugpull'}</span></div>
     <div style="display:flex;justify-content:space-between;"><span style="color:var(--muted);">Price</span><span>$${set.price}</span></div>
@@ -2260,6 +2266,7 @@ function renderCurrentSet(){
     <div style="display:flex;justify-content:space-between;"><span style="color:var(--muted);">Account</span><span>${getAccountName(set.accountId)}</span></div>
     <div style="display:flex;justify-content:space-between;"><span style="color:var(--muted);">Schedule</span><span>${set.schedule?.enabled?'📅 '+set.schedule.days.join(', ')+' @ '+set.schedule.time:'Off'}</span></div>
     <div style="display:flex;justify-content:space-between;"><span style="color:var(--muted);">Status</span><span class="badge badge-${set.status}">${set.status}</span></div>
+    <div style="display:flex;justify-content:space-between;"><span style="color:var(--muted);">Last deployed</span><span style="font-family:var(--mono);font-size:12px;color:${deployedLabel?'var(--green)':'var(--ink-3)'};">${deployedLabel?'📅 '+deployedLabel:'never'}</span></div>
   </div>`;
   renderListingsTable(set);
   refreshDriveStatusPill();
@@ -2610,6 +2617,25 @@ function getAccountName(accountId){
   if(!accountId)return '—';
   const a=(typeof accounts!=='undefined'&&Array.isArray(accounts))?accounts.find(x=>x.id===accountId):null;
   return a?('@'+a.username):'—';
+}
+
+// Pull a "last deployed" date from a set. Prefers set.deployedAt; if absent
+// (legacy sets that were deployed before the field existed), falls back to
+// any listing.deployedAt or the set's createdAt if every listing is posted.
+// Returns short "MMM D" like "May 9", or "" if never deployed.
+function formatLastDeployed(s){
+  if(!s) return '';
+  let iso=s.deployedAt;
+  if(!iso&&Array.isArray(s.listings)&&s.listings.length){
+    // legacy fallback: max deployedAt on any listing if present
+    const stamps=s.listings.map(l=>l&&l.deployedAt).filter(Boolean);
+    if(stamps.length) iso=stamps.sort().reverse()[0];
+    else if(s.listings.every(l=>l&&l.posted)) iso=s.createdAt;
+  }
+  if(!iso) return '';
+  const d=new Date(iso);
+  if(isNaN(d.getTime())) return '';
+  return d.toLocaleDateString(undefined,{month:'short',day:'numeric'});
 }
 
 async function deleteSet(setId){

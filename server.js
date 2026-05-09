@@ -823,7 +823,16 @@ app.put('/api/sets/:setId/listings/:listingId', async (req, res) => {
     const set = r.rows[0].data;
     const idx = set.listings.findIndex(l => l.id === req.params.listingId);
     if (idx === -1) return res.status(404).json({ error: 'Listing not found' });
+    const wasPosted = !!set.listings[idx].posted;
     set.listings[idx] = { ...set.listings[idx], ...req.body };
+    // Stamp the set's deployedAt the first time a listing flips to posted in
+    // this session — that way the dashboard can show "last deployed: MMM d"
+    // on every set card. Doesn't overwrite an earlier date if all listings
+    // were already posted (Reset endpoint is what clears deployedAt).
+    if (req.body && req.body.posted === true && !wasPosted) {
+      set.deployedAt = new Date().toISOString();
+      if (set.status !== 'deployed') set.status = 'deployed';
+    }
     await pool.query('UPDATE sets SET data=$1 WHERE id=$2', [JSON.stringify(set), set.id]);
     res.json(set.listings[idx]);
   } catch { res.status(500).json({ error: 'Failed' }); }
