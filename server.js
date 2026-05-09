@@ -752,8 +752,26 @@ app.post('/api/sets/:id/build-listings', async (req, res) => {
 // Body shape for POST: { images: [{ name?, dataUrl }] } where dataUrl is a
 // browser FileReader.readAsDataURL output ("data:image/jpeg;base64,...").
 // Replaces the entire set's preview list — simpler than per-slot CRUD.
+// Defensive helper — create the table if it's missing. Avoids a hard 500 if
+// a deploy started before initDB ran (and helps when migrating from an older
+// container that pre-dates set_previews).
+async function ensureSetPreviewsTable() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS set_previews (
+      set_id TEXT NOT NULL,
+      idx INT NOT NULL,
+      content_type TEXT,
+      data BYTEA NOT NULL,
+      name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      PRIMARY KEY (set_id, idx)
+    );
+  `);
+}
+
 app.post('/api/sets/:id/preview-images', async (req, res) => {
   try {
+    await ensureSetPreviewsTable();
     const setId = req.params.id;
     const r = await pool.query('SELECT id FROM sets WHERE id=$1', [setId]);
     if (!r.rows.length) return res.status(404).json({ error: 'Set not found' });
@@ -1729,4 +1747,13 @@ app.get('/api/description-switches/due', async (req, res) => {
 
 // ─── START THE SERVER ─────────────────────────────────────────
 // (PORT is declared at the top of the file)
-app.listen(PORT, () => console.log('🏄 Riptag Rugpuller server on port ' + PORT));
+// Run schema migrations BEFORE accepting requests so any newly-added tables
+// or columns exist before the first POST hits them. Previously initDB() was
+// defined but never invoked — existing tables only existed because of an
+// earlier ad-hoc run, so any new CREATE TABLE / ALTER added later (like
+// set_previews and the description_templates columns) silently never applied.
+initDB()
+  .catch(err => console.error('❌ initDB failed:', err.message))
+  .finally(() => {
+    app.listen(PORT, () => console.log('🏄 Riptag Rugpuller server on port ' + PORT));
+  });
