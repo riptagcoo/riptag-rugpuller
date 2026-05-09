@@ -781,13 +781,13 @@ tr:hover td { background: rgba(255,255,255,0.015); cursor: pointer; }
         <div class="card-title" style="margin:0;">Listings</div>
         <div style="display:flex;align-items:center;gap:10px;">
           <span id="listing-count" style="font-size:11px;color:var(--ink-3);font-family:var(--mono);"></span>
-          <button class="btn ghost sm" id="warm-thumbs-btn" onclick="warmSetThumbs()" title="Re-fetch preview images from Drive (does not affect deploy)">🔄 Refresh previews</button>
           <div style="display:inline-flex;background:var(--glass);border:1px solid var(--glass-border);border-radius:8px;overflow:hidden;">
             <button class="view-tab active" id="view-tab-preview" onclick="setListingsView('preview')" style="background:transparent;border:0;color:var(--ink-3);font-size:11px;font-family:var(--mono);padding:6px 12px;cursor:pointer;text-transform:uppercase;letter-spacing:0.05em;">Preview</button>
             <button class="view-tab" id="view-tab-detail" onclick="setListingsView('detail')" style="background:transparent;border:0;color:var(--ink-3);font-size:11px;font-family:var(--mono);padding:6px 12px;cursor:pointer;text-transform:uppercase;letter-spacing:0.05em;">All listings</button>
           </div>
         </div>
       </div>
+      <input type="file" id="preview-file-input" accept="image/*" multiple style="display:none;" onchange="onPreviewFilesPicked(this)"/>
       <div id="listings-table-wrap" style="max-height:600px;overflow-y:auto;border-radius:8px;"><div class="empty"><div class="empty-ico">◈</div><div class="empty-title">No listings yet</div>Click Build Listings to start.</div></div>
     </div>
   </div>
@@ -2292,6 +2292,10 @@ let listingsView=(typeof localStorage!=='undefined'&&localStorage.getItem('ripta
 // Cache-bust version for /api/thumb URLs. Bumped after warm-thumbs so the
 // browser actually re-requests instead of serving a cached 404.
 let thumbCacheVersion=0;
+// In-memory list of preview images for the currently-shown set.
+// Loaded fresh from /api/sets/:id/preview-images each time the preview
+// panel renders. Bumped per upload so we cache-bust the <img> URLs.
+let previewImagesState={ setId: null, images: [], v: 0 };
 
 function setListingsView(v){
   listingsView=(v==='detail')?'detail':'preview';
@@ -2316,6 +2320,14 @@ function renderListingsTable(set){
   const dBtn=document.getElementById('view-tab-detail');
   if(pBtn)pBtn.classList.toggle('active',listingsView==='preview');
   if(dBtn)dBtn.classList.toggle('active',listingsView==='detail');
+
+  // PREVIEW view = user-uploaded gallery. Independent of listings/Drive —
+  // purely visual reference. Renders even if the set has no listings yet.
+  if(listingsView==='preview'){
+    renderPreviewGallery(set,el);
+    return;
+  }
+
   if(!listings.length){
     el.innerHTML='<div class="empty"><div class="empty-ico">◈</div><div class="empty-title">No listings yet</div>Click Build Listings to start.</div>';
     return;
@@ -2353,36 +2365,8 @@ function renderListingsTable(set){
 
   let html='';
 
-  if(listingsView==='preview'){
-    // Lightweight: one card per group, ONLY the first photo of the first
-    // listing (i.e. the "1.1", "2.1", "3.1" image), description, sizes summary.
-    // Deploy logic untouched — this only changes how the panel renders.
-    groups.forEach((g,gi)=>{
-      const first=g.items[0]||{};
-      const firstPhoto=(first.photos&&first.photos[0])||null;
-      const sizes=[...new Set(g.items.map(x=>x.size).filter(Boolean))].join(' · ');
-      const posted=g.items.filter(l=>l.posted).length;
-      const descRaw=(first.customDescription||first.description||'');
-      const desc=String(descRaw).replace(/</g,'&lt;');
-      const price=first.customPrice||first.price||'';
-      html+='<div onclick="openListingModal(\''+first.id+'\')" '
-        +'style="display:flex;gap:14px;padding:14px;margin-bottom:10px;border:1px solid var(--glass-border);border-radius:10px;cursor:pointer;transition:border-color 0.15s,background 0.15s;" '
-        +'onmouseover="this.style.borderColor=\'rgba(0,229,160,0.25)\';this.style.background=\'rgba(255,255,255,0.02)\'" '
-        +'onmouseout="this.style.borderColor=\'var(--glass-border)\';this.style.background=\'transparent\'">'
-        +thumb(firstPhoto,90)
-        +'<div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:6px;">'
-          +'<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">'
-            +'<span style="font-size:11px;font-family:var(--mono);text-transform:uppercase;letter-spacing:0.05em;color:var(--green);font-weight:700;">Group '+(gi+1)+'</span>'
-            +(price?'<span style="font-family:var(--mono);font-size:12px;color:var(--ink);">$'+price+'</span>':'')
-            +(sizes?'<span style="font-family:var(--mono);font-size:11px;color:var(--ink-3);">'+sizes+'</span>':'')
-            +'<span class="badge2 '+(posted===g.items.length&&g.items.length>0?'badge-done':'badge-pend')+'" style="margin-left:auto;">'+posted+'/'+g.items.length+' posted</span>'
-          +'</div>'
-          +'<div style="font-size:12px;color:var(--ink-3);line-height:1.5;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;">'+(desc||'<span style="color:var(--ink-4);font-style:italic;">No description</span>')+'</div>'
-        +'</div>'
-      +'</div>';
-    });
-  } else {
-    // Detailed: every listing as its own row (original behavior).
+  // Detailed: every listing as its own row.
+  {
     groups.forEach((g,gi)=>{
       const posted=g.items.filter(l=>l.posted).length;
       html+='<div style="margin-bottom:14px;border:1px solid var(--glass-border);border-radius:10px;overflow:hidden;">'
@@ -2421,6 +2405,179 @@ function renderListingsTable(set){
   }
 
   el.innerHTML=html;
+}
+
+// ─── PREVIEW GALLERY (user-uploaded; NOT used by deploy) ──────
+// Lets the seller eyeball what a bundle looks like without going to Drive.
+// Up to 4 images; stored as BYTEA in postgres set_previews. Independent of
+// listings/photos data — this is purely a dashboard reference.
+async function renderPreviewGallery(set,el){
+  // Show description + a 4-slot gallery. Slots show uploaded images or
+  // a "+ Add" prompt for empty ones.
+  const desc=(set&&set.description||'').replace(/</g,'&lt;');
+  const setId=set&&set.id;
+
+  // Fetch current preview list (skip refetch if same set already loaded)
+  if(previewImagesState.setId!==setId){
+    previewImagesState={ setId, images: [], v: Date.now() };
+    try{
+      const r=await fetch('/api/sets/'+setId+'/preview-images');
+      const d=await r.json();
+      previewImagesState.images=Array.isArray(d.images)?d.images:[];
+    } catch(e){ previewImagesState.images=[]; }
+  }
+
+  const slots=[];
+  for(let i=0;i<4;i++){
+    const img=previewImagesState.images.find(x=>x.idx===i);
+    if(img){
+      const src='/api/sets/'+setId+'/preview-images/'+i+'?v='+previewImagesState.v;
+      slots.push(
+        '<div style="position:relative;aspect-ratio:1/1;border-radius:10px;overflow:hidden;background:var(--glass);border:1px solid var(--glass-border);">'
+          +'<img src="'+src+'" style="width:100%;height:100%;object-fit:cover;display:block;"/>'
+          +'<button onclick="removePreviewImage('+i+')" title="Remove" style="position:absolute;top:6px;right:6px;width:24px;height:24px;border-radius:50%;border:0;background:rgba(0,0,0,0.65);color:#fff;font-size:14px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;">×</button>'
+        +'</div>'
+      );
+    } else {
+      slots.push(
+        '<div onclick="pickPreviewImages('+i+')" style="aspect-ratio:1/1;border-radius:10px;background:var(--glass);border:1px dashed var(--glass-border);cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--ink-3);transition:border-color 0.15s,color 0.15s;font-size:11px;font-family:var(--mono);text-transform:uppercase;letter-spacing:0.05em;gap:6px;" onmouseover="this.style.borderColor=\'rgba(0,229,160,0.35)\';this.style.color=\'var(--green)\'" onmouseout="this.style.borderColor=\'var(--glass-border)\';this.style.color=\'var(--ink-3)\'">'
+          +'<div style="font-size:28px;line-height:1;">+</div>'
+          +'<div>Add image</div>'
+        +'</div>'
+      );
+    }
+  }
+
+  el.innerHTML=
+    '<div style="padding:6px 2px;">'
+      +'<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px;">'
+        +slots.join('')
+      +'</div>'
+      +(previewImagesState.images.length
+        ? '<div style="display:flex;justify-content:flex-end;margin-bottom:14px;"><button class="btn ghost sm" onclick="clearAllPreviewImages()">Remove all</button></div>'
+        : '<div style="font-size:11px;color:var(--ink-3);text-align:center;margin-bottom:14px;font-family:var(--mono);">Click any tile to upload up to 4 reference images for this set</div>'
+      )
+      +'<div style="border:1px solid var(--glass-border);border-radius:10px;padding:14px 16px;">'
+        +'<div style="font-size:10px;font-family:var(--mono);text-transform:uppercase;letter-spacing:0.07em;color:var(--ink-3);margin-bottom:8px;">Description</div>'
+        +'<div style="font-size:13px;color:var(--ink);line-height:1.6;white-space:pre-wrap;">'+(desc||'<span style="color:var(--ink-4);font-style:italic;">No description set</span>')+'</div>'
+      +'</div>'
+    +'</div>';
+}
+
+let _previewUploadStartIdx=0;
+function pickPreviewImages(startIdx){
+  _previewUploadStartIdx=startIdx||0;
+  const inp=document.getElementById('preview-file-input');
+  if(inp){ inp.value=''; inp.click(); }
+}
+
+async function onPreviewFilesPicked(input){
+  if(!currentSetId) return;
+  const files=[...(input.files||[])];
+  if(!files.length) return;
+  // Convert each File to a data URL via FileReader, then merge into the
+  // existing slots starting at the clicked slot, capped at 4 total.
+  const readAsDataURL=(file)=>new Promise((resolve,reject)=>{
+    const fr=new FileReader();
+    fr.onload=()=>resolve({ name: file.name, dataUrl: fr.result });
+    fr.onerror=()=>reject(fr.error);
+    fr.readAsDataURL(file);
+  });
+  glog('Uploading '+files.length+' preview image(s)…','hi');
+  let uploaded=[];
+  try{
+    uploaded=await Promise.all(files.map(readAsDataURL));
+  } catch(e){ glog('Read failed: '+e.message,'err'); return; }
+  // Build the new array of 4 slots, keeping existing images we want to keep
+  const slots=[null,null,null,null];
+  // Start by keeping existing images (so we don't blow away other slots)
+  for(const ex of previewImagesState.images){
+    if(typeof ex.idx==='number') slots[ex.idx]={ keep:true, idx: ex.idx };
+  }
+  // Place new uploads starting at the clicked slot, advancing through empty slots
+  let cursor=_previewUploadStartIdx;
+  for(const u of uploaded){
+    while(cursor<4 && slots[cursor] && slots[cursor].keep) cursor++;
+    if(cursor>=4) break;
+    slots[cursor]=u;
+    cursor++;
+  }
+  // Compose the request body. For 'keep' entries we re-fetch via existing
+  // /preview-images/:idx and re-encode — simpler is to just always require
+  // dataUrls for changed slots and use a partial-update endpoint. To keep
+  // it simple, we PUT all current images: turn keep-slots into dataUrls
+  // by fetching them as blobs and re-encoding (avoids server round-trip
+  // complexity). Lightweight since each is <8MB.
+  const finalImages=[];
+  for(let i=0;i<4;i++){
+    const s=slots[i];
+    if(!s) continue;
+    if(s.keep){
+      try{
+        const r=await fetch('/api/sets/'+currentSetId+'/preview-images/'+i+'?v='+Date.now());
+        if(!r.ok) continue;
+        const blob=await r.blob();
+        const dataUrl=await new Promise(res=>{ const fr=new FileReader(); fr.onload=()=>res(fr.result); fr.readAsDataURL(blob); });
+        finalImages.push({ name: 'kept-'+i, dataUrl });
+      } catch(e){ /* skip */ }
+    } else {
+      finalImages.push(s);
+    }
+  }
+  try{
+    const r=await fetch('/api/sets/'+currentSetId+'/preview-images',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ images: finalImages })
+    });
+    const d=await r.json();
+    if(d.error){ glog('Upload failed: '+d.error,'err'); return; }
+    glog('Saved '+d.count+' preview image(s)','ok');
+    previewImagesState={ setId: currentSetId, images: d.images||[], v: Date.now() };
+    const set=sets.find(s=>s.id===currentSetId);
+    if(set) renderListingsTable(set);
+  } catch(e){ glog('Upload error: '+e.message,'err'); }
+}
+
+async function removePreviewImage(idx){
+  if(!currentSetId) return;
+  // Build new list excluding this idx, keeping the rest
+  const keep=previewImagesState.images.filter(x=>x.idx!==idx);
+  const finalImages=[];
+  for(const ex of keep){
+    try{
+      const r=await fetch('/api/sets/'+currentSetId+'/preview-images/'+ex.idx+'?v='+Date.now());
+      if(!r.ok) continue;
+      const blob=await r.blob();
+      const dataUrl=await new Promise(res=>{ const fr=new FileReader(); fr.onload=()=>res(fr.result); fr.readAsDataURL(blob); });
+      finalImages.push({ name: ex.name||'kept', dataUrl });
+    } catch(e){ /* skip */ }
+  }
+  try{
+    const r=await fetch('/api/sets/'+currentSetId+'/preview-images',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ images: finalImages })
+    });
+    const d=await r.json();
+    if(d.error){ glog('Remove failed: '+d.error,'err'); return; }
+    glog('Removed preview image','ok');
+    previewImagesState={ setId: currentSetId, images: d.images||[], v: Date.now() };
+    const set=sets.find(s=>s.id===currentSetId);
+    if(set) renderListingsTable(set);
+  } catch(e){ glog('Remove error: '+e.message,'err'); }
+}
+
+async function clearAllPreviewImages(){
+  if(!currentSetId) return;
+  if(!confirm('Remove all preview images for this set?')) return;
+  try{
+    await fetch('/api/sets/'+currentSetId+'/preview-images',{ method:'DELETE' });
+    previewImagesState={ setId: currentSetId, images: [], v: Date.now() };
+    glog('Cleared preview images','ok');
+    const set=sets.find(s=>s.id===currentSetId);
+    if(set) renderListingsTable(set);
+  } catch(e){ glog('Clear error: '+e.message,'err'); }
 }
 
 // ─── BASIC UI HELPERS ─────────────────────────────────────────

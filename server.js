@@ -50,6 +50,15 @@ async function initDB() {
       data BYTEA NOT NULL,
       cached_at TIMESTAMPTZ DEFAULT NOW()
     );
+    CREATE TABLE IF NOT EXISTS set_previews (
+      set_id TEXT NOT NULL,
+      idx INT NOT NULL,
+      content_type TEXT,
+      data BYTEA NOT NULL,
+      name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      PRIMARY KEY (set_id, idx)
+    );
     CREATE TABLE IF NOT EXISTS agent_queue (
       id TEXT PRIMARY KEY,
       command TEXT NOT NULL,
@@ -681,6 +690,80 @@ app.post('/api/sets/:id/build-listings', async (req, res) => {
       unparsed: unparsed.length,
       total: allPhotos.length
     });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ─── SET PREVIEW IMAGES (dashboard-only, NOT used by deploy) ──
+// User-uploaded reference images shown on the set detail page so the seller
+// can eyeball what a bundle looks like without going to Drive. Stored as
+// BYTEA in Postgres; up to 4 per set; idx 0..3.
+//
+// Body shape for POST: { images: [{ name?, dataUrl }] } where dataUrl is a
+// browser FileReader.readAsDataURL output ("data:image/jpeg;base64,...").
+// Replaces the entire set's preview list — simpler than per-slot CRUD.
+app.post('/api/sets/:id/preview-images', async (req, res) => {
+  try {
+    const setId = req.params.id;
+    const r = await pool.query('SELECT id FROM sets WHERE id=$1', [setId]);
+    if (!r.rows.length) return res.status(404).json({ error: 'Set not found' });
+
+    const incoming = Array.isArray(req.body && req.body.images) ? req.body.images.slice(0, 4) : [];
+    await pool.query('DELETE FROM set_previews WHERE set_id=$1', [setId]);
+    for (let i = 0; i < incoming.length; i++) {
+      const img = incoming[i] || {};
+      if (!img.dataUrl || typeof img.dataUrl !== 'string') continue;
+      const m = img.dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+      if (!m) continue;
+      const ct = m[1];
+      const buf = Buffer.from(m[2], 'base64');
+      // Sanity guard — refuse anything over 8MB per image (post-decode)
+      if (buf.length > 8 * 1024 * 1024) continue;
+      await pool.query(
+        `INSERT INTO set_previews (set_id, idx, content_type, data, name)
+           VALUES ($1, $2, $3, $4, $5)`,
+        [setId, i, ct, buf, (img.name || '').slice(0, 200)]
+      );
+    }
+    const list = await pool.query(
+      'SELECT idx, content_type, name FROM set_previews WHERE set_id=$1 ORDER BY idx',
+      [setId]
+    );
+    res.json({ ok: true, count: list.rows.length, images: list.rows });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.get('/api/sets/:id/preview-images', async (req, res) => {
+  try {
+    const r = await pool.query(
+      'SELECT idx, content_type, name FROM set_previews WHERE set_id=$1 ORDER BY idx',
+      [req.params.id]
+    );
+    res.json({ images: r.rows });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.get('/api/sets/:id/preview-images/:idx', async (req, res) => {
+  try {
+    const r = await pool.query(
+      'SELECT content_type, data FROM set_previews WHERE set_id=$1 AND idx=$2',
+      [req.params.id, parseInt(req.params.idx, 10)]
+    );
+    if (!r.rows.length) {
+      res.setHeader('Cache-Control', 'no-store');
+      return res.status(404).json({ error: 'Not found' });
+    }
+    res.setHeader('Content-Type', r.rows[0].content_type || 'image/jpeg');
+    // Short cache so when the user re-uploads, the new image shows quickly
+    // (the dashboard also bumps a ?v= cache-bust on upload).
+    res.setHeader('Cache-Control', 'public, max-age=60');
+    res.end(r.rows[0].data);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.delete('/api/sets/:id/preview-images', async (req, res) => {
+  try {
+    await pool.query('DELETE FROM set_previews WHERE set_id=$1', [req.params.id]);
+    res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
