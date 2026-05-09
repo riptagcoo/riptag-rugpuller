@@ -309,6 +309,8 @@ app.get('/api/thumb/:id', async (req, res) => {
     if (!fetched) {
       // Last resort — let the browser try Google's signed thumbnailLink
       // (caller would have to pass ?fallback=...). Otherwise 404.
+      // no-store so the browser doesn't keep serving this 404 after we warm.
+      res.setHeader('Cache-Control', 'no-store');
       return res.status(404).json({ error: 'Not cached and Drive not available' });
     }
     res.setHeader('Content-Type', fetched.contentType);
