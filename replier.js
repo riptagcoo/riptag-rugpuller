@@ -117,11 +117,24 @@ const SELECTORS = {
   sendButton:        'button[aria-label*="end" i], button[class*="send" i]'
 };
 
-// Extract the conversation ID from a /messages/<id>/ URL
+// Extract the conversation ID from a /messages/<id>/ URL.
+// A real conversation ID is a long hex string (32+ chars, usually 64). Tab
+// paths like /messages/offers, /messages/requests, /messages/archived all
+// look superficially similar but lead to "not a valid link" when we try to
+// open them as a thread. Reject anything that isn't a hex-only id of the
+// expected length so the bot stays in the inbox.
+const TAB_PATHS = new Set([
+  'inbox', 'new', 'offers', 'offer', 'requests', 'request',
+  'archived', 'archive', 'sent', 'unread', 'all'
+]);
 function convoIdFromUrl(url) {
   const m = String(url || '').match(/\/messages\/([^/?#]+)/);
   const id = m && m[1];
-  if (!id || id === 'inbox' || id === '' || id === 'new') return null;
+  if (!id) return null;
+  if (TAB_PATHS.has(id.toLowerCase())) return null;
+  // Real conversation IDs are pure hex and at least 16 chars long (Depop uses 64).
+  // Anything shorter or with non-hex characters is a sub-route, not a thread.
+  if (!/^[a-f0-9]{16,}$/i.test(id)) return null;
   return id;
 }
 
@@ -136,6 +149,18 @@ async function checkAccount(account, page, pass = 1) {
   } catch (e) { log(`  · could not open unread inbox: ${e.message}`); return; }
 
   await page.waitForTimeout(2500);
+
+  // Defensive: if Depop dropped us on /messages/offers (or any tab that
+  // isn't the inbox), force-navigate back. We never accept offers, so the
+  // Offers tab is a dead end for this bot.
+  try {
+    const cur = page.url() || '';
+    if (/\/messages\/(offers|requests|archived)/i.test(cur)) {
+      log(`  · landed on ${cur} — bouncing back to inbox`);
+      await page.goto('https://www.depop.com/messages/?unread=true', { waitUntil: 'domcontentloaded', timeout: 30000 });
+      await page.waitForTimeout(1500);
+    }
+  } catch {}
 
   // Belt & braces: if Depop still showed the Offers tab, click Inbox manually
   try {
