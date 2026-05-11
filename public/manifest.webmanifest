@@ -1,0 +1,12 @@
+{
+  "name": "Riptag — Set Manager",
+  "short_name": "Riptag",
+  "description": "Riptag Rugpuller dashboard",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0e13",
+  "theme_color": "#00e5a0",
+  "icons": [
+    { "src": "/icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
