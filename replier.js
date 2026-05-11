@@ -261,38 +261,78 @@ async function checkAccount(account, page, pass = 1) {
     log(`  · opening ${senderId}`);
 
     try {
-      await page.goto(href, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      // CRITICAL: click the conversation in the sidebar instead of using
+      // page.goto. page.goto causes a full page reload which re-bootstraps
+      // Depop's React app and blows away the in-memory auth token Depop
+      // uses for the per-thread messages API. That's why every thread was
+      // showing "There was a problem loading your messages" — the API
+      // call fired before the new app instance finished re-authenticating.
+      // Click-navigation keeps the SPA alive and the auth state intact.
+      const linkSel = `a[href*="${senderId}"]`;
+      let clicked = false;
+      try {
+        // Make sure the link is in view (long inboxes scroll horizontally).
+        await page.locator(linkSel).first().scrollIntoViewIfNeeded({ timeout: 3000 }).catch(()=>{});
+        await page.locator(linkSel).first().click({ timeout: 5000 });
+        clicked = true;
+      } catch (e) {
+        log(`    · could not click sidebar link (${e.message?.split('\n')[0]}) — falling back to goto`);
+        await page.goto(href, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      }
 
-      // Wait for the message composer to appear — proof the thread actually loaded.
-      // Depop sometimes shows "There was a problem loading your messages"
-      // instead of the thread; detect that and refresh once before giving up.
-      let composerFound = false;
-      for (let attempt = 0; attempt < 2 && !composerFound; attempt++) {
+      // After click, wait for the thread URL to take effect (SPA route change)
+      if (clicked) {
         try {
-          await page.waitForSelector(SELECTORS.messageInput, { timeout: 12000 });
+          await page.waitForURL(u => String(u).includes(senderId), { timeout: 8000 });
+        } catch {}
+      }
+
+      // Wait for the composer. If Depop still shows the error banner after
+      // the click, try once more with the in-banner refresh, then a goto.
+      let composerFound = false;
+      for (let attempt = 0; attempt < 3 && !composerFound; attempt++) {
+        try {
+          await page.waitForSelector(SELECTORS.messageInput, { timeout: 10000 });
           composerFound = true;
         } catch {
-          // Look for Depop's error banner. If it's there, click Refresh and retry.
           const hasError = await page.evaluate(() => {
             const t = document.body && document.body.innerText || '';
             return /problem loading your messages/i.test(t);
           }).catch(() => false);
-          if (hasError && attempt === 0) {
-            log('    · "problem loading messages" banner — hard reload');
-            // Depop's refresh is an icon-only button so text matching misses
-            // it. A hard reload is more reliable anyway.
-            await page.reload({ waitUntil: 'domcontentloaded', timeout: 30000 }).catch(()=>{});
-            await page.waitForTimeout(3000);
+          if (hasError) {
+            // Click the icon-only refresh button next to the error banner.
+            // Find any button whose nearest text node mentions the error.
+            const refreshClicked = await page.evaluate(() => {
+              const banner = [...document.querySelectorAll('*')].find(el =>
+                el.children && el.children.length === 0 &&
+                /problem loading your messages/i.test(el.textContent || ''));
+              if (!banner) return false;
+              // Walk up to find a parent that contains a button
+              let p = banner.parentElement;
+              for (let i = 0; i < 6 && p; i++) {
+                const btn = p.querySelector('button, [role="button"], svg[role="button"]');
+                if (btn) { btn.click(); return true; }
+                p = p.parentElement;
+              }
+              return false;
+            }).catch(() => false);
+            if (!refreshClicked && attempt === 1) {
+              log('    · banner persists — trying full reload of inbox + re-click');
+              await page.goto('https://www.depop.com/messages/inbox/', { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(()=>{});
+              await page.waitForTimeout(2000);
+              await page.locator(linkSel).first().click({ timeout: 5000 }).catch(()=>{});
+            }
+            await page.waitForTimeout(2500);
           } else {
             break;
           }
         }
       }
       if (!composerFound) {
-        log('    · composer never appeared (Depop error or empty thread), skipping');
+        log('    · composer never appeared after retries — skipping');
         continue;
       }
-      await page.waitForTimeout(2000);
+      await page.waitForTimeout(1500);
 
       // Find visible message bubbles
       const bubbles = await page.$$(SELECTORS.messageBubble);
@@ -466,18 +506,28 @@ async function main() {
           const launchOpts = {
             headless: false,
             slowMo: 30,
+            // Use the user's installed Chrome browser instead of Playwright's
+            // bundled Chromium. Real Chrome has a different TLS fingerprint
+            // (JA3 hash) that Depop's Cloudflare can't easily distinguish
+            // from a regular user. Bundled chromium has a known-bot fingerprint.
+            channel: 'chrome',
             args: [
               '--disable-blink-features=AutomationControlled',
               '--no-default-browser-check',
               '--disable-infobars',
               '--disable-features=IsolateOrigins,site-per-process,AutomationControlled',
-              '--no-sandbox',
-              '--disable-web-security',
               '--disable-dev-shm-usage'
             ]
           };
           if (proxyConfig) launchOpts.proxy = proxyConfig;
-          browser = await chromium.launch(launchOpts);
+          try {
+            browser = await chromium.launch(launchOpts);
+          } catch (e) {
+            // Fallback: if installed Chrome isn't found, drop back to bundled chromium
+            log(`  · channel:chrome failed (${e.message?.split('\n')[0]}) — using bundled chromium`);
+            delete launchOpts.channel;
+            browser = await chromium.launch(launchOpts);
+          }
 
           const context = await browser.newContext({
             userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
