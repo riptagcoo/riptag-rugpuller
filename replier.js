@@ -175,7 +175,14 @@ async function checkAccount(account, page, pass = 1) {
     }
   }
   if (!inboxLoaded) {
-    log(`  ⚠ @${username}: all inbox URLs blocked (likely 403/WAF). Cookies may be stale or IP flagged. Skipping.`);
+    log(`  ⚠ @${username}: 403 BLOCKED by Depop WAF on every inbox URL.`);
+    log(`     Fix: 1) add a proxy on the Accounts page (Webshare.io residential),`);
+    log(`          2) re-connect this account via the Chrome extension for fresh cookies.`);
+    // Flag the account in the dashboard so the UI can show a red badge.
+    apiPost('/api/replier/cooldown/' + account.id, {
+      reason: 'WAF 403 — needs proxy and/or fresh cookies',
+      durationMinutes: 30
+    }).catch(() => {});
     return;
   }
 
@@ -413,40 +420,102 @@ async function main() {
 
         let browser;
         try {
-          // Stealth-ish launch: hide the "Chrome is being controlled by
-          // automated test software" flag and a few other obvious tells
-          // that Depop's WAF uses to 403 us into /messages/offers/.
-          browser = await chromium.launch({
+          // Parse the per-account proxy URL ("http://user:pass@host:port").
+          // Playwright's `launch.proxy` takes { server, username, password }.
+          // Without a proxy the bot uses the host IP — which gets WAF-banned
+          // fast on Depop. Webshare.io residential proxies (~$3/mo) work.
+          let proxyConfig = null;
+          if (account.proxy && typeof account.proxy === 'string') {
+            try {
+              const u = new URL(account.proxy);
+              proxyConfig = {
+                server: u.protocol + '//' + u.host,
+                username: decodeURIComponent(u.username || ''),
+                password: decodeURIComponent(u.password || '')
+              };
+              log(`  · using proxy ${u.host} for @${account.username}`);
+            } catch (e) {
+              log(`  ⚠ bad proxy URL on @${account.username}: ${e.message}`);
+            }
+          } else {
+            log(`  ⚠ @${account.username} has NO proxy — host IP will be used (likely 403). Add one in the dashboard.`);
+          }
+
+          const launchOpts = {
             headless: false,
             slowMo: 30,
             args: [
               '--disable-blink-features=AutomationControlled',
               '--no-default-browser-check',
               '--disable-infobars',
-              '--disable-features=IsolateOrigins,site-per-process'
+              '--disable-features=IsolateOrigins,site-per-process,AutomationControlled',
+              '--no-sandbox',
+              '--disable-web-security',
+              '--disable-dev-shm-usage'
             ]
-          });
+          };
+          if (proxyConfig) launchOpts.proxy = proxyConfig;
+          browser = await chromium.launch(launchOpts);
+
           const context = await browser.newContext({
-            userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
+            userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
             viewport: { width: 1366, height: 820 },
             locale: 'en-US',
-            timezoneId: 'America/Denver'
+            timezoneId: 'America/Denver',
+            // Real Chrome sends these — missing = bot signal
+            extraHTTPHeaders: {
+              'Accept-Language': 'en-US,en;q=0.9',
+              'sec-ch-ua': '"Chromium";v="131", "Not_A Brand";v="24", "Google Chrome";v="131"',
+              'sec-ch-ua-mobile': '?0',
+              'sec-ch-ua-platform': '"Windows"',
+              'Upgrade-Insecure-Requests': '1'
+            }
           });
-          // Override `navigator.webdriver` (Playwright sets it to true by
-          // default — Cloudflare/Depop reads this and flags us). Also a few
-          // other fingerprint tweaks so we look more like a normal Chrome.
+
+          // Comprehensive stealth evasions — patch every JS fingerprint
+          // Cloudflare/Depop's WAF reads. Each Object.defineProperty here
+          // counters a specific automation-detection check used by
+          // commercial anti-bot systems (fingerprintjs, datadome, etc).
           await context.addInitScript(() => {
+            // 1. navigator.webdriver — the #1 automation tell
             Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-            // Spoof a plausible plugins array (empty triggers detection)
-            Object.defineProperty(navigator, 'plugins', {
-              get: () => [1, 2, 3, 4, 5]
-            });
-            Object.defineProperty(navigator, 'languages', {
-              get: () => ['en-US', 'en']
-            });
-            // Chrome runtime object exists on real Chrome
-            window.chrome = window.chrome || { runtime: {} };
+            // 2. Plausible plugins array (PluginArray-shaped, not [1,2,3])
+            const fakePlugins = [
+              { name: 'PDF Viewer', filename: 'internal-pdf-viewer', description: 'Portable Document Format' },
+              { name: 'Chrome PDF Viewer', filename: 'internal-pdf-viewer', description: '' },
+              { name: 'Chromium PDF Viewer', filename: 'internal-pdf-viewer', description: '' }
+            ];
+            Object.defineProperty(navigator, 'plugins', { get: () => fakePlugins });
+            // 3. languages
+            Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+            // 4. window.chrome object (real Chrome has it)
+            window.chrome = window.chrome || {};
+            window.chrome.runtime = window.chrome.runtime || {};
+            window.chrome.app = window.chrome.app || { isInstalled: false };
+            // 5. Permissions API — bots often return 'denied' on notifications
+            const origQuery = window.navigator.permissions && window.navigator.permissions.query;
+            if (origQuery) {
+              window.navigator.permissions.query = (params) =>
+                params.name === 'notifications'
+                  ? Promise.resolve({ state: Notification.permission })
+                  : origQuery(params);
+            }
+            // 6. WebGL vendor/renderer — Playwright reports "Google SwiftShader"
+            try {
+              const getParameter = WebGLRenderingContext.prototype.getParameter;
+              WebGLRenderingContext.prototype.getParameter = function (p) {
+                if (p === 37445) return 'Intel Inc.';            // UNMASKED_VENDOR_WEBGL
+                if (p === 37446) return 'Intel Iris OpenGL Engine'; // UNMASKED_RENDERER_WEBGL
+                return getParameter.apply(this, [p]);
+              };
+            } catch {}
+            // 7. Hardware concurrency / memory — bots often report 1 / 2
+            Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8 });
+            Object.defineProperty(navigator, 'deviceMemory', { get: () => 8 });
+            // 8. Remove the Playwright/CDP runtime trace
+            delete Object.getPrototypeOf(navigator).webdriver;
           });
+
           await context.addCookies(cleanCookies(account.cookies));
           const page = await context.newPage();
           await checkAccount(account, page);
