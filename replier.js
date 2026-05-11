@@ -278,21 +278,11 @@ async function checkAccount(account, page, pass = 1) {
             return /problem loading your messages/i.test(t);
           }).catch(() => false);
           if (hasError && attempt === 0) {
-            log('    · "problem loading messages" banner — refreshing once');
-            // Click any "Refresh" / "try again" button that's visible
-            const clicked = await page.evaluate(() => {
-              const btns = [...document.querySelectorAll('button, a, [role="button"]')];
-              for (const b of btns) {
-                const t = (b.innerText || '').trim().toLowerCase();
-                if (/^(refresh|try again|reload)$/i.test(t)) { b.click(); return true; }
-              }
-              return false;
-            }).catch(() => false);
-            if (!clicked) {
-              // Fall back to a full reload
-              await page.reload({ waitUntil: 'domcontentloaded', timeout: 30000 }).catch(()=>{});
-            }
-            await page.waitForTimeout(2500);
+            log('    · "problem loading messages" banner — hard reload');
+            // Depop's refresh is an icon-only button so text matching misses
+            // it. A hard reload is more reliable anyway.
+            await page.reload({ waitUntil: 'domcontentloaded', timeout: 30000 }).catch(()=>{});
+            await page.waitForTimeout(3000);
           } else {
             break;
           }
