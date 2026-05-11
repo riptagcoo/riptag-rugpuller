@@ -1405,12 +1405,15 @@ async function renderTracker(){
       const payoutDate = (!isRiptag && banDate) ? new Date(banDate.getTime() + 30*24*60*60*1000) : null;
       const payoutDue = payoutDate ? payoutDate <= new Date() : false;
       const daysUntilPayout = payoutDate ? Math.max(0, Math.ceil((payoutDate - new Date()) / (1000*60*60*24))) : null;
-      const statusBadge = isBanned
-        ? '<span class="badge status-banned">✕ Banned'+(banDate?'':' (status)')+'</span>'
-        : '<span class="badge status-live">● Active</span>';
+      // No status text badge — we color the card edge + avatar ring instead.
+      const statusBadge = '';
       const categoryBadge = t.category
         ? '<span class="badge badge-'+t.category+'">'+(t.category==='riptag'?'🌐 riptag.co':'🎯 rugpull')+'</span>'
         : '';
+      const edgeColor = isBanned ? '#ff5c5c' : 'var(--green)';
+      const edgeGlow = isBanned ? '0 0 0 1px rgba(255,92,92,0.35)' : '0 0 0 1px rgba(0,229,160,0.28)';
+      const avatarBorder = isBanned ? '2px solid #ff5c5c' : '2px solid var(--green)';
+      const avatarGlow = isBanned ? '0 0 10px rgba(255,92,92,0.5)' : '0 0 10px rgba(0,229,160,0.4)';
 
       const payoutBadge = isRiptag
         ? '<span class="badge" style="background:rgba(0,229,160,0.15);color:var(--green);border:1px solid rgba(0,229,160,0.3);">✓ Auto-paid</span>'
@@ -1450,13 +1453,12 @@ async function renderTracker(){
         </div>
       ` : '';
 
-      return `<div class="acct-card" id="tcard-${t.id}" style="margin-bottom:10px;padding:0;">
+      return `<div class="acct-card" id="tcard-${t.id}" style="margin-bottom:10px;padding:0;border:1px solid ${edgeColor};box-shadow:${edgeGlow};">
   <div style="display:flex;align-items:center;gap:16px;padding:18px 22px;cursor:pointer;" onclick="toggleTracker('${t.id}')">
-    <div style="width:42px;height:42px;border-radius:11px;background:linear-gradient(135deg,rgba(0,229,160,0.1),rgba(167,139,250,0.08));border:1px solid var(--glass-border);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:var(--ink-2);flex-shrink:0;">${t.username?t.username.substring(0,2).toUpperCase():'??'}</div>
+    <div style="width:42px;height:42px;border-radius:11px;background:linear-gradient(135deg,rgba(0,229,160,0.1),rgba(167,139,250,0.08));border:${avatarBorder};box-shadow:${avatarGlow};display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:var(--ink-2);flex-shrink:0;">${t.username?t.username.substring(0,2).toUpperCase():'??'}</div>
     <div style="flex:1;min-width:0;">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap;">
-        <span style="font-size:15px;font-weight:700;letter-spacing:-0.02em;">@${t.username||'unknown'}</span>
-        ${statusBadge}
+        <span style="font-size:15px;font-weight:700;letter-spacing:-0.02em;color:${isBanned?'#ff8c8c':'var(--ink)'};">@${t.username||'unknown'}</span>
         ${categoryBadge}
         ${payoutBadge}
       </div>
@@ -2320,10 +2322,15 @@ async function renderAccounts(){
     const stats = activeMap.get(a.id) || {};
     const hasCookies = Array.isArray(a.cookies) && a.cookies.length>0;
     const banned = a.status==='banned' || !!a.bannedAt;
-    // Status dot: red = banned, green = live cookies, gray = no cookies/unknown
+    // Status: live/banned/unknown drives the card edge color, avatar ring,
+    // and a single colored dot. No text label — the color tells the story.
     const dotColor = banned?'#ff5c5c':(hasCookies?'var(--green)':'var(--ink-3)');
     const dotGlow = banned?'0 0 6px rgba(255,92,92,0.6)':(hasCookies?'0 0 6px var(--green-glow,rgba(0,229,160,0.55))':'none');
-    const statusLabel = banned?'Banned':(hasCookies?'Cookies fresh':'No cookies');
+    const statusLabel = banned?'Banned':(hasCookies?'Live':'Unknown');
+    const edgeColor = banned ? '#ff5c5c' : (hasCookies ? 'var(--green)' : 'var(--glass-border)');
+    const edgeGlow  = banned ? '0 0 0 1px rgba(255,92,92,0.35)' : (hasCookies ? '0 0 0 1px rgba(0,229,160,0.28)' : 'none');
+    const avatarBorder = banned ? '2px solid #ff5c5c' : (hasCookies ? '2px solid var(--green)' : '2px solid var(--glass-border)');
+    const avatarGlow   = banned ? '0 0 10px rgba(255,92,92,0.5)' : (hasCookies ? '0 0 10px rgba(0,229,160,0.4)' : 'none');
     const cat = a.category==='riptag'?'riptag':'rugpull';
     const catBadge = '<span class="badge badge-'+cat+'">'+(cat==='riptag'?'🌐 riptag.co':'🎯 rugpull')+'</span>';
     const setName = stats.setName || 'No set assigned';
@@ -2334,14 +2341,13 @@ async function renderAccounts(){
     const isExpanded = expandedAccounts.has(a.id);
 
     return `
-    <div class="acct-card" id="card-${a.id}" style="margin-bottom:10px;">
+    <div class="acct-card" id="card-${a.id}" style="margin-bottom:10px;border:1px solid ${edgeColor};box-shadow:${edgeGlow};">
       <div style="display:flex;align-items:center;gap:14px;padding:16px 18px;cursor:pointer;" data-acid="${a.id}" onclick="toggleAccount(this.dataset.acid)">
         <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${dotColor};box-shadow:${dotGlow};flex-shrink:0;" title="${statusLabel}"></span>
-        <div class="acct-avatar">${(a.username||'??').substring(0,2).toUpperCase()}</div>
+        <div class="acct-avatar" style="border:${avatarBorder};box-shadow:${avatarGlow};">${(a.username||'??').substring(0,2).toUpperCase()}</div>
         <div style="flex:1;min-width:0;">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap;">
-            <span style="font-size:14px;font-weight:700;">@${a.username||'(no username)'}</span>
-            <span class="badge" style="background:${banned?'rgba(255,92,92,0.14)':'rgba(0,229,160,0.14)'};color:${banned?'#ff8c8c':'var(--green)'};border:1px solid ${banned?'rgba(255,92,92,0.3)':'rgba(0,229,160,0.3)'};">${banned?'✕ Banned':(hasCookies?'● Live':'? Unknown')}</span>
+            <span style="font-size:14px;font-weight:700;color:${banned?'#ff8c8c':'var(--ink)'};">@${a.username||'(no username)'}</span>
             ${catBadge}
             ${a.proxy?'<span class="badge" style="background:rgba(255,255,255,0.06);color:var(--ink-3);border:1px solid var(--glass-border);font-family:var(--mono);">🔒 Proxy</span>':''}
           </div>
@@ -2434,38 +2440,42 @@ function renderCurrentSet(){
   else subParts.push('never deployed');
   document.getElementById('set-detail-sub').textContent=subParts.join(' · ');
 
-  // Smart account block — show banned in red with the ban date so the user
-  // can't accidentally assume a banned shop is still live.
+  // Smart account block — colored chip (green = live, red = banned) on the
+  // username itself, no extra "✕ BANNED" text badge. The chip border + dot
+  // already tells the story.
   const acct = set.accountId ? (accounts||[]).find(a=>a.id===set.accountId) : null;
   const acctBanned = acct && (acct.status==='banned' || !!acct.bannedAt);
   const acctBanDate = acct && acct.bannedAt ? new Date(acct.bannedAt) : null;
   const acctName = acct ? '@'+acct.username : (set.accountId ? '(unknown)' : '— none assigned');
   const acctHtml = !acct
     ? '<span style="color:var(--ink-3);">'+acctName+'</span>'
-    : acctBanned
-      ? '<span style="display:inline-flex;align-items:center;gap:6px;">'
-          +'<span class="badge" style="background:rgba(255,92,92,0.16);color:#ff8c8c;border:1px solid rgba(255,92,92,0.38);">✕ BANNED</span>'
-          +'<span style="color:#ff8c8c;font-weight:600;">'+acctName+'</span>'
-        +'</span>'
-      : '<span style="color:var(--ink);">'+acctName+'</span>';
+    : '<span style="display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:8px;font-weight:600;'
+        +(acctBanned
+          ? 'background:rgba(255,92,92,0.10);border:1px solid rgba(255,92,92,0.45);color:#ff8c8c;'
+          : 'background:rgba(0,229,160,0.10);border:1px solid rgba(0,229,160,0.45);color:var(--green);')
+      +'">'
+        +'<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:'+(acctBanned?'#ff5c5c':'var(--green)')+';box-shadow:0 0 6px '+(acctBanned?'rgba(255,92,92,0.6)':'rgba(0,229,160,0.55)')+';"></span>'
+        +acctName
+      +'</span>';
 
-  // Single canonical Drive line — folder name + live connection state.
+  // Single canonical Drive line — folder name on its own line so the
+  // "Riptag Sets / Set 1" path doesn't run into the "● not connected" pill.
   const driveOk = driveStatusCache && driveStatusCache.ok;
-  const driveFolderText = set.driveFolderName || '(no folder)';
-  const driveLine = '<span style="display:inline-flex;align-items:center;gap:8px;">'
-    +'<span style="color:'+(set.driveFolderName?'var(--ink)':'var(--ink-3)')+';">'+driveFolderText+'</span>'
+  const driveFolderText = set.driveFolderName || '(no folder selected)';
+  const driveLine = '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;text-align:right;max-width:60%;">'
+    +'<span style="color:'+(set.driveFolderName?'var(--ink)':'var(--ink-3)')+';line-height:1.3;word-break:break-word;">'+driveFolderText+'</span>'
     +'<span id="drive-status-pill" style="font-size:11px;font-family:var(--mono);color:'+(driveOk?'var(--green)':'#ff8c8c')+';">'+(driveOk?'● connected':'● not connected')+'</span>'
-  +'</span>';
+  +'</div>';
 
   // Smart status block — combines posted progress + last deployed + ban info
   const totalListings = set.listings?.length || 0;
   const postedCount = (set.listings||[]).filter(l=>l.posted).length;
   const allPosted = totalListings>0 && postedCount===totalListings;
   const partialPosted = postedCount>0 && !allPosted;
+  // Deploy-state badge only — the target-account chip already conveys ban
+  // state with its red border, so don't duplicate it here.
   let statusBadge;
-  if(acctBanned){
-    statusBadge = '<span class="badge" style="background:rgba(255,92,92,0.16);color:#ff8c8c;border:1px solid rgba(255,92,92,0.38);">✕ Account banned</span>';
-  } else if(allPosted){
+  if(allPosted){
     statusBadge = '<span class="badge" style="background:rgba(0,229,160,0.14);color:var(--green);border:1px solid rgba(0,229,160,0.32);">✓ Deployed ('+postedCount+'/'+totalListings+')</span>';
   } else if(partialPosted){
     statusBadge = '<span class="badge" style="background:var(--amber-dim);color:var(--amber);border:1px solid rgba(251,191,36,0.3);">↻ Partial '+postedCount+'/'+totalListings+'</span>';
