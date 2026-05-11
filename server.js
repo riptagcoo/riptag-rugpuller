@@ -801,6 +801,27 @@ app.post('/api/sets/:id/preview-images', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// Bulk metadata for ALL sets' preview images in one call. Lets the dashboard
+// pre-warm the gallery for every set on initial load instead of waiting for
+// the user to open a specific set. Returns only metadata (idx, content_type,
+// name) per set so the response stays small — the actual image bytes are
+// still served by /api/sets/:id/preview-images/:idx and benefit from the
+// browser HTTP cache on subsequent navigations.
+app.get('/api/preview-images', async (req, res) => {
+  try {
+    await ensureSetPreviewsTable();
+    const r = await pool.query(
+      'SELECT set_id, idx, content_type, name FROM set_previews ORDER BY set_id, idx'
+    );
+    const bySet = {};
+    for (const row of r.rows) {
+      if (!bySet[row.set_id]) bySet[row.set_id] = [];
+      bySet[row.set_id].push({ idx: row.idx, content_type: row.content_type, name: row.name });
+    }
+    res.json({ sets: bySet });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 app.get('/api/sets/:id/preview-images', async (req, res) => {
   try {
     const r = await pool.query(
@@ -1099,10 +1120,15 @@ app.get('/api/active-this-week', async (req, res) => {
       const deployedAt = latestSet?.deployedAt || account.connectedAt;
       const hoursLive = deployedAt ? Math.floor((now - new Date(deployedAt)) / (1000 * 60 * 60)) : 0;
       const orders = account.orders || [];
+      // An account is "banned" if EITHER the live status check flagged it
+      // OR a ban date was recorded in the tracker. Surface both signals so
+      // every page (Accounts, Active, Set Info) shows the same red badge.
+      const isBanned = account.status === 'banned' || !!account.bannedAt;
       return {
         accountId: account.id,
         username: account.username,
-        accountStatus: account.status || 'unknown',
+        accountStatus: isBanned ? 'banned' : (account.status || 'unknown'),
+        bannedAt: account.bannedAt || null,
         connectedAt: account.connectedAt,
         proxy: account.proxy || null,
         setId: latestSet?.id || null,

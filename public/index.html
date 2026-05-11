@@ -741,7 +741,6 @@ tr:hover td { background: rgba(255,255,255,0.015); cursor: pointer; }
       <button class="btn ghost sm" onclick="openEditSetModal()">✏ Edit</button>
       <button class="btn ghost sm" onclick="buildListings()">⚙ Build Listings</button>
       <button class="btn ghost sm" onclick="resetSet(currentSetId)" title="Mark all listings unposted so you can redeploy to another account">♻ Reset</button>
-      <button class="btn ghost sm" onclick="openQuickRefreshModal(currentSetId)" title="Replace blurry photos on every active listing with random ones from this set's pool">🔁 Quick Refresh</button>
       <button class="btn ghost sm" onclick="openMassEditLiveModal(currentSetId)" title="Update the description on every live listing on Depop">✎ Mass Edit Live</button>
       <button class="btn ghost sm danger" onclick="deleteSet(currentSetId)">🗑 Delete</button>
       <button class="btn primary" onclick="deploySet()">▶ Deploy</button>
@@ -1945,6 +1944,30 @@ function updateRunStatus(alive){
   else{pill.className='status-pill';lbl.textContent='RUN.bat offline';}
 }
 
+// Cache of per-set preview-image metadata, populated once on dashboard load.
+// Lets renderPreviewGallery render instantly when the user opens a set
+// (instead of waiting for the per-set fetch). Also drives a background
+// <img> pre-fetch so the actual bytes are already in the browser cache.
+let allPreviewImagesMeta = {}; // setId -> [{idx, content_type, name}]
+
+async function preloadAllPreviewImages(){
+  try{
+    const r = await fetch('/api/preview-images');
+    const d = await r.json();
+    allPreviewImagesMeta = d.sets || {};
+    // Kick off background fetches so the bytes are already cached when the
+    // user opens any set. Done after a tick so it doesn't block initial render.
+    setTimeout(()=>{
+      for(const setId of Object.keys(allPreviewImagesMeta)){
+        for(const img of allPreviewImagesMeta[setId]){
+          const i = new Image();
+          i.src = '/api/sets/'+setId+'/preview-images/'+img.idx;
+        }
+      }
+    }, 100);
+  }catch(e){ /* silent — preview tab will fall back to per-set fetch */ }
+}
+
 async function init(){
   // One-shot cleanup of any ghost/invalid set rows from earlier versions.
   // Harmless if there are none.
@@ -1952,6 +1975,8 @@ async function init(){
   await Promise.all([loadSets(),loadAccounts(),checkDrive(),checkDaemon()]);
   connectSSE();
   renderOverview();
+  // Pre-warm previews in the background — doesn't block the UI.
+  preloadAllPreviewImages();
   setInterval(checkDaemon,30000);
 }
 
@@ -2011,7 +2036,40 @@ async function loadSets(){
   return sets;
 }
 async function loadAccounts(){const r=await fetch('/api/accounts').catch(()=>({json:()=>[]}));accounts=await r.json().catch(()=>[]);renderAccounts();return accounts;}
-async function checkDrive(){const r=await fetch('/api/drive/status').catch(()=>({json:()=>({})}));const d=await r.json().catch(()=>({}));const btn=document.getElementById('drive-btn');const lbl=document.getElementById('drive-label');if(d.connected){btn.classList.add('connected');lbl.textContent='Drive Connected ✓';}else{btn.className='drive-pill';lbl.textContent='Connect Drive';}}
+// Drive "connected" state is the SAME everywhere — top pill, Set Info panel,
+// preview warming. Use the deep probe (/api/drive/check-tokens) so we don't
+// say "connected" when tokens are stale and Drive actually 401s.
+let driveStatusCache = { ok: false, user: null, hint: '', checkedAt: 0 };
+async function checkDrive(){
+  try{
+    const r = await fetch('/api/drive/check-tokens');
+    const d = await r.json();
+    driveStatusCache = { ok: !!d.ok, user: d.user||null, hint: d.hint||'', checkedAt: Date.now() };
+  } catch(e){
+    driveStatusCache = { ok: false, user: null, hint: 'check failed', checkedAt: Date.now() };
+  }
+  const btn=document.getElementById('drive-btn');
+  const lbl=document.getElementById('drive-label');
+  if(driveStatusCache.ok){
+    if(btn) btn.classList.add('connected');
+    if(lbl) lbl.textContent='Drive Connected ✓';
+  } else {
+    if(btn) btn.className='drive-pill';
+    if(lbl) lbl.textContent='Connect Drive';
+  }
+  // Update any visible Set Info pill too
+  const pill=document.getElementById('drive-status-pill');
+  if(pill){
+    if(driveStatusCache.ok){
+      pill.style.color='var(--green)';
+      pill.textContent='● connected'+(driveStatusCache.user?.emailAddress?' · '+driveStatusCache.user.emailAddress:'');
+    } else {
+      pill.style.color='#ff5c5c';
+      pill.textContent='● not connected';
+    }
+    pill.title=driveStatusCache.hint||'';
+  }
+}
 
 function showPage(page,setId){
   ['overview','accounts','schedule','sold','descriptions','tracker','replier','set'].forEach(p=>{const pg=document.getElementById('page-'+p);if(pg)pg.classList.toggle('hidden',p!==page);const nav=document.getElementById('nav-'+p);if(nav)nav.classList.toggle('active',p===page);});
@@ -2375,40 +2433,78 @@ function renderCurrentSet(){
   if(deployedLabel) subParts.push('last deployed '+deployedLabel);
   else subParts.push('never deployed');
   document.getElementById('set-detail-sub').textContent=subParts.join(' · ');
-  document.getElementById('set-info-panel').innerHTML=`<div style="display:flex;flex-direction:column;gap:8px;font-size:13px;">
-    <div style="display:flex;justify-content:space-between;"><span style="color:var(--muted);">Category</span><span class="badge badge-${set.category}">${set.category==='riptag'?'riptag.co':'rugpull'}</span></div>
-    <div style="display:flex;justify-content:space-between;"><span style="color:var(--muted);">Price</span><span>$${set.price}</span></div>
-    <div style="display:flex;justify-content:space-between;"><span style="color:var(--muted);">Sizes</span><span>${(set.sizes||[]).join(', ')}</span></div>
-    <div style="display:flex;justify-content:space-between;"><span style="color:var(--muted);">Drive folder</span><span>${set.driveFolderName||'—'}</span></div>
-    <div style="display:flex;justify-content:space-between;align-items:center;"><span style="color:var(--muted);">Drive status</span><span id="drive-status-pill" style="font-size:11px;font-family:var(--mono);color:var(--ink-3);">checking…</span></div>
-    <div style="display:flex;justify-content:space-between;"><span style="color:var(--muted);">Account</span><span>${getAccountName(set.accountId)}</span></div>
-    <div style="display:flex;justify-content:space-between;"><span style="color:var(--muted);">Schedule</span><span>${set.schedule?.enabled?'📅 '+set.schedule.days.join(', ')+' @ '+set.schedule.time:'Off'}</span></div>
-    <div style="display:flex;justify-content:space-between;"><span style="color:var(--muted);">Status</span><span class="badge badge-${set.status}">${set.status}</span></div>
-    <div style="display:flex;justify-content:space-between;align-items:center;"><span style="color:var(--muted);">Last deployed</span>${deployedLabel
-      ? '<span class="badge" style="background:rgba(0,229,160,0.14);color:var(--green);border:1px solid rgba(0,229,160,0.32);font-family:var(--mono);font-weight:600;">📅 '+deployedLabel+'</span>'
-      : '<span class="badge" style="background:rgba(255,255,255,0.04);color:var(--ink-3);border:1px solid var(--glass-border);font-family:var(--mono);">— never</span>'
-    }</div>
-  </div>`;
+
+  // Smart account block — show banned in red with the ban date so the user
+  // can't accidentally assume a banned shop is still live.
+  const acct = set.accountId ? (accounts||[]).find(a=>a.id===set.accountId) : null;
+  const acctBanned = acct && (acct.status==='banned' || !!acct.bannedAt);
+  const acctBanDate = acct && acct.bannedAt ? new Date(acct.bannedAt) : null;
+  const acctName = acct ? '@'+acct.username : (set.accountId ? '(unknown)' : '— none assigned');
+  const acctHtml = !acct
+    ? '<span style="color:var(--ink-3);">'+acctName+'</span>'
+    : acctBanned
+      ? '<span style="display:inline-flex;align-items:center;gap:6px;">'
+          +'<span class="badge" style="background:rgba(255,92,92,0.16);color:#ff8c8c;border:1px solid rgba(255,92,92,0.38);">✕ BANNED</span>'
+          +'<span style="color:#ff8c8c;font-weight:600;">'+acctName+'</span>'
+        +'</span>'
+      : '<span style="color:var(--ink);">'+acctName+'</span>';
+
+  // Single canonical Drive line — folder name + live connection state.
+  const driveOk = driveStatusCache && driveStatusCache.ok;
+  const driveFolderText = set.driveFolderName || '(no folder)';
+  const driveLine = '<span style="display:inline-flex;align-items:center;gap:8px;">'
+    +'<span style="color:'+(set.driveFolderName?'var(--ink)':'var(--ink-3)')+';">'+driveFolderText+'</span>'
+    +'<span id="drive-status-pill" style="font-size:11px;font-family:var(--mono);color:'+(driveOk?'var(--green)':'#ff8c8c')+';">'+(driveOk?'● connected':'● not connected')+'</span>'
+  +'</span>';
+
+  // Smart status block — combines posted progress + last deployed + ban info
+  const totalListings = set.listings?.length || 0;
+  const postedCount = (set.listings||[]).filter(l=>l.posted).length;
+  const allPosted = totalListings>0 && postedCount===totalListings;
+  const partialPosted = postedCount>0 && !allPosted;
+  let statusBadge;
+  if(acctBanned){
+    statusBadge = '<span class="badge" style="background:rgba(255,92,92,0.16);color:#ff8c8c;border:1px solid rgba(255,92,92,0.38);">✕ Account banned</span>';
+  } else if(allPosted){
+    statusBadge = '<span class="badge" style="background:rgba(0,229,160,0.14);color:var(--green);border:1px solid rgba(0,229,160,0.32);">✓ Deployed ('+postedCount+'/'+totalListings+')</span>';
+  } else if(partialPosted){
+    statusBadge = '<span class="badge" style="background:var(--amber-dim);color:var(--amber);border:1px solid rgba(251,191,36,0.3);">↻ Partial '+postedCount+'/'+totalListings+'</span>';
+  } else {
+    statusBadge = '<span class="badge badge-'+set.status+'">'+set.status+'</span>';
+  }
+
+  const rows = [];
+  rows.push(`<div style="display:flex;justify-content:space-between;align-items:center;"><span style="color:var(--muted);">Category</span><span class="badge badge-${set.category}">${set.category==='riptag'?'🌐 riptag.co':'🎯 rugpull'}</span></div>`);
+  rows.push(`<div style="display:flex;justify-content:space-between;"><span style="color:var(--muted);">Price</span><span>$${set.price}</span></div>`);
+  rows.push(`<div style="display:flex;justify-content:space-between;"><span style="color:var(--muted);">Sizes</span><span>${(set.sizes||[]).join(', ')}</span></div>`);
+  rows.push(`<div style="display:flex;justify-content:space-between;align-items:center;"><span style="color:var(--muted);">Drive</span>${driveLine}</div>`);
+  rows.push(`<div style="display:flex;justify-content:space-between;align-items:center;"><span style="color:var(--muted);">Target account</span>${acctHtml}</div>`);
+  if(acctBanned && acctBanDate){
+    rows.push(`<div style="display:flex;justify-content:space-between;"><span style="color:var(--muted);">Date banned</span><span style="color:#ff8c8c;font-family:var(--mono);">${acctBanDate.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'})}</span></div>`);
+  }
+  rows.push(`<div style="display:flex;justify-content:space-between;"><span style="color:var(--muted);">Schedule</span><span>${set.schedule?.enabled?'📅 '+set.schedule.days.join(', ')+' @ '+set.schedule.time:'Off'}</span></div>`);
+  rows.push(`<div style="display:flex;justify-content:space-between;align-items:center;"><span style="color:var(--muted);">Status</span>${statusBadge}</div>`);
+  rows.push(`<div style="display:flex;justify-content:space-between;align-items:center;"><span style="color:var(--muted);">Last deployed</span>${deployedLabel
+    ? '<span class="badge" style="background:rgba(0,229,160,0.14);color:var(--green);border:1px solid rgba(0,229,160,0.32);font-family:var(--mono);font-weight:600;">📅 '+deployedLabel+'</span>'
+    : '<span class="badge" style="background:rgba(255,255,255,0.04);color:var(--ink-3);border:1px solid var(--glass-border);font-family:var(--mono);">— never</span>'
+  }</div>`);
+
+  document.getElementById('set-info-panel').innerHTML =
+    '<div style="display:flex;flex-direction:column;gap:8px;font-size:13px;">' + rows.join('') + '</div>';
+
   renderListingsTable(set);
   refreshDriveStatusPill();
 }
 
 async function refreshDriveStatusPill(){
+  // Re-run the global check so the top pill and the Set Info pill stay in
+  // sync. checkDrive() updates both elements at once based on the same probe.
+  await checkDrive();
   const pill=document.getElementById('drive-status-pill');
   if(!pill) return;
   try{
-    const r=await fetch('/api/drive/check-tokens');
-    const d=await r.json();
-    if(d.ok){
-      pill.style.color='var(--green)';
-      pill.textContent='● connected'+(d.user?.emailAddress?' · '+d.user.emailAddress:'');
-      pill.title=d.hint||'';
-    } else {
-      pill.style.color='#ff5c5c';
-      pill.textContent='● not connected';
-      pill.title=d.hint||d.error||'Drive not connected';
-      pill.style.cursor='help';
-    }
+    // checkDrive already set the text and color; nothing else to do here.
+    return;
   } catch(e){
     pill.style.color='var(--ink-3)';
     pill.textContent='unknown';
@@ -2545,14 +2641,22 @@ async function renderPreviewGallery(set,el){
   const desc=(set&&set.description||'').replace(/</g,'&lt;');
   const setId=set&&set.id;
 
-  // Fetch current preview list (skip refetch if same set already loaded)
+  // Fetch current preview list. We prefer the bulk preload cache so the
+  // gallery renders instantly. If that's empty for this set (e.g. user just
+  // uploaded one and the cache hasn't refreshed yet), fall back to a fetch.
   if(previewImagesState.setId!==setId){
-    previewImagesState={ setId, images: [], v: Date.now() };
-    try{
-      const r=await fetch('/api/sets/'+setId+'/preview-images');
-      const d=await r.json();
-      previewImagesState.images=Array.isArray(d.images)?d.images:[];
-    } catch(e){ previewImagesState.images=[]; }
+    const preloaded = allPreviewImagesMeta[setId];
+    if(Array.isArray(preloaded)){
+      previewImagesState={ setId, images: preloaded.slice(), v: Date.now() };
+    } else {
+      previewImagesState={ setId, images: [], v: Date.now() };
+      try{
+        const r=await fetch('/api/sets/'+setId+'/preview-images');
+        const d=await r.json();
+        previewImagesState.images=Array.isArray(d.images)?d.images:[];
+        allPreviewImagesMeta[setId]=previewImagesState.images.slice();
+      } catch(e){ previewImagesState.images=[]; }
+    }
   }
 
   const slots=[];
@@ -2662,6 +2766,7 @@ async function onPreviewFilesPicked(input){
     if(d.error){ glog('Upload failed: '+d.error,'err'); return; }
     glog('Saved '+d.count+' preview image(s)','ok');
     previewImagesState={ setId: currentSetId, images: d.images||[], v: Date.now() };
+    allPreviewImagesMeta[currentSetId] = (d.images||[]).slice();
     const set=sets.find(s=>s.id===currentSetId);
     if(set) renderListingsTable(set);
   } catch(e){ glog('Upload error: '+e.message,'err'); }
@@ -2691,6 +2796,7 @@ async function removePreviewImage(idx){
     if(d.error){ glog('Remove failed: '+d.error,'err'); return; }
     glog('Removed preview image','ok');
     previewImagesState={ setId: currentSetId, images: d.images||[], v: Date.now() };
+    allPreviewImagesMeta[currentSetId] = (d.images||[]).slice();
     const set=sets.find(s=>s.id===currentSetId);
     if(set) renderListingsTable(set);
   } catch(e){ glog('Remove error: '+e.message,'err'); }
@@ -2702,6 +2808,7 @@ async function clearAllPreviewImages(){
   try{
     await fetch('/api/sets/'+currentSetId+'/preview-images',{ method:'DELETE' });
     previewImagesState={ setId: currentSetId, images: [], v: Date.now() };
+    allPreviewImagesMeta[currentSetId] = [];
     glog('Cleared preview images','ok');
     const set=sets.find(s=>s.id===currentSetId);
     if(set) renderListingsTable(set);

@@ -2043,9 +2043,8 @@ async function main() {
   console.log('  5. Download & merge shipping labels (sorted by size)');
   console.log('  6. Refresh photos on a deployed set (match by size)');
   console.log('  7. TEST: download one photo at full res (verify blur fix)');
-  console.log('  8. Quick Refresh: replace blurry photos on EVERY listing in shop (random)');
-  console.log('  9. Deploy a Chud (1 photo per listing — fallback when multi-photo fails)');
-  const action = await ask('\nEnter choice (1-9): ');
+  console.log('  8. Deploy a Chud (1 photo per listing — fallback when multi-photo fails)');
+  const action = await ask('\nEnter choice (1-8): ');
 
   if (action === '2') {
     await runMassEdit();
@@ -2073,10 +2072,6 @@ async function main() {
     return;
   }
   if (action === '8') {
-    await runQuickRefresh();
-    return;
-  }
-  if (action === '9') {
     await runDeployChud();
     return;
   }
