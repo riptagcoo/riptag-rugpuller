@@ -263,11 +263,43 @@ async function checkAccount(account, page, pass = 1) {
     try {
       await page.goto(href, { waitUntil: 'domcontentloaded', timeout: 30000 });
 
-      // Wait for the message composer to appear — proof the thread actually loaded
-      try {
-        await page.waitForSelector(SELECTORS.messageInput, { timeout: 15000 });
-      } catch {
-        log('    · composer never appeared, skipping this thread');
+      // Wait for the message composer to appear — proof the thread actually loaded.
+      // Depop sometimes shows "There was a problem loading your messages"
+      // instead of the thread; detect that and refresh once before giving up.
+      let composerFound = false;
+      for (let attempt = 0; attempt < 2 && !composerFound; attempt++) {
+        try {
+          await page.waitForSelector(SELECTORS.messageInput, { timeout: 12000 });
+          composerFound = true;
+        } catch {
+          // Look for Depop's error banner. If it's there, click Refresh and retry.
+          const hasError = await page.evaluate(() => {
+            const t = document.body && document.body.innerText || '';
+            return /problem loading your messages/i.test(t);
+          }).catch(() => false);
+          if (hasError && attempt === 0) {
+            log('    · "problem loading messages" banner — refreshing once');
+            // Click any "Refresh" / "try again" button that's visible
+            const clicked = await page.evaluate(() => {
+              const btns = [...document.querySelectorAll('button, a, [role="button"]')];
+              for (const b of btns) {
+                const t = (b.innerText || '').trim().toLowerCase();
+                if (/^(refresh|try again|reload)$/i.test(t)) { b.click(); return true; }
+              }
+              return false;
+            }).catch(() => false);
+            if (!clicked) {
+              // Fall back to a full reload
+              await page.reload({ waitUntil: 'domcontentloaded', timeout: 30000 }).catch(()=>{});
+            }
+            await page.waitForTimeout(2500);
+          } else {
+            break;
+          }
+        }
+      }
+      if (!composerFound) {
+        log('    · composer never appeared (Depop error or empty thread), skipping');
         continue;
       }
       await page.waitForTimeout(2000);
