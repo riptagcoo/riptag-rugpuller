@@ -413,9 +413,39 @@ async function main() {
 
         let browser;
         try {
-          browser = await chromium.launch({ headless: false, slowMo: 30 });
+          // Stealth-ish launch: hide the "Chrome is being controlled by
+          // automated test software" flag and a few other obvious tells
+          // that Depop's WAF uses to 403 us into /messages/offers/.
+          browser = await chromium.launch({
+            headless: false,
+            slowMo: 30,
+            args: [
+              '--disable-blink-features=AutomationControlled',
+              '--no-default-browser-check',
+              '--disable-infobars',
+              '--disable-features=IsolateOrigins,site-per-process'
+            ]
+          });
           const context = await browser.newContext({
-            userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36'
+            userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
+            viewport: { width: 1366, height: 820 },
+            locale: 'en-US',
+            timezoneId: 'America/Denver'
+          });
+          // Override `navigator.webdriver` (Playwright sets it to true by
+          // default — Cloudflare/Depop reads this and flags us). Also a few
+          // other fingerprint tweaks so we look more like a normal Chrome.
+          await context.addInitScript(() => {
+            Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+            // Spoof a plausible plugins array (empty triggers detection)
+            Object.defineProperty(navigator, 'plugins', {
+              get: () => [1, 2, 3, 4, 5]
+            });
+            Object.defineProperty(navigator, 'languages', {
+              get: () => ['en-US', 'en']
+            });
+            // Chrome runtime object exists on real Chrome
+            window.chrome = window.chrome || { runtime: {} };
           });
           await context.addCookies(cleanCookies(account.cookies));
           const page = await context.newPage();
