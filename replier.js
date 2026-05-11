@@ -142,25 +142,44 @@ async function checkAccount(account, page, pass = 1) {
   const username = account.username;
   log(`→ checking @${username}${pass > 1 ? ` (pass ${pass})` : ''}`);
 
-  // Navigate directly to the Unread filter URL — Depop honors ?unread=true
-  // so we skip having to click the Inbox tab or the filter dropdown.
-  try {
-    await page.goto('https://www.depop.com/messages/?unread=true', { waitUntil: 'domcontentloaded', timeout: 30000 });
-  } catch (e) { log(`  · could not open unread inbox: ${e.message}`); return; }
+  // Try a few inbox URLs in order. Depop sometimes redirects the
+  // ?unread=true query URL to /messages/offers/ which then 403s for
+  // accounts flagged by their WAF — so we have fallbacks. If ALL of them
+  // 403, the account is blocked at the edge and we skip until next sweep.
+  const INBOX_URLS = [
+    'https://www.depop.com/messages/inbox/',
+    'https://www.depop.com/messages/?unread=true',
+    'https://www.depop.com/messages/'
+  ];
+  let inboxLoaded = false;
+  for (const tryUrl of INBOX_URLS) {
+    try {
+      const resp = await page.goto(tryUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      const status = resp ? resp.status() : 0;
+      const landedOn = page.url() || '';
+      // Depop sometimes 302s us to /messages/offers/ and THAT page is what
+      // returns 403. Treat any landed URL containing /offers/requests/archived
+      // as a redirect we shouldn't trust.
+      if (status === 403 || status === 401) {
+        log(`  · ${tryUrl} returned ${status} (${landedOn}) — trying next`);
+        continue;
+      }
+      if (/\/messages\/(offers|requests|archived)/i.test(landedOn)) {
+        log(`  · ${tryUrl} redirected to ${landedOn} — trying next`);
+        continue;
+      }
+      inboxLoaded = true;
+      break;
+    } catch (e) {
+      log(`  · ${tryUrl} threw: ${e.message} — trying next`);
+    }
+  }
+  if (!inboxLoaded) {
+    log(`  ⚠ @${username}: all inbox URLs blocked (likely 403/WAF). Cookies may be stale or IP flagged. Skipping.`);
+    return;
+  }
 
   await page.waitForTimeout(2500);
-
-  // Defensive: if Depop dropped us on /messages/offers (or any tab that
-  // isn't the inbox), force-navigate back. We never accept offers, so the
-  // Offers tab is a dead end for this bot.
-  try {
-    const cur = page.url() || '';
-    if (/\/messages\/(offers|requests|archived)/i.test(cur)) {
-      log(`  · landed on ${cur} — bouncing back to inbox`);
-      await page.goto('https://www.depop.com/messages/?unread=true', { waitUntil: 'domcontentloaded', timeout: 30000 });
-      await page.waitForTimeout(1500);
-    }
-  } catch {}
 
   // Belt & braces: if Depop still showed the Offers tab, click Inbox manually
   try {
