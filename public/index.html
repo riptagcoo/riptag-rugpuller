@@ -596,7 +596,6 @@ tr:hover td { background: rgba(255,255,255,0.015); cursor: pointer; }
   </div>
   <div class="sb-nav">
     <div class="sb-item active" id="nav-overview" onclick="showPage('overview')"><span class="ico">⬡</span>Overview</div>
-    <div class="sb-item" id="nav-active" onclick="showPage('active')"><span class="ico">⬤</span>Active Accounts</div>
     <div class="sb-item" id="nav-accounts" onclick="showPage('accounts')"><span class="ico">○</span>Accounts</div>
     <div class="sb-item" id="nav-schedule" onclick="showPage('schedule')"><span class="ico">◻</span>Schedule</div>
     <div class="sb-item" id="nav-sold" onclick="showPage('sold')"><span class="ico">▦</span>Sold & Labels</div>
@@ -656,33 +655,26 @@ tr:hover td { background: rgba(255,255,255,0.015); cursor: pointer; }
   </div>
 </div>
 
-<!-- ACTIVE ACCOUNTS -->
-<div id="page-active" class="hidden">
-  <div class="topbar">
-    <div class="topbar-left">
-      <div class="page-title">Active Accounts</div>
-      <div class="page-sub" id="active-sub">All connected accounts</div>
-    </div>
-    <div class="topbar-right">
-      <button class="btn ghost sm" onclick="checkAllStatuses()">◉ Check All Statuses</button>
-      <button class="btn ghost sm" onclick="renderActiveThisWeek()">↻ Refresh</button>
-    </div>
-  </div>
-  <div class="page-content"><div id="active-list"></div></div>
-</div>
-
-<!-- ACCOUNTS -->
+<!-- ACCOUNTS (merged with the old Active Accounts view) -->
 <div id="page-accounts" class="hidden">
   <div class="topbar">
     <div class="topbar-left">
       <div class="page-title">Accounts</div>
-      <div class="page-sub">Connected Depop accounts</div>
+      <div class="page-sub">Connected Depop accounts · live status · earnings · orders</div>
+    </div>
+    <div class="topbar-right">
+      <button class="btn ghost sm" onclick="checkAllStatuses()">◉ Check All Statuses</button>
+      <button class="btn ghost sm" onclick="renderAccounts()">↻ Refresh</button>
     </div>
   </div>
   <div class="page-content">
     <div class="card">
-      <div class="card-title">Connected via Chrome Extension</div>
-      <p style="font-size:13px;color:var(--ink-3);line-height:1.7;margin-bottom:16px;">Log into Depop in Chrome → open the extension → Connect. Accounts appear here automatically.</p>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:14px;flex-wrap:wrap;">
+        <div>
+          <div class="card-title" style="margin:0;">Connected accounts</div>
+          <div style="font-size:12px;color:var(--ink-3);margin-top:4px;">Connect via the Chrome extension. Click any row to see orders for that account.</div>
+        </div>
+      </div>
       <div id="accounts-list"></div>
     </div>
   </div>
@@ -735,10 +727,6 @@ tr:hover td { background: rgba(255,255,255,0.015); cursor: pointer; }
   </div>
   <div class="page-content">
     <div id="descriptions-list"><div class="empty" style="padding:20px;">Loading…</div></div>
-    <div class="card" style="margin-top:16px;display:none;" id="legacy-templates-card">
-      <div class="card-title">Legacy templates (no set assigned)</div>
-      <div id="legacy-templates-list"></div>
-    </div>
   </div>
 </div>
 
@@ -938,23 +926,16 @@ tr:hover td { background: rgba(255,255,255,0.015); cursor: pointer; }
 
 <!-- SET MODAL -->
 <div class="modal-overlay hidden" id="set-modal">
-  <div class="modal">
+  <div class="modal" style="max-width:900px;">
     <div class="modal-title" id="set-modal-title">New Set</div>
+
+    <!-- SHARED FIELDS (apply to both rugpull and riptag.co copies) -->
     <div class="grid-2">
       <div class="field"><label>Set Name</label><input class="input" id="fm-name" placeholder="e.g. Set 4 — Vintage"/></div>
-      <div class="field"><label>Category</label><select class="input" id="fm-category"><option value="rugpull">🎯 Rugpull</option><option value="riptag">🌐 Riptag.co</option></select></div>
+      <div class="field" id="fm-category-wrap"><label>Category (edit only)</label><select class="input" id="fm-category"><option value="rugpull">🎯 Rugpull</option><option value="riptag">🌐 Riptag.co</option></select></div>
     </div>
-    <div class="grid-2">
-      <div class="field"><label>Price ($)</label><input class="input" id="fm-price" placeholder="20" type="number"/></div>
-      <div class="field"><label>Photos per group</label><select class="input" id="fm-groupsize"><option value="4">4 photos</option><option value="5">5 photos</option></select></div>
-    </div>
+    <div class="field" id="fm-groupsize-wrap"><label>Photos per group</label><select class="input" id="fm-groupsize" style="max-width:200px;"><option value="4">4 photos</option><option value="5">5 photos</option></select></div>
     <div class="field"><label>Sizes</label><div class="chips" id="fm-sizes"><div class="chip on" data-size="S">S</div><div class="chip on" data-size="M">M</div><div class="chip on" data-size="L">L</div><div class="chip on" data-size="XL">XL</div><div class="chip" data-size="XXL">XXL</div></div></div>
-    <div class="field"><label>Description Template</label><textarea class="input" id="fm-desc" rows="4">🌴 New Y2K &amp; Vintage Drops 🌴
-
-⦾ Curated Bundles &amp; Sick Pieces
-⦾ DM me for Bundle Info
-
-#vintage #y2k #thrift #streetwear</textarea></div>
     <div class="field">
       <label>Google Drive Folder</label>
       <div id="fm-folder-status" style="font-size:12px;color:var(--ink-3);margin-bottom:8px;">No folder selected</div>
@@ -962,7 +943,38 @@ tr:hover td { background: rgba(255,255,255,0.015); cursor: pointer; }
       <button class="btn ghost sm" onclick="openFolderPicker()">◫ Pick Drive Folder</button>
       <input type="hidden" id="fm-folder-id"/><input type="hidden" id="fm-folder-name"/>
     </div>
-    <div class="field"><label>Target Account</label><select class="input" id="fm-account"><option value="">— Select account —</option></select></div>
+
+    <!-- DUAL PANELS (new-set mode only — fills BOTH categories at once) -->
+    <div id="fm-dual-panels" style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:18px 0;">
+      <div style="border:1px solid rgba(167,139,250,0.28);background:rgba(167,139,250,0.04);border-radius:12px;padding:14px;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+          <span style="font-size:18px;">🎯</span>
+          <span style="font-weight:700;font-size:13px;color:#b59eff;text-transform:uppercase;letter-spacing:0.05em;">Rugpull panel</span>
+        </div>
+        <div class="field"><label>Price ($)</label><input class="input" id="fm-rugpull-price" placeholder="20" type="number" value="20"/></div>
+        <div class="field"><label>Description</label><textarea class="input" id="fm-rugpull-desc" rows="6" placeholder="Rugpull description for this set"></textarea></div>
+        <div class="field"><label>Target Account <span style="color:var(--ink-4);font-weight:400;">(optional)</span></label><select class="input" id="fm-rugpull-account"><option value="">— None —</option></select></div>
+      </div>
+      <div style="border:1px solid rgba(255,159,67,0.28);background:rgba(255,159,67,0.04);border-radius:12px;padding:14px;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+          <span style="font-size:18px;">🌐</span>
+          <span style="font-weight:700;font-size:13px;color:#ffaf68;text-transform:uppercase;letter-spacing:0.05em;">Riptag.co panel</span>
+        </div>
+        <div class="field"><label>Price ($)</label><input class="input" id="fm-riptag-price" placeholder="20" type="number" value="20"/></div>
+        <div class="field"><label>Description</label><textarea class="input" id="fm-riptag-desc" rows="6" placeholder="Riptag.co description for this set"></textarea></div>
+        <div class="field"><label>Target Account <span style="color:var(--ink-4);font-weight:400;">(optional)</span></label><select class="input" id="fm-riptag-account"><option value="">— None —</option></select></div>
+      </div>
+    </div>
+
+    <!-- SINGLE PANEL (edit mode only — replaces dual panels when editing one set) -->
+    <div id="fm-single-panel" style="display:none;">
+      <div class="grid-2">
+        <div class="field"><label>Price ($)</label><input class="input" id="fm-price" placeholder="20" type="number"/></div>
+        <div class="field"><label>Target Account</label><select class="input" id="fm-account"><option value="">— Select account —</option></select></div>
+      </div>
+      <div class="field"><label>Description</label><textarea class="input" id="fm-desc" rows="5"></textarea></div>
+    </div>
+
     <div class="field">
       <label>Schedule</label>
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
@@ -976,7 +988,7 @@ tr:hover td { background: rgba(255,255,255,0.015); cursor: pointer; }
         <div class="field" style="margin:0;"><label>Deploy Time (MST)</label><input class="input" id="fm-time" type="time" value="09:00"/></div>
       </div>
     </div>
-    <div class="modal-actions"><button class="btn ghost" onclick="closeModal('set-modal')">Cancel</button><button class="btn primary" onclick="saveSet()">Save Set</button></div>
+    <div class="modal-actions"><button class="btn ghost" onclick="closeModal('set-modal')">Cancel</button><button class="btn primary" onclick="saveSet()" id="fm-save-btn">Save both versions</button></div>
   </div>
 </div>
 
@@ -1359,7 +1371,7 @@ async function renderTracker(){
 
     // Stats
     const totalEarnings = trackerData.reduce((a,t) => a + parseFloat(t.earnings||0), 0);
-    const banned = trackerData.filter(t => t.bannedAt).length;
+    const banned = trackerData.filter(t => t.bannedAt || t.status === 'banned').length;
     const active = trackerData.length - banned;
     const pendingPayout = trackerData.filter(t => {
       if(!t.bannedAt) return false;
@@ -1384,13 +1396,18 @@ async function renderTracker(){
       const isExpanded = expandedTrackers.has(t.id);
       const isRiptag = t.category === 'riptag';
       const banDate = t.bannedAt ? new Date(t.bannedAt) : null;
+      // An account is "banned" if EITHER a ban date is recorded OR the live
+      // status check tagged it banned. Previously the tracker only looked at
+      // bannedAt, so accounts flagged banned via the status check showed as
+      // "● Active" here — inconsistent with the Accounts page.
+      const isBanned = !!t.bannedAt || t.status === 'banned';
       // Riptag.co accounts auto-pay (sales go to the website), so no 30-day
       // hold and no "pending payout" — just show paid/green.
       const payoutDate = (!isRiptag && banDate) ? new Date(banDate.getTime() + 30*24*60*60*1000) : null;
       const payoutDue = payoutDate ? payoutDate <= new Date() : false;
       const daysUntilPayout = payoutDate ? Math.max(0, Math.ceil((payoutDate - new Date()) / (1000*60*60*24))) : null;
-      const statusBadge = t.bannedAt
-        ? '<span class="badge status-banned">✕ Banned</span>'
+      const statusBadge = isBanned
+        ? '<span class="badge status-banned">✕ Banned'+(banDate?'':' (status)')+'</span>'
         : '<span class="badge status-live">● Active</span>';
       const categoryBadge = t.category
         ? '<span class="badge badge-'+t.category+'">'+(t.category==='riptag'?'🌐 riptag.co':'🎯 rugpull')+'</span>'
@@ -1506,7 +1523,7 @@ async function saveTracker(){
   await loadAccounts();
   if(typeof renderTracker==='function') renderTracker();
   if(typeof renderSchedule==='function' && currentPage==='schedule') renderSchedule();
-  if(typeof renderActiveThisWeek==='function' && currentPage==='active') renderActiveThisWeek();
+  if(typeof renderAccounts==='function' && currentPage==='accounts') renderAccounts();
   glog('Account saved','ok');
 }
 
@@ -1997,14 +2014,14 @@ async function loadAccounts(){const r=await fetch('/api/accounts').catch(()=>({j
 async function checkDrive(){const r=await fetch('/api/drive/status').catch(()=>({json:()=>({})}));const d=await r.json().catch(()=>({}));const btn=document.getElementById('drive-btn');const lbl=document.getElementById('drive-label');if(d.connected){btn.classList.add('connected');lbl.textContent='Drive Connected ✓';}else{btn.className='drive-pill';lbl.textContent='Connect Drive';}}
 
 function showPage(page,setId){
-  ['overview','accounts','schedule','active','sold','descriptions','tracker','replier','set'].forEach(p=>{document.getElementById('page-'+p).classList.toggle('hidden',p!==page);const nav=document.getElementById('nav-'+p);if(nav)nav.classList.toggle('active',p===page);});
+  ['overview','accounts','schedule','sold','descriptions','tracker','replier','set'].forEach(p=>{const pg=document.getElementById('page-'+p);if(pg)pg.classList.toggle('hidden',p!==page);const nav=document.getElementById('nav-'+p);if(nav)nav.classList.toggle('active',p===page);});
   currentPage=page;
   document.querySelectorAll('#page-'+page).forEach(el=>el.classList.add('page-enter'));
   if(page==='set'&&setId){currentSetId=setId;renderCurrentSet();}
   if(page==='overview')renderOverview();
   if(page==='accounts')renderAccounts();
   if(page==='schedule')renderSchedule();
-  if(page==='active')renderActiveThisWeek();
+  // Active Accounts merged into Accounts — no separate handler needed.
   if(page==='tracker')renderTracker();
   if(page==='replier')loadReplierPage();
   if(page==='sold')initSoldPage();
@@ -2055,27 +2072,6 @@ function renderDescriptionsList(){
     return isNaN(da)?0:da;
   });
   listEl.innerHTML = sortedSets.map(s => renderDescSetCard(s)).join('');
-
-  // Legacy templates (no setId)
-  const legacy = (descriptionTemplates||[]).filter(t => !t.setId);
-  const legacyCard = document.getElementById('legacy-templates-card');
-  const legacyList = document.getElementById('legacy-templates-list');
-  if(legacy.length && legacyCard && legacyList){
-    legacyCard.style.display='';
-    legacyList.innerHTML = legacy.map(t => {
-      const preview = (t.body||'').replace(/</g,'&lt;').slice(0,240);
-      const overflow = (t.body||'').length > 240 ? '…' : '';
-      return '<div class="card" style="margin-top:10px;padding:14px;">'
-        +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">'
-          +'<div style="font-weight:600;flex:1;">'+(t.name||'').replace(/</g,'&lt;')+'</div>'
-          +'<button class="btn sm danger" onclick="deleteDescriptionTemplate(\''+t.id+'\')">🗑</button>'
-        +'</div>'
-        +'<div style="font-size:12px;color:var(--ink-3);line-height:1.6;white-space:pre-wrap;">'+preview+overflow+'</div>'
-      +'</div>';
-    }).join('');
-  } else if(legacyCard){
-    legacyCard.style.display='none';
-  }
 }
 
 function renderDescSetCard(s){
@@ -2237,40 +2233,80 @@ function renderSidebarSets(){
   });
 }
 
-function renderAccounts(){
+// Accounts page = merged view that used to live in "Active Accounts".
+// Each card shows: status, category, deploy stats (set/posted/sold/live),
+// and expands to show scraped orders. Plus the original controls: replier
+// prompt picker, proxy, remove.
+async function renderAccounts(){
   const el=document.getElementById('accounts-list');
-  if(!accounts.length){el.innerHTML='<div class="empty" style="padding:20px;">No accounts connected yet.</div>';return;}
+  if(!el) return;
+  if(!accounts || !accounts.length){
+    el.innerHTML='<div class="empty" style="padding:20px;">No accounts connected yet. Use the Chrome extension to connect.</div>';
+    return;
+  }
   // Keep trackerData in sync for any edit flows elsewhere
   trackerData=accounts.slice();
-  el.innerHTML=accounts.map(a=>{
-    const depopUrl='https://www.depop.com/'+encodeURIComponent(a.username)+'/';
-    const hasCookies=Array.isArray(a.cookies)&&a.cookies.length>0;
-    const banned=a.status==='banned'||!!a.bannedAt;
+
+  // Pull the richer per-account data (set, posted, sold, live time) from
+  // the same endpoint the old Active Accounts page used. Fall back silently
+  // if the request fails so the basic info still renders.
+  let activeMap = new Map();
+  try {
+    const r = await fetch('/api/active-this-week');
+    const d = await r.json();
+    activeCache = d.active || [];
+    for (const a of activeCache) activeMap.set(a.accountId, a);
+  } catch (e) { /* ignore — render without stats */ }
+
+  el.innerHTML = accounts.map(a=>{
+    const stats = activeMap.get(a.id) || {};
+    const hasCookies = Array.isArray(a.cookies) && a.cookies.length>0;
+    const banned = a.status==='banned' || !!a.bannedAt;
     // Status dot: red = banned, green = live cookies, gray = no cookies/unknown
-    const dotColor=banned?'#ff5c5c':(hasCookies?'var(--green)':'var(--ink-3)');
-    const dotGlow=banned?'0 0 6px rgba(255,92,92,0.6)':(hasCookies?'0 0 6px var(--green-glow,rgba(0,229,160,0.55))':'none');
-    const statusLabel=banned?'Banned':(hasCookies?'Cookies fresh':'No cookies');
-    const cat=a.category==='riptag'?'riptag':'rugpull';
+    const dotColor = banned?'#ff5c5c':(hasCookies?'var(--green)':'var(--ink-3)');
+    const dotGlow = banned?'0 0 6px rgba(255,92,92,0.6)':(hasCookies?'0 0 6px var(--green-glow,rgba(0,229,160,0.55))':'none');
+    const statusLabel = banned?'Banned':(hasCookies?'Cookies fresh':'No cookies');
+    const cat = a.category==='riptag'?'riptag':'rugpull';
+    const catBadge = '<span class="badge badge-'+cat+'">'+(cat==='riptag'?'🌐 riptag.co':'🎯 rugpull')+'</span>';
+    const setName = stats.setName || 'No set assigned';
+    const posted = (stats.posted != null) ? stats.posted : '—';
+    const listingsCount = (stats.listings != null) ? stats.listings : '—';
+    const soldCount = (stats.soldCount != null) ? stats.soldCount : (a.soldCount||0);
+    const liveTime = stats.deployedAt ? (stats.hoursLive+'h ago') : '—';
+    const isExpanded = expandedAccounts.has(a.id);
+
     return `
-    <div class="acct-card">
-      <div class="acct-header">
-        <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${dotColor};box-shadow:${dotGlow};flex-shrink:0;margin-right:2px;" title="${statusLabel}"></span>
+    <div class="acct-card" id="card-${a.id}" style="margin-bottom:10px;">
+      <div style="display:flex;align-items:center;gap:14px;padding:16px 18px;cursor:pointer;" data-acid="${a.id}" onclick="toggleAccount(this.dataset.acid)">
+        <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${dotColor};box-shadow:${dotGlow};flex-shrink:0;" title="${statusLabel}"></span>
         <div class="acct-avatar">${(a.username||'??').substring(0,2).toUpperCase()}</div>
         <div style="flex:1;min-width:0;">
-          <div style="font-weight:600;font-size:13px;">@${a.username||'(no username)'}</div>
-          <div style="font-size:11px;color:var(--muted);font-family:var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
-            <span style="color:${dotColor};">● ${statusLabel}</span>
-            · connected ${new Date(a.connectedAt).toLocaleDateString()}
-            ${a.email?' · '+a.email:''}
-            ${a.proxy?' · 🔒 Proxy':''}
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap;">
+            <span style="font-size:14px;font-weight:700;">@${a.username||'(no username)'}</span>
+            <span class="badge" style="background:${banned?'rgba(255,92,92,0.14)':'rgba(0,229,160,0.14)'};color:${banned?'#ff8c8c':'var(--green)'};border:1px solid ${banned?'rgba(255,92,92,0.3)':'rgba(0,229,160,0.3)'};">${banned?'✕ Banned':(hasCookies?'● Live':'? Unknown')}</span>
+            ${catBadge}
+            ${a.proxy?'<span class="badge" style="background:rgba(255,255,255,0.06);color:var(--ink-3);border:1px solid var(--glass-border);font-family:var(--mono);">🔒 Proxy</span>':''}
+          </div>
+          <div style="display:flex;gap:22px;flex-wrap:wrap;font-family:var(--mono);font-size:11px;color:var(--ink-3);">
+            <div><span style="color:var(--ink-4);text-transform:uppercase;letter-spacing:0.06em;">Set</span> <span style="color:var(--ink-2);">${setName}</span></div>
+            <div><span style="color:var(--ink-4);text-transform:uppercase;letter-spacing:0.06em;">Posted</span> <span style="color:var(--ink);">${posted}/${listingsCount}</span></div>
+            <div><span style="color:var(--ink-4);text-transform:uppercase;letter-spacing:0.06em;">Sold</span> <span style="color:var(--green);font-weight:700;">${soldCount}</span></div>
+            <div><span style="color:var(--ink-4);text-transform:uppercase;letter-spacing:0.06em;">Live</span> <span>${liveTime}</span></div>
+            <div><span style="color:var(--ink-4);text-transform:uppercase;letter-spacing:0.06em;">Connected</span> <span>${a.connectedAt?new Date(a.connectedAt).toLocaleDateString():'—'}</span></div>
+            ${a.email?'<div><span style="color:var(--ink-4);text-transform:uppercase;letter-spacing:0.06em;">Email</span> <span>'+a.email+'</span></div>':''}
           </div>
         </div>
-        <select class="input" onchange="setAccountCategory('${a.id}', this.value)" title="Replier prompt for this account" style="height:30px;font-size:12px;padding:0 28px 0 10px;width:auto;min-width:130px;">
-          <option value="rugpull"${cat==='rugpull'?' selected':''}>🎯 Rugpull</option>
-          <option value="riptag"${cat==='riptag'?' selected':''}>🌐 Riptag.co</option>
-        </select>
-        <button class="btn sm" onclick="openProxyModal('${a.id}','${a.proxy||''}')">🔒 ${a.proxy?'Edit':'Add'} Proxy</button>
-        <button class="btn sm" style="color:var(--red);" onclick="deleteAccount('${a.id}')">Remove</button>
+        <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;" onclick="event.stopPropagation();">
+          <select class="input" onchange="setAccountCategory('${a.id}', this.value)" title="Replier prompt" style="height:30px;font-size:12px;padding:0 28px 0 10px;width:auto;min-width:130px;">
+            <option value="rugpull"${cat==='rugpull'?' selected':''}>🎯 Rugpull</option>
+            <option value="riptag"${cat==='riptag'?' selected':''}>🌐 Riptag.co</option>
+          </select>
+          <button class="btn xs ghost" onclick="openTrackerModal('${a.id}')" title="Edit details">✏ Edit</button>
+          <button class="btn xs ghost" onclick="printAllLabelsForAccount('${a.id}','${a.username}')" title="Print labels">🖨 Labels</button>
+          <button class="btn sm" onclick="openProxyModal('${a.id}','${a.proxy||''}')">🔒 ${a.proxy?'Edit':'Add'} Proxy</button>
+          <button class="btn sm" style="color:var(--red);" onclick="if(confirm('Remove @${a.username}?')) deleteAccount('${a.id}')">Remove</button>
+        </div>
+        <div class="expand-arrow" style="color:var(--ink-3);font-size:12px;flex-shrink:0;">${isExpanded?'▾':'▸'}</div>
       </div>
     </div>`;
   }).join('');
@@ -3101,32 +3137,50 @@ async function confirmMultiDeploy(){
   glog('Queued '+checked.length+' deploy(s). Make sure DAEMON.bat is running.','ok');
 }
 
+// In new-set mode the modal shows BOTH a rugpull and a riptag.co panel —
+// saving creates two sets at once that share the same name/sizes/folder/
+// schedule but each have their own price, description, and target account.
+// Edit mode collapses to a single-panel UI that targets just one set.
+function setModalMode(isEdit){
+  document.getElementById('fm-dual-panels').style.display = isEdit ? 'none' : 'grid';
+  document.getElementById('fm-single-panel').style.display = isEdit ? '' : 'none';
+  document.getElementById('fm-category-wrap').style.display = isEdit ? '' : 'none';
+  document.getElementById('fm-save-btn').textContent = isEdit ? 'Save Set' : 'Save both versions';
+}
+
+const DEFAULT_DESC = '🌴 New Y2K & Vintage Drops 🌴\n\n⦾ Curated Bundles & Sick Pieces\n⦾ Promotional Post\n⦾ DM me for Bundle Info\n\n#vintage #y2k #thrift #streetwear';
+
 async function openNewSetModal(){
   editingSetId=null;
+  setModalMode(false);
   document.getElementById('set-modal-title').textContent='New Set';
   document.getElementById('fm-name').value='';
-  document.getElementById('fm-price').value='20';
   document.getElementById('fm-groupsize').value='4';
-  document.getElementById('fm-category').value='rugpull';
-  document.getElementById('fm-desc').value='🌴 New Y2K & Vintage Drops 🌴\n\n⦾ Curated Bundles & Sick Pieces\n⦾ Promotional Post\n⦾ DM me for Bundle Info\n\n#vintage #y2k #thrift #streetwear';
   document.getElementById('fm-folder-id').value='';
   document.getElementById('fm-folder-name').value='';
   document.getElementById('fm-folder-status').textContent='No folder selected';
-  document.querySelectorAll('.size-chip').forEach(c=>c.classList.toggle('on',['S','M','L','XL'].includes(c.dataset.size)));
+  document.querySelectorAll('#fm-sizes .chip').forEach(c=>c.classList.toggle('on',['S','M','L','XL'].includes(c.dataset.size)));
   document.querySelectorAll('.day-chip').forEach(c=>c.classList.remove('on'));
   schedEnabled=false;
   document.getElementById('fm-sched-toggle').classList.remove('on');
   document.getElementById('fm-sched-label').textContent='Disabled';
   document.getElementById('fm-sched-options').classList.add('hidden');
   document.getElementById('fm-time').value='09:00';
+  // Dual panels
+  document.getElementById('fm-rugpull-price').value='20';
+  document.getElementById('fm-riptag-price').value='20';
+  document.getElementById('fm-rugpull-desc').value=DEFAULT_DESC;
+  document.getElementById('fm-riptag-desc').value=DEFAULT_DESC;
   populateAccountDropdown();
-  document.getElementById('fm-account').value='';
+  document.getElementById('fm-rugpull-account').value='';
+  document.getElementById('fm-riptag-account').value='';
   document.getElementById('set-modal').classList.remove('hidden');
 }
 
 async function openEditSetModal(){
   const set=sets.find(s=>s.id===currentSetId);if(!set)return;
   editingSetId=set.id;
+  setModalMode(true);
   document.getElementById('set-modal-title').textContent='Edit Set';
   document.getElementById('fm-name').value=set.name;
   document.getElementById('fm-price').value=set.price;
@@ -3149,25 +3203,67 @@ async function openEditSetModal(){
 }
 
 function toggleSchedule(){schedEnabled=!schedEnabled;document.getElementById('fm-sched-toggle').classList.toggle('on',schedEnabled);document.getElementById('fm-sched-label').textContent=schedEnabled?'Enabled':'Disabled';document.getElementById('fm-sched-options').classList.toggle('hidden',!schedEnabled);}
-function populateAccountDropdown(){const sel=document.getElementById('fm-account');if(!sel)return;sel.innerHTML='<option value="">— Select account —</option>'+deployableAccounts().map(a=>'<option value="'+a.id+'">@'+a.username+'</option>').join('');}
+
+function populateAccountDropdown(){
+  // Populate every account select in the set modal at once. Banned accounts
+  // are filtered out — never deploy targets.
+  const opts='<option value="">— None —</option>'+deployableAccounts().map(a=>'<option value="'+a.id+'">@'+a.username+'</option>').join('');
+  ['fm-account','fm-rugpull-account','fm-riptag-account'].forEach(id=>{
+    const sel=document.getElementById(id);
+    if(sel) sel.innerHTML=opts;
+  });
+}
 
 async function saveSet(){
   const sizes=[...document.querySelectorAll('#fm-sizes .chip.on')].map(c=>c.dataset.size);
   const days=[...document.querySelectorAll('.day-chip.on')].map(c=>c.dataset.day);
-  const body={
+  const sharedBase = {
     name: document.getElementById('fm-name').value.trim()||'Unnamed Set',
-    category: document.getElementById('fm-category').value,
-    price: document.getElementById('fm-price').value||'20',
     groupSize: parseInt(document.getElementById('fm-groupsize').value),
-    description: document.getElementById('fm-desc').value,
     sizes,
     driveFolder: document.getElementById('fm-folder-id').value||null,
     driveFolderName: document.getElementById('fm-folder-name').value||null,
-    accountId: document.getElementById('fm-account').value||null,
     schedule: { enabled: schedEnabled, days, time: document.getElementById('fm-time').value }
   };
-  if(editingSetId) await fetch('/api/sets/'+editingSetId,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  else await fetch('/api/sets',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+
+  if(editingSetId){
+    const body = {
+      ...sharedBase,
+      category: document.getElementById('fm-category').value,
+      price: document.getElementById('fm-price').value||'20',
+      description: document.getElementById('fm-desc').value,
+      accountId: document.getElementById('fm-account').value||null
+    };
+    await fetch('/api/sets/'+editingSetId,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  } else {
+    // Dual-create: build a rugpull set and a riptag.co set with the same
+    // shared base. Empty target accounts are allowed — those sets just won't
+    // have a deploy target until the user picks one later.
+    const rugBody = {
+      ...sharedBase,
+      category: 'rugpull',
+      price: document.getElementById('fm-rugpull-price').value||'20',
+      description: document.getElementById('fm-rugpull-desc').value,
+      accountId: document.getElementById('fm-rugpull-account').value||null
+    };
+    const ripBody = {
+      ...sharedBase,
+      // Same shared name on both sides — the user asked for "set 1, 2, 3"
+      // to stay identical across categories. The category badge already
+      // disambiguates them in every list.
+      category: 'riptag',
+      price: document.getElementById('fm-riptag-price').value||'20',
+      description: document.getElementById('fm-riptag-desc').value,
+      accountId: document.getElementById('fm-riptag-account').value||null
+    };
+    const [rRug, rRip] = await Promise.all([
+      fetch('/api/sets',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(rugBody)}),
+      fetch('/api/sets',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(ripBody)})
+    ]);
+    const okRug = rRug.ok, okRip = rRip.ok;
+    if(!okRug || !okRip) alert('One or both saves failed (rugpull='+okRug+', riptag='+okRip+'). Check the page; the successful one is already created.');
+    else glog('Created rugpull + riptag.co versions of "'+sharedBase.name+'"','ok');
+  }
   closeModal('set-modal');
   await loadSets();
   renderOverview();
