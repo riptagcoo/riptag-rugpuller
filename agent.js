@@ -692,13 +692,25 @@ async function runMassEdit() {
 }
 
 async function runStatusCheck() {
-  const accounts = await apiGet('/api/accounts');
+  const allAccounts = await apiGet('/api/accounts');
   const { chromium } = require('playwright');
-  
-  console.log('\nChecking account statuses...\n');
-  
+
+  // Skip accounts that are ALREADY known to be banned. Re-checking them is
+  // pointless — Depop almost never reinstates bans — and every check eats a
+  // browser tab + ~5 seconds. Re-add a banned account via the dashboard if
+  // you ever need to re-verify it (clear the ban flag and run this again).
+  const accounts = allAccounts.filter(a => !(a.status === 'banned' || a.bannedAt));
+  const skipped = allAccounts.length - accounts.length;
+
+  console.log(`\nChecking account statuses (${accounts.length} accounts${skipped ? `, skipping ${skipped} already-banned` : ''})...\n`);
+
+  if (!accounts.length) {
+    console.log('No accounts to check. All accounts are already marked banned.');
+    return;
+  }
+
   const browser = await chromium.launch({ headless: false, slowMo: 100 });
-  
+
   for (const account of accounts) {
     process.stdout.write(`@${account.username}... `);
     try {
