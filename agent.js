@@ -2254,8 +2254,16 @@ if (process.argv.includes('--daemon')) {
   async function deployOneSet(set, label = '📅 Scheduled') {
     try {
       const accounts = await apiGet('/api/accounts');
-      const account = accounts.find(a => a.id === set.accountId);
-      if (!account) return { ok: false, message: 'No account assigned' };
+      // Prefer the schedule-level account override (lets you schedule the
+      // same set to multiple shops on different days) and fall back to the
+      // set's default account.
+      const targetAccountId = (set.schedule && set.schedule.accountId) || set.accountId;
+      const account = accounts.find(a => a.id === targetAccountId);
+      if (!account) return { ok: false, message: 'No account assigned (set.accountId and schedule.accountId both empty)' };
+      // Skip banned accounts so a scheduled deploy can never run against a dead shop.
+      if (account.status === 'banned' || account.bannedAt) {
+        return { ok: false, message: `Account @${account.username} is banned — skipping scheduled deploy` };
+      }
       const pending = (set.listings || []).filter(l => !l.posted);
       if (!pending.length) return { ok: false, message: 'No pending listings' };
 

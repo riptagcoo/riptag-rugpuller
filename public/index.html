@@ -1980,7 +1980,11 @@ function updateReplierPill(alive){
   else{pill.className='status-pill';lbl.textContent='Replier offline';}
 }
 
+// Module-level so the Schedule page (and any other UI) can read the latest
+// daemon state without making its own fetch. Mirrored from updateDaemonStatus.
+let daemonAlive = false;
 function updateDaemonStatus(alive,lastSeen){
+  daemonAlive = !!alive;
   const dot=document.getElementById('daemon-dot');
   const lbl=document.getElementById('daemon-label');
   if(alive){
@@ -1989,6 +1993,10 @@ function updateDaemonStatus(alive,lastSeen){
   }else{
     dot.style.background='var(--faint)';dot.style.boxShadow='none';
     lbl.style.color='var(--muted)';lbl.textContent='Daemon offline';
+  }
+  // Re-render the schedule page if it's open so the daemon hint updates
+  if (typeof currentPage !== 'undefined' && currentPage === 'schedule' && typeof renderSchedule === 'function') {
+    renderSchedule();
   }
 }
 
@@ -2430,58 +2438,89 @@ async function renderAccounts(){
   }).join('');
 }
 
-function renderSchedule(){
-  const el=document.getElementById('schedule-list');
-  const days=['monday','tuesday','wednesday','thursday','friday','saturday','sunday'];
-  const dayLabels={'monday':'Monday','tuesday':'Tuesday','wednesday':'Wednesday','thursday':'Thursday','friday':'Friday','saturday':'Saturday','sunday':'Sunday'};
+// Schedule page — ONE clean row per scheduled deploy + an empty row to add a new one.
+// Each row = (set, day-of-week, time, optional override account). Stored on the set's
+// `schedule` field on the server; the daemon polls /api/schedule/due every minute.
+const DAY_LABELS = [
+  {v:'monday',label:'Mon'},{v:'tuesday',label:'Tue'},{v:'wednesday',label:'Wed'},
+  {v:'thursday',label:'Thu'},{v:'friday',label:'Fri'},{v:'saturday',label:'Sat'},{v:'sunday',label:'Sun'}
+];
 
-  // Load saved schedule from localStorage
-  let sched={};
-  try{sched=JSON.parse(localStorage.getItem('riptag_schedule')||'{}');}catch{}
-
-  const setOptions='<option value="">— No deploy —</option>'+sets.map(s=>'<option value="'+s.id+'">'+s.name+'</option>').join('');
-  const acctOptions='<option value="">— Select account —</option>'+deployableAccounts().map(a=>'<option value="'+a.id+'">@'+a.username+'</option>').join('');
-
-  el.innerHTML='<div class="card"><div class="card-title">Weekly Deploy Schedule (MST)</div>'
-    +days.map(day=>{
-      const d=sched[day]||{};
-      return '<div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--border);">'
-        +'<div style="width:90px;font-size:13px;font-weight:600;">'+dayLabels[day]+'</div>'
-        +'<select class="input" style="flex:1;" id="sched-set-'+day+'" onchange="saveScheduleDay(\''+day+'\')">'
-          +setOptions
-        +'</select>'
-        +'<select class="input" style="flex:1;" id="sched-acct-'+day+'" onchange="saveScheduleDay(\''+day+'\')">'
-          +acctOptions
-        +'</select>'
-        +'<input type="time" class="input" style="width:120px;" id="sched-time-'+day+'" value="'+(d.time||'09:00')+'" onchange="saveScheduleDay(\''+day+'\')" />'
-        +'<span style="font-size:11px;color:var(--muted);font-family:var(--mono);">MST</span>'
-        +'</div>';
-    }).join('')
-    +'</div>';
-
-  // Restore saved values
-  days.forEach(day=>{
-    const d=sched[day]||{};
-    const setEl=document.getElementById('sched-set-'+day);
-    const acctEl=document.getElementById('sched-acct-'+day);
-    if(setEl&&d.setId)setEl.value=d.setId;
-    if(acctEl&&d.accountId)acctEl.value=d.accountId;
-  });
+function _scheduleRowHTML(slotId, setIdSelected, day, time, accountIdSelected, isNew){
+  const setOpts = '<option value="">'+(isNew?'— Pick a set to schedule —':'— removed —')+'</option>'+
+    (sets||[]).map(s=>'<option value="'+s.id+'"'+(s.id===setIdSelected?' selected':'')+'>'+(s.name||'(unnamed)').replace(/</g,'&lt;')+'</option>').join('');
+  const acctOpts = '<option value="">— Set\'s default account —</option>'+
+    deployableAccounts().map(a=>'<option value="'+a.id+'"'+(a.id===accountIdSelected?' selected':'')+'>@'+a.username+'</option>').join('');
+  const dayOpts = DAY_LABELS.map(d=>'<option value="'+d.v+'"'+(d.v===day?' selected':'')+'>'+d.label+'</option>').join('');
+  return '<div style="display:grid;grid-template-columns:2fr 110px 120px 1.4fr auto;gap:12px;align-items:center;padding:14px 16px;border:1px solid '+(isNew?'var(--glass-border)':'rgba(0,229,160,0.22)')+';border-radius:10px;background:'+(isNew?'transparent':'rgba(0,229,160,0.04)')+';margin-bottom:10px;">'
+    +'<select class="input" id="sch-set-'+slotId+'" onchange="saveScheduleSlot(\''+slotId+'\',this.value)">'+setOpts+'</select>'
+    +'<select class="input" id="sch-day-'+slotId+'" onchange="saveScheduleSlot(\''+slotId+'\')">'+dayOpts+'</select>'
+    +'<input type="time" class="input" id="sch-time-'+slotId+'" value="'+time+'" onchange="saveScheduleSlot(\''+slotId+'\')"/>'
+    +'<select class="input" id="sch-acct-'+slotId+'" onchange="saveScheduleSlot(\''+slotId+'\')">'+acctOpts+'</select>'
+    +(isNew?'<span style="font-size:11px;color:var(--ink-3);font-family:var(--mono);">+ NEW</span>':'<button class="btn sm danger" onclick="removeScheduleSlot(\''+slotId+'\')">Remove</button>')
+  +'</div>';
 }
 
-function saveScheduleDay(day){
-  let sched={};
-  try{sched=JSON.parse(localStorage.getItem('riptag_schedule')||'{}');}catch{}
-  const setId=document.getElementById('sched-set-'+day)?.value||'';
-  const accountId=document.getElementById('sched-acct-'+day)?.value||'';
-  const time=document.getElementById('sched-time-'+day)?.value||'09:00';
-  sched[day]={setId,accountId,time};
-  localStorage.setItem('riptag_schedule',JSON.stringify(sched));
-  // Also update the set's schedule on server
-  if(setId){
-    const existingDays=Object.entries(sched).filter(([d,v])=>v.setId===setId).map(([d])=>d);
-    fetch('/api/sets/'+setId,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({schedule:{enabled:true,days:existingDays,time,accountId}})});
-  }
+function renderSchedule(){
+  const el = document.getElementById('schedule-list');
+  if(!el) return;
+  // Pull every set that currently has an enabled schedule
+  const scheduled = (sets||[]).filter(s => s.schedule?.enabled && (s.schedule.days||[]).length);
+  const rows = scheduled.map(s => {
+    const day = (s.schedule.days||[])[0] || 'monday';
+    const time = s.schedule.time || '09:00';
+    const acctId = s.schedule.accountId || '';
+    return _scheduleRowHTML(s.id, s.id, day, time, acctId, false);
+  });
+  // Plus one always-present empty row for adding a new schedule
+  rows.push(_scheduleRowHTML('new', '', 'monday', '09:00', '', true));
+
+  const daemonHint = (typeof daemonAlive!=='undefined' && daemonAlive)
+    ? '<span style="color:var(--green);">● daemon running</span>'
+    : '<span style="color:#ff8c8c;">● daemon offline — schedules will NOT fire until you launch DAEMON.bat</span>';
+  el.innerHTML = '<div class="card">'
+    +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">'
+      +'<div class="card-title" style="margin:0;">Scheduled Deploys</div>'
+      +'<div style="font-size:11px;font-family:var(--mono);">'+daemonHint+'</div>'
+    +'</div>'
+    +'<div style="font-size:12px;color:var(--ink-3);margin-bottom:14px;">All times in MST. Each set can have one weekly schedule. The daemon auto-deploys with no prompts.</div>'
+    +rows.join('')
+  +'</div>';
+}
+
+// One save handler for any row. If oldSetId differs from chosen setId
+// (which only happens on the NEW row when the user picks a set), we
+// transition the slot ID. Otherwise we just update that set's schedule.
+async function saveScheduleSlot(slotId, pickedSetId){
+  const setEl  = document.getElementById('sch-set-'+slotId);
+  const setId  = pickedSetId !== undefined ? pickedSetId : (setEl?.value || '');
+  if(!setId){ return; } // empty new row, nothing to save yet
+  const day    = document.getElementById('sch-day-'+slotId)?.value || 'monday';
+  const time   = document.getElementById('sch-time-'+slotId)?.value || '09:00';
+  const acctId = document.getElementById('sch-acct-'+slotId)?.value || null;
+  try{
+    const r = await fetch('/api/sets/'+setId,{
+      method:'PUT', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ schedule: { enabled: true, days: [day], time, accountId: acctId } })
+    });
+    if(!r.ok) throw new Error(await r.text());
+    glog('Saved schedule for set','ok');
+    await loadSets();
+    renderSchedule();
+  }catch(e){ alert('Save failed: '+e.message); }
+}
+
+async function removeScheduleSlot(setId){
+  if(!confirm('Remove this schedule?')) return;
+  try{
+    await fetch('/api/sets/'+setId,{
+      method:'PUT', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ schedule: { enabled: false, days: [], time: '09:00' } })
+    });
+    glog('Schedule removed','ok');
+    await loadSets();
+    renderSchedule();
+  }catch(e){ alert('Remove failed: '+e.message); }
 }
 
 function renderCurrentSet(){
