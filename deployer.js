@@ -121,7 +121,7 @@ async function postListing(page, listing, localPhotos, onProgress) {
 }
 
 async function deploySet(set, account, onProgress) {
-  const browser = await chromium.launch({ headless: true });
+  const browser = await chromium.launch({ headless: true, channel: 'chrome', args: ['--disable-blink-features=AutomationControlled'] });
   const context = await browser.newContext();
 
   if (account.cookies?.length) {

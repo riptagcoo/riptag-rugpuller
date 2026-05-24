@@ -516,7 +516,7 @@ async function massEditDescriptions(set, newDescription) {
   console.log('══════════════════════════════════════════');
 
   console.log(`\nOpening browser for @${account.username}...`);
-  const browser = await chromium.launch({ headless: false, slowMo: 50 });
+  const browser = await chromium.launch({ headless: false, slowMo: 50, channel: 'chrome', args: ['--disable-blink-features=AutomationControlled'] });
   const context = await browser.newContext();
   const clean = account.cookies.map(c => ({
     name: c.name, value: c.value, domain: c.domain,
@@ -709,7 +709,7 @@ async function runStatusCheck() {
     return;
   }
 
-  const browser = await chromium.launch({ headless: false, slowMo: 100 });
+  const browser = await chromium.launch({ headless: false, slowMo: 100, channel: 'chrome', args: ['--disable-blink-features=AutomationControlled'] });
 
   for (const account of accounts) {
     process.stdout.write(`@${account.username}... `);
@@ -1020,7 +1020,7 @@ async function runRefreshPhotos() {
 
   // Launch browser once — reuse for backfill + refresh
   console.log(`\nOpening browser for @${account.username}...`);
-  const browser = await chromium.launch({ headless: false, slowMo: 50 });
+  const browser = await chromium.launch({ headless: false, slowMo: 50, channel: 'chrome', args: ['--disable-blink-features=AutomationControlled'] });
   const context = await browser.newContext();
   if (account.cookies?.length) {
     const clean = account.cookies.map(c => ({
@@ -1143,7 +1143,7 @@ async function quickRefreshSet(photoSet, account) {
   fs.emptyDirSync(tmpDir);
   const photoCache = {};
 
-  const browser = await chromium.launch({ headless: false, slowMo: 50 });
+  const browser = await chromium.launch({ headless: false, slowMo: 50, channel: 'chrome', args: ['--disable-blink-features=AutomationControlled'] });
   const context = await browser.newContext();
   const clean = account.cookies.map(c => ({
     name: c.name, value: c.value, domain: c.domain,
@@ -1293,7 +1293,7 @@ async function runQuickRefresh() {
   const photoCache = {};
 
   console.log(`\nOpening browser for @${account.username}...`);
-  const browser = await chromium.launch({ headless: false, slowMo: 50 });
+  const browser = await chromium.launch({ headless: false, slowMo: 50, channel: 'chrome', args: ['--disable-blink-features=AutomationControlled'] });
   const context = await browser.newContext();
   const clean = account.cookies.map(c => ({
     name: c.name, value: c.value, domain: c.domain,
@@ -1456,7 +1456,7 @@ async function runDeployChud() {
   console.log(`\n→ "${set.name}" → @${account.username} — ${pending.length} listings (1 photo each)\n`);
   await ask('Press ENTER to start (DO NOT touch the browser)...');
 
-  const browser = await chromium.launch({ headless: false, slowMo: 50 });
+  const browser = await chromium.launch({ headless: false, slowMo: 50, channel: 'chrome', args: ['--disable-blink-features=AutomationControlled'] });
   const context = await browser.newContext();
   if (account.cookies?.length) {
     const clean = account.cookies.map(c => ({
@@ -1606,7 +1606,7 @@ async function runScrapeOrders() {
 
   console.log(`\nOpening browser for @${account.username}...`);
   const { chromium } = require('playwright');
-  const browser = await chromium.launch({ headless: false, slowMo: 50 });
+  const browser = await chromium.launch({ headless: false, slowMo: 50, channel: 'chrome', args: ['--disable-blink-features=AutomationControlled'] });
   const context = await browser.newContext();
 
   if (account.cookies?.length) {
@@ -1846,7 +1846,7 @@ async function runDownloadLabels() {
   const safeSize = s => s === '?' ? 'MULTI' : String(s || 'X').replace(/[^A-Z0-9]/gi, '_');
 
   console.log(`\nOpening browser for @${account.username}...`);
-  const browser = await chromium.launch({ headless: false, slowMo: 50 });
+  const browser = await chromium.launch({ headless: false, slowMo: 50, channel: 'chrome', args: ['--disable-blink-features=AutomationControlled'] });
   const context = await browser.newContext({ acceptDownloads: true });
 
   if (account.cookies?.length) {
@@ -2113,7 +2113,7 @@ async function main() {
   console.log(`\n→ "${set.name}" → @${account.username} — ${pending.length} listings\n`);
   await ask('Press ENTER to start (DO NOT touch the browser)...');
 
-  const browser = await chromium.launch({ headless: false, slowMo: 50 });
+  const browser = await chromium.launch({ headless: false, slowMo: 50, channel: 'chrome', args: ['--disable-blink-features=AutomationControlled'] });
   const context = await browser.newContext();
 
   if (account.cookies?.length) {
@@ -2262,7 +2262,7 @@ if (process.argv.includes('--daemon')) {
       await postProgress({ type: 'deploy', setId: set.id, status: 'starting', message: `${label}: ${set.name} — ${pending.length} listings` });
 
       const { chromium } = require('playwright');
-      const browser = await chromium.launch({ headless: false, slowMo: 50 });
+      const browser = await chromium.launch({ headless: false, slowMo: 50, channel: 'chrome', args: ['--disable-blink-features=AutomationControlled'] });
       const context = await browser.newContext();
       if (account.cookies?.length) {
         const clean = account.cookies.map(c => ({ name: c.name, value: c.value, domain: c.domain, path: c.path||'/', secure: c.secure||false, httpOnly: c.httpOnly||false, sameSite: ['Strict','Lax','None'].includes(c.sameSite)?c.sameSite:'Lax' }));
@@ -2335,7 +2335,7 @@ if (process.argv.includes('--daemon')) {
 
         // Run deploy inline
         const { chromium } = require('playwright');
-        const browser = await chromium.launch({ headless: false, slowMo: 50 });
+        const browser = await chromium.launch({ headless: false, slowMo: 50, channel: 'chrome', args: ['--disable-blink-features=AutomationControlled'] });
         const context = await browser.newContext();
 
         // Proxy
