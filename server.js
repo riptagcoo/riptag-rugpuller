@@ -1070,24 +1070,52 @@ app.get('/api/schedule/due', async (req, res) => {
   try {
     const r = await pool.query('SELECT data FROM sets WHERE data->>\'status\' != \'deploying\'');
     const sets = r.rows.map(row => row.data);
-    const now = new Date();
+
+    // CRITICAL: convert to the user's timezone (MST/America/Denver) before
+    // matching. Railway runs in UTC so now.getHours() returns UTC hours,
+    // which never matches the "09:00 MST" the dashboard stores. Using
+    // Intl.DateTimeFormat with the explicit zone gives correct local time
+    // (and handles DST transitions automatically).
+    const SCHEDULE_TZ = process.env.SCHEDULE_TZ || 'America/Denver';
     const dayNames = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
-    const currentDay = dayNames[now.getDay()];
-    const currentTime = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+    const now = new Date();
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: SCHEDULE_TZ,
+      weekday: 'long',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    }).formatToParts(now);
+    const get = (t) => (parts.find(p => p.type === t) || {}).value || '';
+    const currentDay = String(get('weekday') || '').toLowerCase();
+    // Intl returns "24" for midnight on some platforms — normalize to "00"
+    let hh = get('hour'); if (hh === '24') hh = '00';
+    const currentTime = `${hh.padStart(2,'0')}:${String(get('minute')||'00').padStart(2,'0')}`;
+    // Compute window: a schedule fires if its time falls within the last 2
+    // minutes (covers daemon poll drift, brief restarts, etc).
+    const winSet = new Set([currentTime]);
+    for (let offset = 1; offset <= 2; offset++) {
+      const prev = new Date(now.getTime() - offset * 60_000);
+      const pParts = new Intl.DateTimeFormat('en-US', { timeZone: SCHEDULE_TZ, hour:'2-digit', minute:'2-digit', hour12:false }).formatToParts(prev);
+      let pH = (pParts.find(p=>p.type==='hour')||{}).value || '00';
+      if (pH === '24') pH = '00';
+      const pM = (pParts.find(p=>p.type==='minute')||{}).value || '00';
+      winSet.add(`${pH.padStart(2,'0')}:${pM.padStart(2,'0')}`);
+    }
 
     const due = [];
     for (const set of sets) {
       const sched = set.schedule;
       if (!sched?.enabled || !sched.days?.length) continue;
       if (!sched.days.includes(currentDay)) continue;
-      if (sched.time !== currentTime) continue;
-      // Check not already fired in last hour
+      if (!winSet.has(sched.time)) continue;
+      // Dedup — don't re-fire within the past hour
       const recent = await pool.query('SELECT id FROM schedule_log WHERE set_id=$1 AND fired_at > NOW() - INTERVAL \'1 hour\'', [set.id]);
       if (recent.rows.length) continue;
       due.push(set);
     }
 
-    res.json({ due });
+    res.json({ due, debug: { tz: SCHEDULE_TZ, currentDay, currentTime, window: [...winSet] } });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
