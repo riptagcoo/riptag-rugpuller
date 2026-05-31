@@ -2142,7 +2142,13 @@ function showPage(page,setId){
   if(page==='set'&&setId){currentSetId=setId;renderCurrentSet();}
   if(page==='overview')renderOverview();
   if(page==='accounts')renderAccounts();
-  if(page==='schedule')renderSchedule();
+  if(page==='schedule'){
+    // Force-refresh sets so any schedule changes made elsewhere (or saved
+    // a moment ago in another tab) show up immediately. Without this, an
+    // open Schedule tab can stale-render and look like it "forgot" your
+    // saved schedule when you actually just need a re-fetch.
+    loadSets().then(()=>renderSchedule());
+  }
   // Active Accounts merged into Accounts — no separate handler needed.
   if(page==='tracker')renderTracker();
   if(page==='replier')loadReplierPage();

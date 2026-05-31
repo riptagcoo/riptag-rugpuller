@@ -2364,16 +2364,25 @@ if (process.argv.includes('--daemon')) {
     try {
       const { due } = await apiGet('/api/schedule/due');
       if (!due?.length) return;
-      // Delegate to the single canonical deployOneSet (which handles
-      // per-schedule account overrides, the banned-account guard, stealth
-      // chrome launch, and zero-prompt posting). Previously this loop had
-      // a duplicate inline copy of the deploy code which silently bypassed
-      // all of those fixes — the schedule would post to the wrong account
-      // or stall on banned shops.
       for (const set of due) {
         console.log(`\n📅 Scheduled deploy due: ${set.name}`);
         const result = await deployOneSet(set, '📅 Scheduled');
         console.log(`   → ${result.ok ? '✓' : '✗'} ${result.message}`);
+        // ALWAYS write a schedule_log row, even on failure. Without this,
+        // a set with "No pending listings" (or any other early-exit reason)
+        // would keep firing every minute since the catch-up logic only
+        // dedups on schedule_log. We want one log row per slot per day.
+        try {
+          const logBody = JSON.stringify({ setId: set.id, status: result.ok ? 'done' : 'skipped:'+result.message });
+          const logUrl = new URL(DASHBOARD_URL + '/api/schedule/log');
+          const logMod = logUrl.protocol === 'https:' ? require('https') : require('http');
+          const logReq = logMod.request({
+            hostname: logUrl.hostname, path: logUrl.pathname, method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(logBody), 'x-api-key': '1010' }
+          }, () => {});
+          logReq.on('error', () => {});
+          logReq.write(logBody); logReq.end();
+        } catch {}
       }
     } catch (err) { console.error('Schedule check error:', err.message); }
   }
