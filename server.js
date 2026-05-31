@@ -1071,51 +1071,57 @@ app.get('/api/schedule/due', async (req, res) => {
     const r = await pool.query('SELECT data FROM sets WHERE data->>\'status\' != \'deploying\'');
     const sets = r.rows.map(row => row.data);
 
-    // CRITICAL: convert to the user's timezone (MST/America/Denver) before
-    // matching. Railway runs in UTC so now.getHours() returns UTC hours,
-    // which never matches the "09:00 MST" the dashboard stores. Using
-    // Intl.DateTimeFormat with the explicit zone gives correct local time
-    // (and handles DST transitions automatically).
+    // Compare in the user's timezone (MST/America/Denver), not Railway UTC.
     const SCHEDULE_TZ = process.env.SCHEDULE_TZ || 'America/Denver';
-    const dayNames = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
     const now = new Date();
     const parts = new Intl.DateTimeFormat('en-US', {
-      timeZone: SCHEDULE_TZ,
-      weekday: 'long',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false
+      timeZone: SCHEDULE_TZ, weekday: 'long', hour: '2-digit', minute: '2-digit', year: 'numeric', month: '2-digit', day: '2-digit', hour12: false
     }).formatToParts(now);
     const get = (t) => (parts.find(p => p.type === t) || {}).value || '';
     const currentDay = String(get('weekday') || '').toLowerCase();
-    // Intl returns "24" for midnight on some platforms — normalize to "00"
     let hh = get('hour'); if (hh === '24') hh = '00';
-    const currentTime = `${hh.padStart(2,'0')}:${String(get('minute')||'00').padStart(2,'0')}`;
-    // Compute window: a schedule fires if its time falls within the last 2
-    // minutes (covers daemon poll drift, brief restarts, etc).
-    const winSet = new Set([currentTime]);
-    for (let offset = 1; offset <= 2; offset++) {
-      const prev = new Date(now.getTime() - offset * 60_000);
-      const pParts = new Intl.DateTimeFormat('en-US', { timeZone: SCHEDULE_TZ, hour:'2-digit', minute:'2-digit', hour12:false }).formatToParts(prev);
-      let pH = (pParts.find(p=>p.type==='hour')||{}).value || '00';
-      if (pH === '24') pH = '00';
-      const pM = (pParts.find(p=>p.type==='minute')||{}).value || '00';
-      winSet.add(`${pH.padStart(2,'0')}:${pM.padStart(2,'0')}`);
-    }
+    const mm = String(get('minute')||'00').padStart(2,'0');
+    const currentTime = `${hh.padStart(2,'0')}:${mm}`;
+    const currentMinutes = parseInt(hh, 10) * 60 + parseInt(mm, 10);
+    const todayDate = `${get('year')}-${get('month')}-${get('day')}`; // e.g. 2026-05-31
 
     const due = [];
+    const debugRows = [];
     for (const set of sets) {
       const sched = set.schedule;
-      if (!sched?.enabled || !sched.days?.length) continue;
+      if (!sched?.enabled || !sched.days?.length || !sched.time) continue;
       if (!sched.days.includes(currentDay)) continue;
-      if (!winSet.has(sched.time)) continue;
-      // Dedup — don't re-fire within the past hour
-      const recent = await pool.query('SELECT id FROM schedule_log WHERE set_id=$1 AND fired_at > NOW() - INTERVAL \'1 hour\'', [set.id]);
-      if (recent.rows.length) continue;
+      // Parse the scheduled time
+      const [shStr, smStr] = String(sched.time).split(':');
+      const schedMinutes = parseInt(shStr, 10) * 60 + parseInt(smStr || '0', 10);
+      if (isNaN(schedMinutes)) continue;
+      // Catch-up logic: fire if the scheduled time has ALREADY passed today
+      // AND we haven't fired this set yet today. Previously the matcher only
+      // fired during the exact ±2 minute window — meaning if the daemon was
+      // offline at the scheduled minute, the schedule was missed for the
+      // whole week. Now: any time after the scheduled minute (until midnight)
+      // counts as "due" as long as it hasn't already fired today.
+      if (currentMinutes < schedMinutes) {
+        debugRows.push({ set: set.name, sched: sched.time, status: 'not-yet' });
+        continue;
+      }
+      // Has it already fired today (in the user's TZ)? Use schedule_log,
+      // compare fired_at against todayDate boundaries in the target TZ.
+      const recent = await pool.query(
+        `SELECT id FROM schedule_log
+           WHERE set_id = $1
+             AND (fired_at AT TIME ZONE $2)::date = $3::date`,
+        [set.id, SCHEDULE_TZ, todayDate]
+      );
+      if (recent.rows.length) {
+        debugRows.push({ set: set.name, sched: sched.time, status: 'already-fired-today' });
+        continue;
+      }
       due.push(set);
+      debugRows.push({ set: set.name, sched: sched.time, status: 'DUE' });
     }
 
-    res.json({ due, debug: { tz: SCHEDULE_TZ, currentDay, currentTime, window: [...winSet] } });
+    res.json({ due, debug: { tz: SCHEDULE_TZ, currentDay, currentTime, todayDate, sets: debugRows } });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
