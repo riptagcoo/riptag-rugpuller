@@ -1072,7 +1072,7 @@ app.get('/api/schedule/due', async (req, res) => {
     const sets = r.rows.map(row => row.data);
 
     // Compare in the user's timezone (MST/America/Denver), not Railway UTC.
-    const SCHEDULE_TZ = process.env.SCHEDULE_TZ || 'America/Denver';
+    const SCHEDULE_TZ = process.env.SCHEDULE_TZ || 'America/Phoenix';
     const now = new Date();
     const parts = new Intl.DateTimeFormat('en-US', {
       timeZone: SCHEDULE_TZ, weekday: 'long', hour: '2-digit', minute: '2-digit', year: 'numeric', month: '2-digit', day: '2-digit', hour12: false

@@ -687,7 +687,7 @@ tr:hover td { background: rgba(255,255,255,0.015); cursor: pointer; }
   <div class="topbar">
     <div class="topbar-left">
       <div class="page-title">Deploy Schedule</div>
-      <div class="page-sub">MST timezone · Run DAEMON.bat to activate</div>
+      <div class="page-sub">Arizona time (MST, no DST) · Run DAEMON.bat to activate</div>
     </div>
   </div>
   <div class="page-content">
@@ -986,7 +986,7 @@ tr:hover td { background: rgba(255,255,255,0.015); cursor: pointer; }
         <div class="chips" id="fm-days" style="margin-bottom:12px;">
           <div class="chip day-chip" data-day="monday">Mon</div><div class="chip day-chip" data-day="tuesday">Tue</div><div class="chip day-chip" data-day="wednesday">Wed</div><div class="chip day-chip" data-day="thursday">Thu</div><div class="chip day-chip" data-day="friday">Fri</div><div class="chip day-chip" data-day="saturday">Sat</div><div class="chip day-chip" data-day="sunday">Sun</div>
         </div>
-        <div class="field" style="margin:0;"><label>Deploy Time (MST)</label><input class="input" id="fm-time" type="time" value="09:00"/></div>
+        <div class="field" style="margin:0;"><label>Deploy Time (Arizona)</label><input class="input" id="fm-time" type="time" value="09:00"/></div>
       </div>
     </div>
     <div class="modal-actions"><button class="btn ghost" onclick="closeModal('set-modal')">Cancel</button><button class="btn primary" onclick="saveSet()" id="fm-save-btn">Save both versions</button></div>
@@ -2483,7 +2483,7 @@ function renderSchedule(){
       +'<div class="card-title" style="margin:0;">Scheduled Deploys</div>'
       +'<div style="font-size:11px;font-family:var(--mono);">'+daemonHint+'</div>'
     +'</div>'
-    +'<div style="font-size:12px;color:var(--ink-3);margin-bottom:14px;">All times in MST. Each set can have one weekly schedule. The daemon auto-deploys with no prompts.</div>'
+    +'<div style="font-size:12px;color:var(--ink-3);margin-bottom:14px;">All times in Arizona (MST, no DST). Each set can have one weekly schedule. The daemon auto-deploys with no prompts.</div>'
     +rows.join('')
   +'</div>';
 }
