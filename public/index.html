@@ -1985,15 +1985,15 @@ function updateReplierPill(alive){
 let daemonAlive = false;
 function updateDaemonStatus(alive,lastSeen){
   daemonAlive = !!alive;
-  const dot=document.getElementById('daemon-dot');
+  // The dot is a <span class="dot"> inside the pill — no separate ID.
+  // Toggle the active class on the pill itself and let CSS style the dot.
+  // (The previous version looked up a non-existent #daemon-dot and crashed
+  // silently, leaving the pill stuck on "Daemon offline" forever.)
+  const pill=document.getElementById('daemon-pill');
   const lbl=document.getElementById('daemon-label');
-  if(alive){
-    dot.style.background='var(--green)';dot.style.boxShadow='0 0 6px var(--green)';
-    lbl.style.color='var(--green)';lbl.textContent='Daemon active';
-  }else{
-    dot.style.background='var(--faint)';dot.style.boxShadow='none';
-    lbl.style.color='var(--muted)';lbl.textContent='Daemon offline';
-  }
+  if(!pill||!lbl) return;
+  if(alive){ pill.className='status-pill active-daemon'; lbl.textContent='Daemon active'; }
+  else     { pill.className='status-pill';                lbl.textContent='Daemon offline'; }
   // Re-render the schedule page if it's open so the daemon hint updates
   if (typeof currentPage !== 'undefined' && currentPage === 'schedule' && typeof renderSchedule === 'function') {
     renderSchedule();
