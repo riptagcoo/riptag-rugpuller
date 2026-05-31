@@ -12,12 +12,47 @@ const readline = require('readline');
 
 const DASHBOARD_URL = 'https://riptag-rugpuller-production.up.railway.app';
 
-// Heartbeat — lets dashboard know daemon is alive
+// Heartbeat — lets dashboard know daemon is alive. We surface failures
+// visibly so a misconfigured DASHBOARD_URL / bad api-key / network outage
+// doesn't silently leave the daemon "offline" on the dashboard forever.
+let _hbState = { ok: 0, fail: 0, lastError: null, lastBeat: null };
 function sendHeartbeat() {
   const urlObj = new URL(DASHBOARD_URL + '/api/daemon/heartbeat');
   const mod = urlObj.protocol === 'https:' ? require('https') : require('http');
-  const req = mod.request({ hostname: urlObj.hostname, path: urlObj.pathname, method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': 2, 'x-api-key': '1010' } }, () => {});
-  req.on('error', () => {});
+  const req = mod.request({
+    hostname: urlObj.hostname,
+    port: urlObj.port || (urlObj.protocol === 'https:' ? 443 : 80),
+    path: urlObj.pathname,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Content-Length': 2, 'x-api-key': '1010' },
+    timeout: 10000
+  }, (res) => {
+    let body = '';
+    res.on('data', c => body += c);
+    res.on('end', () => {
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        _hbState.ok++;
+        _hbState.lastBeat = new Date().toISOString();
+        // Quiet on success — only chirp every 10 beats so the log stays readable
+        if (_hbState.ok === 1 || _hbState.ok % 10 === 0) {
+          console.log(`💓 heartbeat ok (${_hbState.ok} sent so far)`);
+        }
+      } else {
+        _hbState.fail++;
+        _hbState.lastError = `HTTP ${res.statusCode}: ${body.slice(0, 200)}`;
+        console.log(`⚠ heartbeat HTTP ${res.statusCode}: ${body.slice(0, 200)}`);
+      }
+    });
+  });
+  req.on('error', (err) => {
+    _hbState.fail++;
+    _hbState.lastError = err.message;
+    console.log(`⚠ heartbeat failed: ${err.message} (target: ${urlObj.host})`);
+  });
+  req.on('timeout', () => {
+    req.destroy();
+    console.log(`⚠ heartbeat timed out after 10s (target: ${urlObj.host})`);
+  });
   req.write('{}'); req.end();
 }
 
