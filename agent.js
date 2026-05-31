@@ -2364,76 +2364,16 @@ if (process.argv.includes('--daemon')) {
     try {
       const { due } = await apiGet('/api/schedule/due');
       if (!due?.length) return;
-
+      // Delegate to the single canonical deployOneSet (which handles
+      // per-schedule account overrides, the banned-account guard, stealth
+      // chrome launch, and zero-prompt posting). Previously this loop had
+      // a duplicate inline copy of the deploy code which silently bypassed
+      // all of those fixes — the schedule would post to the wrong account
+      // or stall on banned shops.
       for (const set of due) {
-        console.log(`\n📅 Scheduled deploy: ${set.name}`);
-        const accounts = await apiGet('/api/accounts');
-        const account = accounts.find(a => a.id === set.accountId);
-        if (!account) { console.log('No account assigned, skipping.'); continue; }
-
-        const pending = (set.listings || []).filter(l => !l.posted);
-        if (!pending.length) { console.log('No pending listings.'); continue; }
-
-        await postProgress({ type: 'deploy', setId: set.id, status: 'starting', message: `📅 Scheduled deploy: ${set.name} — ${pending.length} listings` });
-
-        // Run deploy inline
-        const { chromium } = require('playwright');
-        const browser = await chromium.launch({ headless: false, slowMo: 50, channel: 'chrome', args: ['--disable-blink-features=AutomationControlled'] });
-        const context = await browser.newContext();
-
-        // Proxy
-        if (account.proxy) {
-          console.log(`Using proxy: ${account.proxy}`);
-        }
-
-        if (account.cookies?.length) {
-          const clean = account.cookies.map(c => ({ name: c.name, value: c.value, domain: c.domain, path: c.path||'/', secure: c.secure||false, httpOnly: c.httpOnly||false, sameSite: ['Strict','Lax','None'].includes(c.sameSite)?c.sameSite:'Lax' }));
-          await context.addCookies(clean);
-        }
-
-        const page = await context.newPage();
-        await page.goto('https://www.depop.com/', { waitUntil: 'domcontentloaded' });
-
-        const fs = require('fs-extra');
-        const path = require('path');
-        const tmpDir = `./tmp/${set.id}`;
-        fs.ensureDirSync(tmpDir);
-        const photoCache = {};
-        let successCount = 0;
-
-        for (let i = 0; i < pending.length; i++) {
-          const listing = pending[i];
-          const localPhotos = await getListingLocalPhotos(listing, tmpDir, photoCache);
-
-          await postProgress({ type: 'deploy', setId: set.id, status: 'posting', message: `Posting ${i+1}/${pending.length}: Size ${listing.size}`, progress: Math.round(((i+1)/pending.length)*100) });
-
-          try {
-            const success = await postListing(page, listing, localPhotos);
-            if (success) {
-              successCount++;
-              const depopUrl = page.url();
-              const looksLikeProduct = /depop\.com\/[^/]+\/[^/?#]+/.test(depopUrl);
-              await apiPut(`/api/sets/${set.id}/listings/${listing.id}`, {
-                posted: true, postedAt: new Date().toISOString(),
-                depopUrl: looksLikeProduct ? depopUrl : null
-              });
-              await postProgress({ type: 'deploy', setId: set.id, status: 'posted', message: `✓ Posted: ${listing.size}`, listingId: listing.id });
-            }
-          } catch (err) { await postProgress({ type: 'deploy', setId: set.id, status: 'error', message: err.message }); }
-
-          await page.waitForTimeout(2000 + Math.random() * 3000);
-        }
-
-        await browser.close();
-        fs.remove(tmpDir);
-        await postProgress({ type: 'deploy', setId: set.id, status: 'done', message: `Done: ${successCount}/${pending.length} posted`, progress: 100 });
-
-        // Log to server
-        const logBody = JSON.stringify({ setId: set.id, status: 'done' });
-        const logUrl = new URL(DASHBOARD_URL + '/api/schedule/log');
-        const logMod = logUrl.protocol === 'https:' ? require('https') : require('http');
-        const logReq = logMod.request({ hostname: logUrl.hostname, path: logUrl.pathname, method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(logBody), 'x-api-key': '1010' } }, () => {});
-        logReq.write(logBody); logReq.end();
+        console.log(`\n📅 Scheduled deploy due: ${set.name}`);
+        const result = await deployOneSet(set, '📅 Scheduled');
+        console.log(`   → ${result.ok ? '✓' : '✗'} ${result.message}`);
       }
     } catch (err) { console.error('Schedule check error:', err.message); }
   }
