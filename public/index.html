@@ -8,10 +8,10 @@
 <!-- ── PWA install support ───────────────────────────────────── -->
 <link rel="manifest" href="/manifest.webmanifest"/>
 <meta name="theme-color" content="#00e5a0"/>
-<link rel="icon" type="image/svg+xml" href="/icons/icon.svg?v=3"/>
-<link rel="apple-touch-icon" href="/icons/icon.svg?v=3"/>
+<link rel="icon" type="image/svg+xml" href="/icons/icon.svg?v=4"/>
+<link rel="apple-touch-icon" href="/icons/icon.svg?v=4"/>
 <!-- Also reference legacy .ico path to evict any stale globe Edge/Chrome cached -->
-<link rel="shortcut icon" href="/icons/icon.svg?v=3" type="image/svg+xml"/>
+<link rel="shortcut icon" href="/icons/icon.svg?v=4" type="image/svg+xml"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
 <meta name="apple-mobile-web-app-title" content="Riptag"/>
@@ -581,14 +581,15 @@ tr:hover td { background: rgba(255,255,255,0.015); cursor: pointer; }
   <div class="sb-brand">
     <div class="sb-logo" title="Riptag">
       <svg viewBox="0 0 50 50" xmlns="http://www.w3.org/2000/svg" aria-label="Riptag" preserveAspectRatio="xMidYMid meet">
-        <defs>
-          <mask id="tagHole">
-            <rect width="100%" height="100%" fill="white"/>
-            <circle cx="34" cy="17" r="3" fill="black"/>
-          </mask>
-        </defs>
-        <!-- Riptag price-tag mark: rectangle with angular point on the right, circular tag hole -->
-        <path d="M6,12 L30,12 L46,25 L30,38 L6,38 Z" fill="black" mask="url(#tagHole)"/>
+        <!-- Minimalist empty clothes hanger. CSS filters this to white so
+             the strokes pop on the green gradient background. -->
+        <g fill="none" stroke="black" stroke-width="3"
+           stroke-linecap="round" stroke-linejoin="round">
+          <!-- Hook curling to the left from the triangle apex -->
+          <path d="M 25 19 L 25 11 Q 25 6 21 6 Q 17 6 17 9"/>
+          <!-- Triangle hanger body with bottom bar -->
+          <path d="M 8 37 L 25 19 L 42 37 Z"/>
+        </g>
       </svg>
     </div>
     <div>
